@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
+import { Heart } from 'lucide-react';
 
 const MOODS = [
   { id: 'otimo', label: 'Ótimo', emoji: '😁', color: '#22c55e' },
@@ -174,11 +175,12 @@ export function MoodPopup() {
             >
               <div
                 style={{
-                  background: isDark ? 'rgba(28, 28, 30, 0.88)' : 'rgba(255, 255, 255, 0.95)',
+                  // tokens do tema (claro / escuro / escuro profundo), como em lib/toast.tsx
+                  background: 'rgb(var(--dark-card) / 0.95)',
                   backdropFilter: 'blur(24px) saturate(180%)',
                   WebkitBackdropFilter: 'blur(24px) saturate(180%)',
                   borderRadius: 20,
-                  border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(0, 0, 0, 0.08)',
+                  border: '1px solid rgb(var(--dark-text) / 0.1)',
                   boxShadow: isDark
                     ? '0 -4px 40px rgba(0,0,0,0.45), 0 -2px 12px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.08)'
                     : '0 -4px 40px rgba(0,0,0,0.15), 0 -2px 12px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9)',
@@ -203,10 +205,9 @@ export function MoodPopup() {
                       alignItems: 'center',
                       justifyContent: 'center',
                       flexShrink: 0,
-                      fontSize: 22,
                     }}
                   >
-                    💜
+                    <Heart size={18} color="#8b5cf6" />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
@@ -221,9 +222,9 @@ export function MoodPopup() {
                     </div>
                     <p style={{
                       fontSize: 14, fontWeight: 600, margin: 0, lineHeight: 1.3,
-                      color: isDark ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.88)',
+                      color: 'rgb(var(--dark-text))',
                     }}>
-                      🍇 Como você está se sentindo hoje? 🍇
+                      Como você está se sentindo hoje?
                     </p>
                   </div>
                 </div>
@@ -284,7 +285,7 @@ export function MoodPopup() {
                           fontWeight: 600,
                           color: isSelected
                             ? mood.color
-                            : isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)',
+                            : 'rgb(var(--dark-text) / 0.55)',
                         }}>
                           {mood.label}
                         </span>

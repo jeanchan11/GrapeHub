@@ -203,15 +203,15 @@ const ContratoTab: React.FC<{ lead: any }> = ({ lead }) => {
     }
   };
 
-  const inputCls = 'w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl py-2.5 px-3 text-sm text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20 transition-colors';
+  const inputCls = 'w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl py-2.5 px-3 text-sm text-dark-text outline-none focus:ring-2 focus:ring-violet-500/20 transition-colors';
   const labelCls = 'block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5';
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 p-6">
       {/* ── Formulário ── */}
       <div className="lg:w-[380px] shrink-0 space-y-4">
-        <div className="flex items-center gap-2 text-slate-800 dark:text-white">
-          <div className="w-8 h-8 rounded-lg bg-violet-500/15 text-violet-400 flex items-center justify-center"><FileText size={16} /></div>
+        <div className="flex items-center gap-2 text-dark-text">
+          <div className="w-8 h-8 rounded-lg bg-violet-500/15 text-violet-500 dark:text-violet-400 flex items-center justify-center"><FileText size={16} /></div>
           <div>
             <h3 className="font-bold text-sm">Gerar contrato</h3>
             <p className="text-[11px] text-slate-400">Preencha e gere o link de assinatura</p>
@@ -353,7 +353,7 @@ const ContratoTab: React.FC<{ lead: any }> = ({ lead }) => {
                     <a href={doc.grape_sign_url} target="_blank" rel="noopener noreferrer"
                       className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
                         assinado
-                          ? 'bg-violet-600 text-white hover:bg-violet-500'
+                          ? 'bg-violet-600 text-white hover:bg-violet-700'
                           : 'bg-black/5 dark:bg-white/5 text-slate-400 hover:text-dark-text'}`}>
                       <PenLine size={11} /> {assinado ? 'Sua vez: assinar pela Grape' : 'Assinar pela Grape (após o cliente)'}
                     </a>

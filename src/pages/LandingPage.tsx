@@ -1,452 +1,332 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import React, { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 import {
-  Target, Users, TrendingUp, FileText, BarChart3,
-  Wallet, ArrowRight, Check, Menu, X, LogIn,
+  ArrowRight, LogIn, Menu, X, FolderKanban, Layers, ClipboardCheck, CalendarClock,
+  Palette, GraduationCap, ListTodo, Lock, Megaphone, Users, Sparkles, CheckCircle2,
 } from 'lucide-react';
 import Typewriter from '../components/Typewriter';
 
-// Paleta da landing (auto-contida, independente do tema do app)
-const V = '#7C3AED';       // violeta primário
-const V_LIGHT = '#A855F7'; // accent
-const DARK = '#0A0118';    // fundo escuro
-const DARK_2 = '#14082E';  // card escuro
-const CREAM = '#FAFAF8';   // seção clara
+/**
+ * Página inicial do GrapeHub (refeita em 18/11/2026). O sistema agora é só do time interno —
+ * o cliente final não acessa nada. Foco na operação; nada de financeiro aqui.
+ * Paleta própria (independe do tema do app), no mesmo idioma visual do app: fundo quase preto,
+ * brilhos violeta, painéis de vidro. Original em backup-menu-antes-materna/redesign-crm/.
+ */
 
-const MODULES = [
-  { icon: BarChart3, title: 'Resultados em tempo real', desc: 'Leads, conversões, investimento e custo por lead das suas campanhas — atualizados o tempo todo.' },
-  { icon: FileText, title: 'Relatórios completos', desc: 'Desempenho por campanha e criativo, em relatórios profissionais e sempre à mão, em PDF.' },
-  { icon: Users, title: 'Reuniões & alinhamentos', desc: 'Histórico de reuniões, decisões e próximos passos do seu projeto — tudo registrado.' },
-  { icon: Check, title: 'Prestação de serviço', desc: 'Transparência total: o que já foi entregue, o que está no ar e o que vem a seguir.' },
-];
-
-const FEATURES = [
-  { icon: TrendingUp, title: 'Leads e conversões', desc: 'Acompanhe cada lead que suas campanhas geram, em tempo real.' },
-  { icon: FileText, title: 'Relatórios de campanha', desc: 'Desempenho por campanha e por criativo, em PDF, quando você quiser.' },
-  { icon: Wallet, title: 'Investimento e custo por lead', desc: 'Saiba exatamente pra onde vai a verba e quanto custa cada resultado.' },
-  { icon: Target, title: 'Estratégia do seu nicho', desc: 'Campanhas pensadas pra sua área de atuação e pro público certo.' },
-  { icon: Users, title: 'Reuniões e decisões', desc: 'Alinhamentos, próximos passos e histórico do projeto sempre à vista.' },
-  { icon: Check, title: 'Entregas registradas', desc: 'Tudo que a Grape faz pelo seu escritório, documentado e transparente.' },
-];
+const V = '#7C3AED';
+const V_CLARO = '#A78BFA';
+const FUNDO = '#0A0118';
 
 const NAV = [
-  { label: 'Início', href: '#top' },
-  { label: 'Resultados', href: '#modulos' },
-  { label: 'Transparência', href: '#solucoes' },
+  { label: 'Operação', href: '#operacao' },
+  { label: 'Ferramentas', href: '#ferramentas' },
+  { label: 'Para quem', href: '#funcoes' },
 ];
 
-const Logo = ({ light = false }: { light?: boolean }) => (
+const FERRAMENTAS = [
+  { Icone: FolderKanban, titulo: 'Projetos & Parceiros', texto: 'A carteira de cada gestor num lugar só: produtos, verba, resultado da campanha e a última reunião de cada cliente.' },
+  { Icone: Layers, titulo: 'Playbook de ações', texto: 'As ações que funcionam em cada nicho, quem já roda cada uma e o que dá resultado — para não começar do zero.' },
+  { Icone: ClipboardCheck, titulo: 'Onboarding e checklists', texto: 'Do contrato à campanha no ar: cada etapa com responsável, prazo e o que falta para o cliente começar a rodar.' },
+  { Icone: CalendarClock, titulo: 'Reuniões e 1:1', texto: 'Anotações das reuniões com cliente e dos 1:1 do time, com próximos passos que não se perdem.' },
+  { Icone: Palette, titulo: 'Visual Hub e Estúdio', texto: 'Pedidos de criativo, aprovação e vídeos com avatar gerados direto da plataforma.' },
+  { Icone: GraduationCap, titulo: 'Central de Treinamentos', texto: 'Cursos e aulas do time, com o progresso de cada pessoa acompanhado pelos gestores.' },
+  { Icone: ListTodo, titulo: 'Tarefas e chamados', texto: 'To do de cada head, chamados internos e ideias de criativo organizados por quadro.' },
+  { Icone: Megaphone, titulo: 'Dashboard Operacional', texto: 'A saúde da carteira dia a dia: projetos com resultado bom, ok e ruim, risco de churn e erros de token.' },
+];
+
+const FUNCOES = [
+  { Icone: Megaphone, titulo: 'Gestores de tráfego', itens: ['Seus projetos e produtos em uma tela', 'Ações do playbook por nicho', 'Alerta de saldo baixo nas contas'] },
+  { Icone: Users, titulo: 'Heads e liderança', itens: ['Evolução da carteira por squad', 'Reuniões e 1:1 com o time', 'Risco de churn antes de virar saída'] },
+  { Icone: Sparkles, titulo: 'Design e vídeo', itens: ['Fila de criativos com prioridade', 'Aprovação sem ida e volta no WhatsApp', 'Vídeos com avatar no Estúdio'] },
+];
+
+// Prévia ilustrativa (números de exemplo, sem cliente real)
+const CARTEIRA = [
+  { rotulo: 'Bom', valor: 41, cor: '#10b981' },
+  { rotulo: 'Ok', valor: 19, cor: '#f59e0b' },
+  { rotulo: 'Ruim', valor: 12, cor: '#f43f5e' },
+];
+const SERIE = [52, 54, 53, 56, 55, 58, 57, 60, 59, 61, 63, 62, 64, 66];
+const ACOES = [
+  { titulo: 'Subir campanha', detalhe: 'Previdenciário · etapa 3 de 5', cor: V_CLARO },
+  { titulo: 'Reunião de alinhamento', detalhe: 'Bancário · hoje, 15h', cor: '#38bdf8' },
+  { titulo: 'Novo criativo aprovado', detalhe: 'Trabalhista · Visual Hub', cor: '#10b981' },
+];
+
+const surgir = {
+  initial: { opacity: 0, y: 18 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true, margin: '-60px' },
+  transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] as any },
+};
+
+const Logo = () => (
   <a href="#top" className="flex items-center gap-2.5 shrink-0">
-    <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden" style={{ background: V }}>
-      <img src="logobranca.png" alt="GrapeHub" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
+    <div className="w-9 h-9 rounded-[12px] flex items-center justify-center p-1.5 shadow-lg" style={{ background: 'linear-gradient(135deg,#a78bfa,#6d28d9)', boxShadow: '0 8px 20px -8px rgba(124,58,237,.7)' }}>
+      <img src="logobranca.png" alt="GrapeHub" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
     </div>
     <div className="flex items-baseline">
-      <span className="font-bold text-xl tracking-tight" style={{ color: light ? '#fff' : V }}>Grape</span>
-      <span className="font-light text-xl" style={{ color: light ? 'rgba(255,255,255,0.7)' : '#94a3b8' }}>Hub</span>
+      <span className="font-semibold text-[19px] tracking-tight text-white">Grape</span>
+      <span className="font-light text-[19px]" style={{ color: '#c4b5fd' }}>Hub</span>
     </div>
   </a>
 );
 
-// Rótulo estilo "// comentário" (igual à referência)
-const Kicker = ({ children, onDark = false }: { children: React.ReactNode; onDark?: boolean }) => (
-  <span className="inline-block text-[11px] font-mono font-medium tracking-wide mb-4" style={{ color: onDark ? V_LIGHT : V }}>
-    {`// `}{children}
+const Vidro: React.FC<{ className?: string; children: React.ReactNode }> = ({ className = '', children }) => (
+  <div
+    className={`rounded-[22px] ${className}`}
+    style={{
+      background: 'rgba(48,32,78,.38)',
+      border: '1px solid rgba(192,165,222,.14)',
+      boxShadow: '0 1px 0 rgba(255,255,255,.05) inset, 0 30px 60px -40px rgba(0,0,0,.8)',
+    }}
+  >
+    {children}
+  </div>
+);
+
+const Rotulo: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <span className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] mb-4" style={{ color: V_CLARO }}>
+    <span className="w-1.5 h-1.5 rounded-full" style={{ background: V_CLARO }} />
+    {children}
   </span>
 );
 
+/** Mini painel da operação: carteira, evolução e próximas ações. Ilustrativo. */
+function PreviaOperacao() {
+  const total = CARTEIRA.reduce((s, c) => s + c.valor, 0);
+  const max = Math.max(...SERIE), min = Math.min(...SERIE);
+  const pts = SERIE.map((v, i) => `${(i / (SERIE.length - 1)) * 100},${36 - ((v - min) / (max - min || 1)) * 30}`).join(' ');
+  return (
+    <Vidro className="p-5 sm:p-6 w-full">
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <p className="text-[12px] text-slate-400">Dashboard Operacional</p>
+          <p className="text-[15px] font-semibold text-white">Carteira hoje</p>
+        </div>
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full" style={{ background: 'rgba(16,185,129,.12)', color: '#34d399' }}>
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> ao vivo
+        </span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3 mb-5">
+        {CARTEIRA.map(c => (
+          <div key={c.rotulo} className="rounded-2xl px-3 py-3" style={{ background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.06)' }}>
+            <p className="text-[11px] text-slate-400 flex items-center gap-1.5"><i className="w-2 h-2 rounded-full" style={{ background: c.cor }} />{c.rotulo}</p>
+            <p className="text-[22px] text-white mt-1" style={{ fontFamily: '"Azeret Mono", monospace' }}>{c.valor}</p>
+            <p className="text-[10.5px] text-slate-500">{Math.round((c.valor / total) * 100)}% da carteira</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-2xl px-4 pt-3 pb-2 mb-5" style={{ background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' }}>
+        <div className="flex items-baseline justify-between">
+          <p className="text-[11.5px] text-slate-400">Resultado positivo · 14 dias</p>
+          <p className="text-[12px] font-semibold text-emerald-400">+14 p.p.</p>
+        </div>
+        <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="w-full h-16 mt-1">
+          <defs>
+            <linearGradient id="lp-area" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#10b981" stopOpacity=".35" />
+              <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <polygon points={`0,40 ${pts} 100,40`} fill="url(#lp-area)" />
+          <polyline points={pts} fill="none" stroke="#10b981" strokeWidth="1.6" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+        </svg>
+      </div>
+
+      <p className="text-[12px] text-slate-400 mb-2">Próximas ações do time</p>
+      <div className="space-y-1.5">
+        {ACOES.map(a => (
+          <div key={a.titulo} className="flex items-center gap-3 rounded-xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,.03)' }}>
+            <i className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: a.cor, boxShadow: `0 0 0 4px ${a.cor}22` }} />
+            <div className="min-w-0">
+              <p className="text-[13px] font-medium text-white truncate">{a.titulo}</p>
+              <p className="text-[11.5px] text-slate-500 truncate">{a.detalhe}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Vidro>
+  );
+}
+
 export default function LandingPage({ onEnter }: { onEnter: () => void }) {
-  const [scrolled, setScrolled] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [rolou, setRolou] = useState(false);
+  const [menuAberto, setMenuAberto] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 24);
-    window.addEventListener('scroll', onScroll);
-    return () => window.removeEventListener('scroll', onScroll);
+    const aoRolar = () => setRolou(window.scrollY > 12);
+    aoRolar();
+    window.addEventListener('scroll', aoRolar, { passive: true });
+    return () => window.removeEventListener('scroll', aoRolar);
   }, []);
 
-  // Os botões "Entrar" levam para a tela de login antiga (onde o login de fato acontece).
-  const handleLogin = () => { setMobileOpen(false); onEnter(); };
-
-  const LoginBtn = ({ full = false, className = '' }: { full?: boolean; className?: string }) => (
-    <button
-      onClick={handleLogin}
-      className={`inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white transition-all ${full ? 'w-full' : ''} ${className}`}
-      style={{ background: V, boxShadow: `0 8px 24px -8px ${V}` }}
-      onMouseEnter={e => (e.currentTarget.style.background = '#6D28D9')}
-      onMouseLeave={e => (e.currentTarget.style.background = V)}
-    >
-      <LogIn size={16} />
-      Entrar
-    </button>
-  );
+  const entrar = () => { setMenuAberto(false); onEnter(); };
 
   return (
-    <div style={{ background: DARK }} className="min-h-screen text-white antialiased overflow-x-hidden">
-      {/* ── NAV ─────────────────────────────────────────────── */}
-      <header
-        className="fixed top-0 inset-x-0 z-50 transition-all duration-300"
-        style={{
-          background: scrolled ? 'rgba(10,1,24,0.85)' : 'transparent',
-          backdropFilter: scrolled ? 'blur(12px)' : 'none',
-          borderBottom: scrolled ? '1px solid rgba(255,255,255,0.06)' : '1px solid transparent',
-        }}
-      >
-        <div className="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between">
-          <Logo light />
+    <div className="min-h-screen text-white antialiased overflow-x-hidden" style={{ background: FUNDO, fontFamily: 'Inter, system-ui, sans-serif' }}>
+      {/* Brilhos do fundo (mesmo idioma do app) */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden>
+        <div className="absolute rounded-full" style={{ width: 760, height: 760, left: -260, top: -260, background: 'radial-gradient(circle, rgba(124,58,237,.45), transparent 70%)' }} />
+        <div className="absolute rounded-full" style={{ width: 820, height: 820, right: -320, top: '30%', background: 'radial-gradient(circle, rgba(109,40,217,.32), transparent 70%)' }} />
+        <div className="absolute rounded-full" style={{ width: 600, height: 600, left: '30%', bottom: -340, background: 'radial-gradient(circle, rgba(167,139,250,.14), transparent 70%)' }} />
+      </div>
+
+      {/* ── Topo ── */}
+      <header className={`fixed top-0 inset-x-0 z-50 transition-colors duration-300 ${rolou ? 'backdrop-blur-xl' : ''}`} style={{ background: rolou ? 'rgba(10,1,24,.72)' : 'transparent', borderBottom: rolou ? '1px solid rgba(255,255,255,.06)' : '1px solid transparent' }}>
+        <div className="max-w-6xl mx-auto px-5 h-[72px] flex items-center justify-between">
+          <Logo />
           <nav className="hidden md:flex items-center gap-8">
-            {NAV.map(n => (
-              <a key={n.href} href={n.href} className="text-sm text-white/60 hover:text-white transition-colors">{n.label}</a>
-            ))}
+            {NAV.map(n => <a key={n.href} href={n.href} className="text-[14px] text-slate-300 hover:text-white transition-colors">{n.label}</a>)}
           </nav>
-          <div className="hidden md:block"><LoginBtn /></div>
-          <button className="md:hidden text-white/80 p-2" onClick={() => setMobileOpen(o => !o)}>
-            {mobileOpen ? <X size={22} /> : <Menu size={22} />}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={entrar} className="hidden sm:inline-flex items-center gap-2 h-10 px-5 rounded-xl text-[14px] font-semibold text-white transition-transform hover:-translate-y-px" style={{ background: `linear-gradient(180deg, ${V}, #6d28d9)`, boxShadow: '0 1px 0 rgba(255,255,255,.25) inset, 0 12px 24px -12px rgba(124,58,237,.9)' }}>
+              <LogIn size={16} /> Entrar
+            </button>
+            <button onClick={() => setMenuAberto(v => !v)} className="md:hidden p-2 rounded-lg text-slate-300 hover:text-white" aria-label="Menu">
+              {menuAberto ? <X size={22} /> : <Menu size={22} />}
+            </button>
+          </div>
         </div>
-        {mobileOpen && (
-          <div className="md:hidden px-5 pb-4 pt-2 space-y-3" style={{ background: 'rgba(10,1,24,0.95)', backdropFilter: 'blur(12px)' }}>
-            {NAV.map(n => (
-              <a key={n.href} href={n.href} onClick={() => setMobileOpen(false)} className="block text-sm text-white/70 py-1">{n.label}</a>
-            ))}
-            <LoginBtn full />
+        {menuAberto && (
+          <div className="md:hidden px-5 pb-5 space-y-1" style={{ background: 'rgba(10,1,24,.95)' }}>
+            {NAV.map(n => <a key={n.href} href={n.href} onClick={() => setMenuAberto(false)} className="block py-2.5 text-[15px] text-slate-200">{n.label}</a>)}
+            <button onClick={entrar} className="mt-2 w-full h-11 rounded-xl text-[15px] font-semibold text-white" style={{ background: V }}>Entrar</button>
           </div>
         )}
       </header>
 
-      {/* ── HERO ────────────────────────────────────────────── */}
-      <section id="top" className="relative min-h-screen flex flex-col justify-center pt-28 pb-16 px-5">
-        {/* glow */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[900px] h-[600px] rounded-full opacity-30"
-            style={{ background: `radial-gradient(circle, ${V} 0%, transparent 60%)`, filter: 'blur(20px)' }} />
-          <div className="absolute top-20 -right-40 w-[500px] h-[500px] rounded-full opacity-20"
-            style={{ background: `radial-gradient(circle, ${V_LIGHT} 0%, transparent 60%)`, filter: 'blur(30px)' }} />
-        </div>
-
-        <div className="relative max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 lg:gap-10 items-center">
-          {/* ── Coluna esquerda: copy ── */}
-          <div className="text-center lg:text-left">
-            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-              <span className="inline-flex items-center gap-2 text-[11px] font-mono tracking-wide px-3 py-1.5 rounded-full border mb-6"
-                style={{ borderColor: 'rgba(168,85,247,0.3)', color: V_LIGHT, background: 'rgba(124,58,237,0.08)' }}>
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: V_LIGHT }} />
-                Portal do cliente · marketing jurídico
-              </span>
-            </motion.div>
-
-            <motion.h1
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.05 }}
-              className="text-4xl sm:text-5xl md:text-[3.4rem] font-black tracking-tight leading-[1.05]"
-            >
-              Acompanhe os{' '}
-              <span style={{ background: `linear-gradient(90deg, ${V}, ${V_LIGHT})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                resultados
-              </span>{' '}
-              do seu marketing jurídico.
-            </motion.h1>
-
-            <motion.p
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.12 }}
-              className="mt-6 text-base sm:text-lg text-white/60 max-w-lg mx-auto lg:mx-0 leading-relaxed"
-            >
-              Acompanhe, em tempo real e num só lugar,{' '}
-              <Typewriter
-                words={['suas campanhas.', 'seus leads.', 'seus relatórios.', 'suas reuniões.', 'seus resultados.']}
-                color={V_LIGHT}
-              />
-            </motion.p>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.18 }}
-              className="mt-9 flex flex-col sm:flex-row items-center lg:items-start justify-center lg:justify-start gap-3"
-            >
-              <button
-                onClick={handleLogin}
-                className="inline-flex items-center justify-center gap-2 rounded-xl px-7 py-3.5 text-sm font-bold text-white transition-all w-full sm:w-auto"
-                style={{ background: V, boxShadow: `0 12px 32px -8px ${V}` }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#6D28D9')}
-                onMouseLeave={e => (e.currentTarget.style.background = V)}
-              >
-                Acessar meus resultados
-                <ArrowRight size={16} />
+      {/* ── Hero ── */}
+      <section id="top" className="relative pt-32 sm:pt-36 pb-20 px-5">
+        <div className="max-w-6xl mx-auto grid lg:grid-cols-[1.05fr_1fr] gap-12 lg:gap-14 items-center">
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}>
+            <span className="inline-flex items-center gap-2 text-[12px] font-medium px-3 py-1.5 rounded-full mb-6" style={{ background: 'rgba(124,58,237,.14)', border: '1px solid rgba(167,139,250,.25)', color: '#ddd6fe' }}>
+              <Lock size={12} /> Uso interno · time Grape Mídia
+            </span>
+            <h1 className="text-[40px] sm:text-[54px] leading-[1.04] font-black tracking-tight">
+              A operação da Grape,{' '}
+              <span style={{ background: 'linear-gradient(90deg,#c4b5fd,#8b5cf6)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>num lugar só.</span>
+            </h1>
+            <p className="mt-6 text-[17px] sm:text-[18px] leading-relaxed text-slate-300 max-w-xl">
+              Do onboarding do cliente ao resultado da campanha: o time acompanha{' '}
+              <Typewriter words={['os projetos.', 'as ações por nicho.', 'as reuniões.', 'os criativos.', 'o dia a dia do time.']} color="#c4b5fd" className="font-semibold" />
+            </p>
+            <div className="mt-9 flex flex-wrap items-center gap-3">
+              <button onClick={entrar} className="inline-flex items-center gap-2 h-12 px-6 rounded-xl text-[15px] font-semibold text-white transition-transform hover:-translate-y-px" style={{ background: `linear-gradient(180deg, ${V}, #6d28d9)`, boxShadow: '0 1px 0 rgba(255,255,255,.25) inset, 0 16px 32px -14px rgba(124,58,237,.95)' }}>
+                Entrar no GrapeHub <ArrowRight size={17} />
               </button>
-              <a href="#modulos" className="inline-flex items-center justify-center gap-2 rounded-xl px-7 py-3.5 text-sm font-bold text-white/80 border border-white/15 hover:bg-white/5 transition-all w-full sm:w-auto">
-                Ver o que acompanho
+              <a href="#ferramentas" className="inline-flex items-center h-12 px-6 rounded-xl text-[15px] font-semibold text-slate-200 hover:text-white transition-colors" style={{ border: '1px solid rgba(255,255,255,.12)', background: 'rgba(255,255,255,.03)' }}>
+                Ver o que tem dentro
               </a>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 0.28 }}
-              className="mt-10 max-w-lg mx-auto lg:mx-0"
-            >
-              <p className="text-[10px] font-mono uppercase tracking-widest text-white/30 mb-2">seu marketing</p>
-              <div className="flex flex-wrap items-center justify-center lg:justify-start gap-x-4 gap-y-1.5 text-xs font-mono text-white/40">
-                {['leads', 'campanhas', 'relatórios', 'reuniões', 'resultados'].map((t, i) => (
-                  <React.Fragment key={t}>
-                    {i > 0 && <span className="text-white/20">·</span>}
-                    <span>{t}</span>
-                  </React.Fragment>
-                ))}
-              </div>
-            </motion.div>
-          </div>
-
-          {/* ── Coluna direita: janela de navegador com dashboard de campanha ── */}
-          <motion.div
-            initial={{ opacity: 0, y: 30, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.7, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
-            className="relative"
-          >
-            {/* glow atrás da janela */}
-            <div className="absolute -inset-6 rounded-[2rem] opacity-40 pointer-events-none"
-              style={{ background: `radial-gradient(circle at 50% 40%, ${V} 0%, transparent 70%)`, filter: 'blur(40px)' }} />
-
-            <div className="relative rounded-2xl overflow-hidden border border-white/10"
-              style={{ background: '#FAFAF8', boxShadow: '0 40px 90px -25px rgba(0,0,0,0.6)' }}>
-              {/* barra de título estilo macOS */}
-              <div className="flex items-center justify-between px-4 h-11 border-b border-slate-200/80" style={{ background: '#F1F0EC' }}>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-full" style={{ background: '#ff5f57' }} />
-                  <span className="w-3 h-3 rounded-full" style={{ background: '#febc2e' }} />
-                  <span className="w-3 h-3 rounded-full" style={{ background: '#28c840' }} />
-                </div>
-                <span className="text-[11px] font-medium text-slate-500 hidden sm:block">Seus resultados · Meta Ads</span>
-                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-600">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> ao vivo
-                </span>
-              </div>
-
-              {/* corpo com grid de blueprint */}
-              <div className="relative p-5"
-                style={{ backgroundImage: 'linear-gradient(rgba(0,0,0,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.035) 1px, transparent 1px)', backgroundSize: '26px 26px' }}>
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Conversões · últimos 14 dias</p>
-                    <p className="text-2xl font-black text-slate-900 mt-0.5">342 <span className="text-emerald-600 text-sm font-bold align-middle">+18%</span></p>
-                  </div>
-                  <span className="text-[10px] font-bold px-2 py-1 rounded-md" style={{ background: 'rgba(124,58,237,0.1)', color: V }}>ROAS 4,2×</span>
-                </div>
-
-                {/* gráfico de barras animado */}
-                <div className="flex items-end justify-between gap-1.5 h-36">
-                  {[35, 48, 40, 58, 52, 66, 60, 74, 68, 82, 78, 90, 86, 100].map((h, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ height: '0%' }} animate={{ height: `${h}%` }}
-                      transition={{ duration: 0.7, delay: 0.55 + i * 0.045, ease: [0.22, 1, 0.36, 1] }}
-                      className="flex-1 rounded-t-[3px]"
-                      style={{ background: `linear-gradient(180deg, ${V_LIGHT} 0%, ${V} 100%)`, minWidth: 6 }}
-                    />
-                  ))}
-                </div>
-
-                {/* badge flutuante topo-esquerda */}
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: [0, -5, 0] }}
-                  transition={{ opacity: { delay: 1.1, duration: 0.4 }, y: { delay: 1.1, duration: 3.5, repeat: Infinity, ease: 'easeInOut' } }}
-                  className="absolute top-16 left-5 bg-white rounded-xl shadow-lg border border-slate-100 px-3 py-2"
-                >
-                  <p className="text-[8px] font-bold uppercase tracking-widest text-slate-400">campanha</p>
-                  <p className="text-[11px] font-bold text-slate-800">em veiculação</p>
-                </motion.div>
-
-                {/* badge flutuante baixo-direita */}
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: [0, -6, 0] }}
-                  transition={{ opacity: { delay: 1.3, duration: 0.4 }, y: { delay: 1.3, duration: 4, repeat: Infinity, ease: 'easeInOut' } }}
-                  className="absolute -bottom-1 right-4 bg-white rounded-xl shadow-lg border border-slate-100 px-3 py-2 flex items-center gap-2"
-                >
-                  <span className="w-5 h-5 rounded-full flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.12)', color: '#10b981' }}>
-                    <Check size={12} strokeWidth={3} />
-                  </span>
-                  <p className="text-[11px] font-bold text-slate-800">+128 leads hoje</p>
-                </motion.div>
-              </div>
-
-              {/* cards de métrica */}
-              <div className="grid grid-cols-3 border-t border-slate-200/80" style={{ background: '#fff' }}>
-                {[
-                  { label: 'Investimento', value: 'R$ 4,2k', sub: 'no ritmo', color: V },
-                  { label: 'CPL', value: 'R$ 12,40', sub: 'abaixo da meta', color: '#10b981' },
-                  { label: 'Conversões', value: '342', sub: '+18%', color: '#10b981' },
-                ].map((s, i) => (
-                  <div key={s.label} className={`px-4 py-3.5 ${i < 2 ? 'border-r border-slate-200/80' : ''}`}>
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1">
-                      <TrendingUp size={9} /> {s.label}
-                    </p>
-                    <p className="text-base font-black text-slate-900 mt-1">{s.value}</p>
-                    <p className="text-[10px] font-bold mt-0.5" style={{ color: s.color }}>{s.sub}</p>
-                  </div>
-                ))}
-              </div>
             </div>
+            <p className="mt-6 text-[13px] text-slate-500">Acesso com a sua conta Google da Grape.</p>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 24, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.7, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}>
+            <PreviaOperacao />
           </motion.div>
         </div>
       </section>
 
-      {/* ── MÓDULOS (seção clara) ───────────────────────────── */}
-      <section id="modulos" style={{ background: CREAM, color: '#0a0a0a' }} className="py-24 px-5">
-        <div className="max-w-6xl mx-auto">
-          <div className="max-w-2xl">
-            <Kicker>o que você acompanha</Kicker>
-            <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900">
-              Tudo do seu marketing, num só lugar
-            </h2>
-            <p className="mt-4 text-slate-500 text-base leading-relaxed">
-              Do primeiro clique ao contrato assinado — você acompanha cada etapa do seu marketing jurídico, com total transparência.
-            </p>
-          </div>
-
-          <div className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-5">
-            {MODULES.map((m, i) => {
-              const Icon = m.icon;
-              return (
-                <motion.div
-                  key={m.title}
-                  initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }}
-                  transition={{ duration: 0.4, delay: i * 0.06 }}
-                  className="group rounded-2xl border border-slate-200 bg-white p-7 hover:border-violet-300 hover:shadow-lg hover:shadow-violet-500/5 transition-all"
-                >
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-5"
-                    style={{ background: 'rgba(124,58,237,0.1)', color: V }}>
-                    <Icon size={22} />
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-900">{m.title}</h3>
-                  <p className="mt-2 text-sm text-slate-500 leading-relaxed">{m.desc}</p>
-                </motion.div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ── FEATURES (seção escura) ─────────────────────────── */}
-      <section className="py-24 px-5" style={{ background: DARK }}>
-        <div className="max-w-6xl mx-auto">
-          <div className="max-w-2xl">
-            <Kicker onDark>transparência de ponta a ponta</Kicker>
-            <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-white">
-              Você vê exatamente o que acontece
-            </h2>
-            <p className="mt-4 text-white/50 text-base leading-relaxed">
-              Nada de caixa-preta. Cada lead, cada real investido e cada entrega ficam registrados e acessíveis pra você, quando quiser.
-            </p>
-          </div>
-
-          <div className="mt-12 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {FEATURES.map((f, i) => {
-              const Icon = f.icon;
-              return (
-                <motion.div
-                  key={f.title}
-                  initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }}
-                  transition={{ duration: 0.4, delay: (i % 3) * 0.06 }}
-                  className="rounded-2xl p-6 transition-colors"
-                  style={{ background: DARK_2, border: '1px solid rgba(255,255,255,0.12)' }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(168,85,247,0.45)')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)')}
-                >
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-4"
-                    style={{ background: 'rgba(124,58,237,0.15)', color: V_LIGHT }}>
-                    <Icon size={18} />
-                  </div>
-                  <h3 className="text-base font-bold text-white">{f.title}</h3>
-                  <p className="mt-1.5 text-sm text-white/50 leading-relaxed">{f.desc}</p>
-                </motion.div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ── SOLUÇÕES / MODELO (seção clara) ─────────────────── */}
-      <section id="solucoes" style={{ background: CREAM, color: '#0a0a0a' }} className="py-24 px-5">
-        <div className="max-w-6xl mx-auto">
-          <div className="max-w-2xl">
-            <Kicker>feito pra você acompanhar</Kicker>
-            <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900">
-              Seu resultado, com total transparência
-            </h2>
-          </div>
-
-          <div className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-5">
+      {/* ── Operação em números (o que o sistema organiza) ── */}
+      <section id="operacao" className="relative px-5 pb-8">
+        <motion.div {...surgir} className="max-w-6xl mx-auto">
+          <Vidro className="grid grid-cols-2 md:grid-cols-4 divide-x divide-white/5">
             {[
-              {
-                tag: 'Na palma da mão',
-                title: 'Tudo atualizado sozinho',
-                desc: 'Campanhas, leads e relatórios do seu escritório sempre atualizados — sem precisar pedir, a qualquer hora.',
-                items: ['Resultados em tempo real', 'Relatórios quando você quiser', 'Histórico de reuniões e entregas'],
-              },
-              {
-                tag: 'Marketing jurídico de verdade',
-                title: 'Feito pro seu mercado',
-                desc: 'Estratégia, tráfego e criativos pensados pra escritórios de advocacia — com quem entende do seu público.',
-                items: ['Campanhas por área de atuação', 'Criativos alinhados ao seu nicho', 'Time especialista no jurídico'],
-              },
-            ].map((c, i) => (
-              <motion.div
-                key={c.title}
-                initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }}
-                transition={{ duration: 0.4, delay: i * 0.08 }}
-                className="rounded-2xl border border-slate-200 bg-white p-8"
-              >
-                <span className="text-[11px] font-mono font-medium" style={{ color: V }}>{c.tag}</span>
-                <h3 className="mt-2 text-2xl font-black text-slate-900">{c.title}</h3>
-                <p className="mt-3 text-sm text-slate-500 leading-relaxed">{c.desc}</p>
-                <ul className="mt-6 space-y-2.5">
-                  {c.items.map(it => (
-                    <li key={it} className="flex items-center gap-2.5 text-sm text-slate-700">
-                      <span className="w-5 h-5 rounded-full flex items-center justify-center shrink-0" style={{ background: 'rgba(124,58,237,0.1)', color: V }}>
-                        <Check size={12} strokeWidth={3} />
-                      </span>
-                      {it}
-                    </li>
-                  ))}
-                </ul>
+              ['Carteira', 'por gestor e squad'],
+              ['Playbook', 'ações por nicho'],
+              ['Reuniões', 'com cliente e 1:1'],
+              ['Criativos', 'do pedido ao ar'],
+            ].map(([t, s]) => (
+              <div key={t} className="px-6 py-6">
+                <p className="text-[18px] font-semibold text-white">{t}</p>
+                <p className="text-[13px] text-slate-400 mt-0.5">{s}</p>
+              </div>
+            ))}
+          </Vidro>
+        </motion.div>
+      </section>
+
+      {/* ── Ferramentas ── */}
+      <section id="ferramentas" className="relative py-24 px-5">
+        <div className="max-w-6xl mx-auto">
+          <motion.div {...surgir} className="max-w-2xl mb-12">
+            <Rotulo>Ferramentas do time</Rotulo>
+            <h2 className="text-[32px] sm:text-[40px] font-black tracking-tight leading-tight">Tudo que a operação usa no dia, sem planilha paralela.</h2>
+            <p className="mt-4 text-[16px] text-slate-400 leading-relaxed">Cada área do time trabalha na mesma base — o que um registra, o outro já enxerga.</p>
+          </motion.div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {FERRAMENTAS.map((f, i) => (
+              <motion.div key={f.titulo} {...surgir} transition={{ ...surgir.transition, delay: Math.min(i, 7) * 0.05 }}>
+                <Vidro className="h-full p-5 transition-transform duration-300 hover:-translate-y-1">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-4" style={{ background: 'rgba(124,58,237,.18)', color: '#c4b5fd' }}>
+                    <f.Icone size={19} />
+                  </div>
+                  <h3 className="text-[15.5px] font-semibold text-white">{f.titulo}</h3>
+                  <p className="mt-2 text-[13.5px] leading-relaxed text-slate-400">{f.texto}</p>
+                </Vidro>
               </motion.div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── CTA FINAL ───────────────────────────────────────── */}
-      <section className="relative py-28 px-5 overflow-hidden" style={{ background: DARK }}>
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full opacity-25"
-            style={{ background: `radial-gradient(circle, ${V} 0%, transparent 60%)`, filter: 'blur(24px)' }} />
-        </div>
-        <div className="relative max-w-3xl mx-auto text-center">
-          <Kicker onDark>seu resultado te espera</Kicker>
-          <h2 className="text-4xl sm:text-5xl font-black tracking-tight text-white leading-tight">
-            Acompanhe o seu resultado<br />agora mesmo.
-          </h2>
-          <p className="mt-5 text-white/55 text-base max-w-xl mx-auto">
-            Entre no portal e veja em tempo real o que a Grape está fazendo pelo seu escritório — leads, campanhas e relatórios esperando por você.
-          </p>
-          <div className="mt-9">
-            <button
-              onClick={handleLogin}
-              className="inline-flex items-center justify-center gap-2 rounded-xl px-8 py-4 text-sm font-bold text-white transition-all"
-              style={{ background: V, boxShadow: `0 16px 40px -10px ${V}` }}
-              onMouseEnter={e => (e.currentTarget.style.background = '#6D28D9')}
-              onMouseLeave={e => (e.currentTarget.style.background = V)}
-            >
-              <LogIn size={16} />
-              Acessar meus resultados
-            </button>
+      {/* ── Para cada função ── */}
+      <section id="funcoes" className="relative py-20 px-5">
+        <div className="max-w-6xl mx-auto">
+          <motion.div {...surgir} className="max-w-2xl mb-12">
+            <Rotulo>Para cada função</Rotulo>
+            <h2 className="text-[32px] sm:text-[40px] font-black tracking-tight leading-tight">Cada pessoa vê o que importa para o trabalho dela.</h2>
+          </motion.div>
+          <div className="grid md:grid-cols-3 gap-4">
+            {FUNCOES.map((f, i) => (
+              <motion.div key={f.titulo} {...surgir} transition={{ ...surgir.transition, delay: i * 0.06 }}>
+                <Vidro className="h-full p-6">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,.18)', color: '#c4b5fd' }}>
+                      <f.Icone size={19} />
+                    </div>
+                    <h3 className="text-[17px] font-semibold text-white">{f.titulo}</h3>
+                  </div>
+                  <ul className="space-y-3">
+                    {f.itens.map(it => (
+                      <li key={it} className="flex items-start gap-2.5 text-[14px] text-slate-300">
+                        <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-400" /> {it}
+                      </li>
+                    ))}
+                  </ul>
+                </Vidro>
+              </motion.div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* ── FOOTER ──────────────────────────────────────────── */}
-      <footer className="px-5 py-10" style={{ background: DARK }}>
-        <div className="max-w-6xl mx-auto">
-          <div className="h-px w-full mb-8" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.09), transparent)' }} />
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <Logo light />
-            <p className="text-xs text-white/30 font-mono">leads · campanhas · relatórios · reuniões · resultados</p>
-            <p className="text-xs text-white/30">© {new Date().getFullYear()} Grape Mídia</p>
-          </div>
+      {/* ── Acesso ── */}
+      <section className="relative py-24 px-5">
+        <motion.div {...surgir} className="max-w-4xl mx-auto">
+          <Vidro className="relative overflow-hidden px-8 py-14 sm:px-14 text-center">
+            <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[520px] h-[520px] rounded-full" style={{ background: 'radial-gradient(circle, rgba(124,58,237,.35), transparent 70%)' }} aria-hidden />
+            <div className="relative">
+              <div className="mx-auto w-12 h-12 rounded-2xl flex items-center justify-center mb-5" style={{ background: 'rgba(124,58,237,.2)', color: '#ddd6fe' }}>
+                <Lock size={20} />
+              </div>
+              <h2 className="text-[28px] sm:text-[36px] font-black tracking-tight">Acesso restrito ao time da Grape.</h2>
+              <p className="mt-3 text-[16px] text-slate-400 max-w-lg mx-auto">Entre com o seu e-mail @grapemidia. As páginas que você vê dependem da sua função.</p>
+              <button onClick={entrar} className="mt-8 inline-flex items-center gap-2 h-12 px-7 rounded-xl text-[15px] font-semibold text-white transition-transform hover:-translate-y-px" style={{ background: `linear-gradient(180deg, ${V}, #6d28d9)`, boxShadow: '0 1px 0 rgba(255,255,255,.25) inset, 0 16px 32px -14px rgba(124,58,237,.95)' }}>
+                <LogIn size={17} /> Entrar no GrapeHub
+              </button>
+            </div>
+          </Vidro>
+        </motion.div>
+      </section>
+
+      <footer className="relative px-5 pb-10">
+        <div className="max-w-6xl mx-auto pt-8 flex flex-col sm:flex-row items-center justify-between gap-3" style={{ borderTop: '1px solid rgba(255,255,255,.06)' }}>
+          <Logo />
+          <p className="text-[12.5px] text-slate-500">© {new Date().getFullYear()} Grape Mídia · sistema de uso interno</p>
         </div>
       </footer>
     </div>

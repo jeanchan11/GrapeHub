@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 import { toast } from '@/src/lib/toast';
+import { Modal } from '../components/ui/Modal';
+import { Abas } from '../components/ui/Abas';
+import { CarregandoBloco } from '../components/LoadingSpinner';
 import {
   X, Plus, Trash2, Wand2, Mic, UserSquare2, Gauge, Loader2, Check, Play, Pause, ImagePlus,
   Waves, Upload,
@@ -308,35 +311,27 @@ const EstudioConfig: React.FC<{ onFechar: () => void; veGastos?: boolean }> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onFechar}>
-      <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-4xl bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl flex flex-col max-h-[92vh]"
-        onClick={e => e.stopPropagation()}>
+    // Formulário com "Salvar": clique fora perderia o que foi editado (Esc e o X continuam fechando).
+    <Modal isOpen onClose={onFechar} semCabecalho semPadding maxWidth="max-w-4xl" className="max-h-[92vh]" fecharAoClicarFora={false}>
 
         <div className="p-5 border-b border-black/10 dark:border-white/10 flex items-center justify-between gap-4">
           <div>
             <h3 className="text-lg font-black text-dark-text">Configurações do Estúdio</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Visível apenas para o super admin.</p>
+            <p className="text-xs text-slate-500 mt-0.5">Visível para o superadmin e a diretoria operacional.</p>
           </div>
           <button onClick={onFechar} className="text-slate-400 hover:text-dark-text shrink-0"><X size={18} /></button>
         </div>
 
-        <div className="px-5 pt-4 flex items-center gap-1 flex-wrap border-b border-black/10 dark:border-white/10">
-          {ABAS.filter(a => veGastos || a.id !== 'limites').map(a => {
-            const Icone = a.icone;
-            return (
-              <button key={a.id} onClick={() => setAba(a.id)}
-                className={`flex items-center gap-2 px-3 py-2 text-xs font-bold border-b-2 transition-colors ${
-                  aba === a.id ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-dark-text'}`}>
-                <Icone size={13} /> {a.label}
-              </button>
-            );
-          })}
-        </div>
+        <Abas
+          className="px-5 pt-3"
+          abas={ABAS.filter(a => veGastos || a.id !== 'limites').map(a => ({ id: a.id as Aba, rotulo: a.label, Icone: a.icone }))}
+          ativa={aba}
+          onChange={id => setAba(id as Aba)}
+        />
 
         <div className="p-6 overflow-y-auto flex-1 space-y-4">
           {carregando && (
-            <div className="py-16 flex justify-center"><Loader2 size={22} className="animate-spin text-violet-400" /></div>
+            <CarregandoBloco />
           )}
           {!carregando && (<>
 
@@ -421,7 +416,7 @@ const EstudioConfig: React.FC<{ onFechar: () => void; veGastos?: boolean }> = ({
                     </div>
                     {v.cliente && <span className="text-[10px] text-amber-400 whitespace-nowrap">de um cliente</span>}
                     <button onClick={() => setVozes(p => p.map((x, j) => j === i ? { ...x, ativa: !x.ativa } : x))}
-                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold whitespace-nowrap ${v.ativa ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white/5 text-slate-500'}`}>
+                      className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold whitespace-nowrap ${v.ativa ? 'bg-emerald-500/15 text-emerald-400' : 'bg-black/[0.03] dark:bg-white/5 text-slate-500'}`}>
                       {v.ativa ? 'Ativa' : 'Inativa'}
                     </button>
                     <button onClick={() => setVozes(p => p.filter((_, j) => j !== i))}
@@ -735,12 +730,11 @@ const EstudioConfig: React.FC<{ onFechar: () => void; veGastos?: boolean }> = ({
         <div className="p-5 border-t border-black/10 dark:border-white/10 flex items-center justify-end gap-3">
           <button onClick={onFechar} className="px-4 py-2.5 rounded-xl text-sm font-bold text-slate-400 hover:text-dark-text">Fechar</button>
           <button onClick={salvar} disabled={salvando}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm font-bold transition-colors">
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-bold transition-colors">
             {salvando ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} Salvar
           </button>
         </div>
-      </motion.div>
-    </div>
+    </Modal>
   );
 };
 

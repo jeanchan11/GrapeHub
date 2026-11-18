@@ -8,6 +8,9 @@ import {
 import { toast } from '@/src/lib/toast';
 import MetaAdsReport, { exportMetaReportPdf } from './MetaAdsReport';
 import ThemedDropdown from './ui/ThemedDropdown';
+import { createPortal } from 'react-dom';
+import { Modal } from './ui/Modal';
+import { CarregandoBloco } from './LoadingSpinner';
 
 // ── Helpers (same as MarketingDashboard) ──────────────────────────────────
 function fmtCurrency(val: number | string | null | undefined) {
@@ -502,11 +505,10 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-
-      {/* Documento de relatório (renderizado fora da tela, rasterizado no export) */}
-      {data?.kpis && (
+    <>
+      {/* Documento de relatório (renderizado fora da tela, rasterizado no export).
+          Portal no body: fora do popup, sem transform/overflow de ancestral no caminho. */}
+      {data?.kpis && createPortal(
         <MetaAdsReport
           ref={reportRef}
           data={{
@@ -515,16 +517,18 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
             creatives: creatives.map(c => ({ ...c, thumbnail_url: thumbData[c.ad_id] || null })),
             regions: regions || [],
           }}
-        />
+        />,
+        document.body,
       )}
 
+      {/* Clique fora fecha, como antes */}
+      <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-[1200px]">
       <div
         ref={contentRef}
-        className="relative bg-dark-bg rounded-2xl border border-black/10 dark:border-white/10 shadow-2xl w-[1200px] max-w-[96vw] max-h-[92vh] overflow-y-auto"
-        onClick={e => e.stopPropagation()}
+        className="relative w-full max-h-[92vh] overflow-y-auto"
       >
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-dark-bg/95 backdrop-blur-sm border-b border-black/10 dark:border-white/5 px-6 py-4 flex items-center justify-between">
+        <div className="sticky top-0 z-10 bg-dark-card/95 backdrop-blur-sm border-b border-black/10 dark:border-white/5 px-6 py-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-black text-dark-text">
               {partnerName} — <span className="text-violet-400">Meta Ads</span>
@@ -570,17 +574,14 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
         <div className="p-6 space-y-5">
           {/* Loading */}
           {loading && (
-            <div className="flex flex-col items-center justify-center py-20 gap-3">
-              <Loader2 size={32} className="text-violet-500 animate-spin" />
-              <p className="text-sm text-slate-500">Carregando dados...</p>
-            </div>
+            <CarregandoBloco className="py-20" />
           )}
 
           {/* Error */}
           {!loading && error && (
             <div className="flex flex-col items-center justify-center py-20 gap-3">
-              <AlertCircle size={32} className="text-red-400" />
-              <p className="text-sm text-red-400">{error}</p>
+              <AlertCircle size={32} className="text-rose-400" />
+              <p className="text-sm text-rose-400">{error}</p>
             </div>
           )}
 
@@ -589,7 +590,7 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
             <div className="flex flex-col items-center justify-center py-20 gap-3">
               <AlertCircle size={32} className="text-amber-400" />
               <p className="text-sm text-slate-400">Sem conta Meta Ads conectada para este parceiro.</p>
-              <p className="text-xs text-slate-600">Vincule um token Meta Ads na aba Tokens do projeto.</p>
+              <p className="text-xs text-slate-500">Vincule um token Meta Ads na aba Tokens do projeto.</p>
             </div>
           )}
 
@@ -605,33 +606,33 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
                   value={fmtCurrency(kpis.spend)}
                 />
                 <KpiCard
-                  icon={<MousePointerClick size={16} className="text-orange-400" />}
-                  iconBg="bg-orange-500/15"
+                  icon={<MousePointerClick size={16} className="text-violet-400" />}
+                  iconBg="bg-violet-500/15"
                   label="Cliques"
                   value={fmtInt(kpis.clicks)}
                 />
                 <KpiCard
-                  icon={<Eye size={16} className="text-cyan-400" />}
-                  iconBg="bg-cyan-500/15"
+                  icon={<Eye size={16} className="text-violet-400" />}
+                  iconBg="bg-violet-500/15"
                   label="Impressões"
                   value={fmtInt(kpis.impressions)}
                 />
                 <KpiCard
-                  icon={<Megaphone size={16} className="text-amber-400" />}
-                  iconBg="bg-amber-500/15"
+                  icon={<Megaphone size={16} className="text-violet-400" />}
+                  iconBg="bg-violet-500/15"
                   label="CTR"
                   value={fmtPct(kpis.ctr)}
                 />
                 <KpiCard
-                  icon={isPM ? <MessageCircle size={16} className="text-emerald-400" /> : <Users size={16} className="text-emerald-400" />}
-                  iconBg="bg-emerald-500/15"
+                  icon={isPM ? <MessageCircle size={16} className="text-violet-400" /> : <Users size={16} className="text-violet-400" />}
+                  iconBg="bg-violet-500/15"
                   label={isPM ? 'Mensagens' : 'Leads'}
                   value={fmtInt(isPM ? kpis.messages : kpis.leads)}
                   sub={isPM ? <>Leads: <b className="text-slate-600 dark:text-slate-300">{fmtInt(kpis.leads)}</b></> : kpis.messages > 0 ? <>Mensagens: <b className="text-slate-600 dark:text-slate-300">{fmtInt(kpis.messages)}</b></> : undefined}
                 />
                 <KpiCard
-                  icon={<DollarSign size={16} className="text-pink-400" />}
-                  iconBg="bg-pink-500/15"
+                  icon={<DollarSign size={16} className="text-violet-400" />}
+                  iconBg="bg-violet-500/15"
                   label={isPM ? 'Custo/Msg' : 'Custo/Lead'}
                   value={kpis.cost_per_result != null ? fmtCurrency(kpis.cost_per_result) : '—'}
                 />
@@ -925,6 +926,7 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
           )}
         </div>
       </div>
-    </div>
+      </Modal>
+    </>
   );
 }

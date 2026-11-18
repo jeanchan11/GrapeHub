@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
+import { Modal } from './ui/Modal';
+import { EstadoVazio } from './ui/EstadoVazio';
+import { CarregandoBloco } from './LoadingSpinner';
 import { X, Check, Loader2, Search, ArrowDownLeft, ArrowUpRight, Pencil } from 'lucide-react';
 import { SeletorCategoria, usePlanoDeContas, Folha } from './SeletorCategoriaDRE';
 import { toast } from '@/src/lib/toast';
@@ -144,12 +147,7 @@ const ModalConciliacao: React.FC<{
   const { folhas, carregando } = usePlanoDeContas();
   const [busca, setBusca] = useState('');
 
-  // Fecha no Esc — o modal cobre a tela inteira e não pode prender a pessoa.
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onFechar(); };
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  }, [onFechar]);
+  // Esc e clique fora: o Modal padrão (ui/Modal) já fecha pelos dois.
 
   const visiveis = useMemo(() => {
     const t = busca.trim().toLowerCase();
@@ -185,14 +183,8 @@ const ModalConciliacao: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 z-[9990] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onFechar}>
-      <motion.div
-        initial={{ opacity: 0, scale: 0.97 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-5xl bg-dark-bg border border-black/10 dark:border-white/10 rounded-3xl flex flex-col max-h-[90vh]"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="p-5 border-b border-black/10 dark:border-white/10 flex items-start justify-between gap-4">
+    <Modal isOpen onClose={onFechar} semCabecalho semPadding maxWidth="max-w-5xl" className="max-h-[90vh]">
+        <div className="p-5 border-b border-black/10 dark:border-white/10 flex items-start justify-between gap-4 shrink-0">
           <div>
             <h3 className="text-lg font-black text-dark-text">Conciliar lançamentos</h3>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -213,13 +205,13 @@ const ModalConciliacao: React.FC<{
                 />
               </div>
             )}
-            <button onClick={onFechar} className="text-slate-400 hover:text-dark-text"><X size={18} /></button>
+            <button onClick={onFechar} aria-label="Fechar" className="p-2 rounded-lg text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors"><X size={18} /></button>
           </div>
         </div>
 
-        <div className="p-5 overflow-y-auto">
+        <div className="p-5 overflow-y-auto flex-1 min-h-0">
           {carregando ? (
-            <div className="py-16 flex justify-center"><Loader2 size={22} className="animate-spin text-violet-500" /></div>
+            <CarregandoBloco />
           ) : itens.length === 0 ? (
             <div className="py-16 text-center">
               <Check size={32} className="mx-auto text-emerald-500 mb-3" />
@@ -227,7 +219,7 @@ const ModalConciliacao: React.FC<{
               <p className="text-xs text-slate-500 mt-1">Todo lançamento do período tem categoria e entra no DFC.</p>
             </div>
           ) : visiveis.length === 0 ? (
-            <p className="py-12 text-center text-sm text-slate-500">Nenhum lançamento com "{busca}".</p>
+            <EstadoVazio Icone={Search} titulo={`Nenhum lançamento com "${busca}".`} />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
               <AnimatePresence mode="popLayout">
@@ -238,8 +230,7 @@ const ModalConciliacao: React.FC<{
             </div>
           )}
         </div>
-      </motion.div>
-    </div>
+    </Modal>
   );
 };
 

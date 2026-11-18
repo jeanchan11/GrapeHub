@@ -18,6 +18,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { Save, Loader2 } from 'lucide-react';
 import { toast } from '@/src/lib/toast';
+import { CarregandoBloco } from './LoadingSpinner';
 
 interface Collaborator {
   id: number;
@@ -31,7 +32,7 @@ interface Collaborator {
 const CustomNode = ({ data }: { data: any }) => {
   return (
     <div 
-      className="px-4 py-3 shadow-xl rounded-2xl bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 min-w-[220px]"
+      className="px-4 py-3 shadow-sm rounded-2xl bg-dark-card border border-black/10 dark:border-white/10 min-w-[220px]"
       style={{
         backgroundColor: data.group_color ? `${data.group_color}15` : undefined,
         borderColor: data.group_color ? `${data.group_color}30` : undefined,
@@ -47,7 +48,7 @@ const CustomNode = ({ data }: { data: any }) => {
           )}
         </div>
         <div>
-          <div className="text-sm font-bold text-slate-800 dark:text-white leading-tight">{data.name}</div>
+          <div className="text-sm font-bold text-dark-text leading-tight">{data.name}</div>
           <div className="text-[10px] font-medium text-violet-600 dark:text-violet-400 mt-0.5">{data.role || 'Sem cargo'}</div>
           {data.group_name && (
             <div 
@@ -157,11 +158,11 @@ export default function Organograma({ collaborators, settings = [] }: { collabor
   };
 
   if (loading) {
-    return <div className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-violet-500" size={32} /></div>;
+    return <CarregandoBloco />;
   }
 
   return (
-    <div className="h-[calc(100vh-200px)] w-full rounded-3xl overflow-hidden border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-slate-950/50">
+    <div className="h-[calc(100vh-200px)] w-full rounded-2xl overflow-hidden border border-black/10 dark:border-white/10 bg-dark-card shadow-sm">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -185,7 +186,7 @@ export default function Organograma({ collaborators, settings = [] }: { collabor
           <button
             onClick={saveChart}
             disabled={saving}
-            className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-violet-500/20 transition-all disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-bold transition-colors disabled:opacity-50"
           >
             {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
             Salvar Layout

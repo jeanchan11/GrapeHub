@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
+import { CarregandoBloco } from '../components/LoadingSpinner';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
 import { Plus, ChevronDown, ChevronUp, Trash2, Save, X, Edit2, Calendar, Clock, CheckSquare, FileText, Users, Loader2, Paperclip, ImageIcon, Check, Star } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
-import LoadingSpinner from '../components/LoadingSpinner';
 import { confirmDialog } from '@/src/lib/confirm';
 
 interface Session {
@@ -143,17 +144,17 @@ export default function DiferenciaisPage({ activePage, pageLabel }: { activePage
   return (
     <div className="p-8 max-w-5xl mx-auto">
       {/* Header */}
-      <div className="flex items-start justify-between mb-8">
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
         <div>
       {(() => {
             const label = pageLabel || 'Diferenciais Grape';
             const words = label.split(' ');
             const last = words.pop() || '';
             const first = words.length > 0 ? words.join(' ') + ' ' : '';
-            return <SplitHeadline text={first} highlight={last} className="text-4xl font-black text-gray-900 dark:text-white tracking-tight mb-1" subtitle="Feedbacks dos clientes sobre diferenciais" />;
+            return <SplitHeadline text={first} highlight={last} subtitle="Feedbacks dos clientes sobre diferenciais" />;
           })()}
         </div>
-        <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-xl font-bold text-sm transition-colors shadow-lg shadow-violet-500/20">
+        <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold text-sm transition-colors">
           <Plus size={16} /> Novo Registro
         </button>
       </div>
@@ -163,19 +164,19 @@ export default function DiferenciaisPage({ activePage, pageLabel }: { activePage
       {showNew && (
         <div className="bg-white dark:bg-dark-card border border-violet-500/30 rounded-2xl p-6 mb-6 shadow-lg">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-gray-900 dark:text-white">Novo Registro de Feedback</h3>
+            <h3 className="font-bold text-dark-text">Novo Registro de Feedback</h3>
             <button onClick={() => setShowNew(false)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="text-xs text-gray-500 font-medium mb-1 block">Título *</label>
               <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Ex: Março/26"
-                className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
+                className="w-full bg-gray-50 dark:bg-white/[0.03] border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text outline-none focus:border-violet-500/50" />
             </div>
             <div>
               <label className="text-xs text-gray-500 font-medium mb-1 block">Data</label>
               <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
-                className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
+                className="w-full bg-gray-50 dark:bg-white/[0.03] border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text outline-none focus:border-violet-500/50" />
             </div>
           </div>
           <div className="mb-4 relative">
@@ -188,7 +189,7 @@ export default function DiferenciaisPage({ activePage, pageLabel }: { activePage
                   onBlur={() => setTimeout(() => setShowUserDropdown(false), 200)}
                   onKeyDown={e => { if (e.key === 'Enter' && newAttendee.trim()) { const val = newAttendee.trim(); setNewAttendees(p => p.includes(val) ? p : [...p, val]); setNewAttendee(''); setShowUserDropdown(false); }}}
                   placeholder="Nome + Enter ou selecione na lista"
-                  className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
+                  className="w-full bg-gray-50 dark:bg-white/[0.03] border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text outline-none focus:border-violet-500/50" />
                 
                 {showUserDropdown && systemUsers.length > 0 && (
                   <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl shadow-xl">
@@ -200,7 +201,7 @@ export default function DiferenciaisPage({ activePage, pageLabel }: { activePage
                           className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer border-b border-gray-100 dark:border-white/5 last:border-0"
                         >
                           <UserAvatar name={displayName} picture={u.picture} size={24} />
-                          <span className="text-sm font-medium text-gray-900 dark:text-white">{displayName}</span>
+                          <span className="text-sm font-medium text-dark-text">{displayName}</span>
                         </div>
                       );
                     })}
@@ -225,9 +226,9 @@ export default function DiferenciaisPage({ activePage, pageLabel }: { activePage
             )}
           </div>
           <div className="flex justify-end gap-2">
-            <button onClick={() => setShowNew(false)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 dark:hover:text-white">Cancelar</button>
+            <button onClick={() => setShowNew(false)} className="px-4 py-2 text-sm text-gray-500 hover:text-dark-text">Cancelar</button>
             <button onClick={createSession} disabled={saving || !newTitle.trim()}
-              className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-colors">
+              className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-colors">
               {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={14} />} Criar
             </button>
           </div>
@@ -236,17 +237,14 @@ export default function DiferenciaisPage({ activePage, pageLabel }: { activePage
 
       {/* Sessions List */}
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <LoadingSpinner size="md" />
-        </div>
+        <CarregandoBloco className="py-20" />
       ) : sessions.length === 0 ? (
-        <div className="text-center py-20">
-          <div className="w-16 h-16 bg-violet-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Star size={28} className="text-violet-400" />
-          </div>
-          <p className="text-gray-500 dark:text-slate-400 text-sm">Nenhum registro de feedback ainda.</p>
-          <button onClick={() => setShowNew(true)} className="mt-3 text-violet-500 hover:text-violet-400 text-sm font-medium">+ Criar primeiro registro</button>
-        </div>
+        <EstadoVazio
+          Icone={Star}
+          className="py-20"
+          titulo="Nenhum registro de feedback ainda."
+          acao={<button onClick={() => setShowNew(true)} className="text-violet-500 hover:text-violet-600 text-sm font-medium">+ Criar primeiro registro</button>}
+        />
       ) : (
         <div className="space-y-6">
           {sortedGroupsKeys.map(groupKey => {
@@ -264,7 +262,7 @@ export default function DiferenciaisPage({ activePage, pageLabel }: { activePage
                     <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center text-violet-500">
                       <Calendar size={16} />
                     </div>
-                    <h3 className="font-bold text-gray-900 dark:text-white">{groupTitle}</h3>
+                    <h3 className="font-bold text-dark-text">{groupTitle}</h3>
                     <span className="text-xs font-medium text-gray-400 dark:text-slate-500 bg-gray-100 dark:bg-white/10 px-2 py-0.5 rounded-md">
                       {groupSessions.length} {groupSessions.length === 1 ? 'registro' : 'registros'}  
                     </span>
@@ -439,7 +437,7 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-bold text-gray-900 dark:text-white text-sm">{session.title}</h3>
+            <h3 className="font-bold text-dark-text text-sm">{session.title}</h3>
             <span className="text-[10px] font-medium text-gray-400 dark:text-slate-500 shrink-0">{fmtDate(session.meeting_date)}</span>
             {hasNotes && <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">Com feedback</span>}
           </div>
@@ -489,15 +487,15 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
 
             {/* Meta edit panel */}
             {editingMeta && (
-              <div className="mx-6 mb-4 p-4 bg-gray-50 dark:bg-dark-bg rounded-xl border border-gray-200 dark:border-white/10 shrink-0">
+              <div className="mx-6 mb-4 p-4 bg-gray-50 dark:bg-white/[0.03] rounded-xl border border-gray-200 dark:border-white/10 shrink-0">
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div>
                     <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1 block">Título</label>
-                    <input value={metaTitle} onChange={e => setMetaTitle(e.target.value)} className="w-full bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
+                    <input value={metaTitle} onChange={e => setMetaTitle(e.target.value)} className="w-full bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-dark-text outline-none focus:border-violet-500/50" />
                   </div>
                   <div>
                     <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1 block">Data</label>
-                    <input type="date" value={metaDate} onChange={e => setMetaDate(e.target.value)} className="w-full bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
+                    <input type="date" value={metaDate} onChange={e => setMetaDate(e.target.value)} className="w-full bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-dark-text outline-none focus:border-violet-500/50" />
                   </div>
                 </div>
                 <div className="mb-3 relative">
@@ -536,7 +534,7 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
                         }
                       }}
                       placeholder="Nome + Enter ou selecione"
-                      className="w-full bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
+                      className="w-full bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-dark-text outline-none focus:border-violet-500/50" />
                     
                     <div id={`meta-dropdown-${session.id}`} style={{display: 'none'}} className="absolute z-50 left-0 right-0 mt-1 max-h-40 overflow-y-auto bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl shadow-xl">
                       {systemUsers.filter(u => (u.name || u.email).toLowerCase().includes(metaAttendee.toLowerCase())).map(u => {
@@ -552,14 +550,14 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
                             className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer border-b border-gray-100 dark:border-white/5 last:border-0"
                           >
                             <UserAvatar name={displayName} picture={u.picture} size={20} />
-                            <span className="text-[11px] font-medium text-gray-900 dark:text-white">{displayName}</span>
+                            <span className="text-[11px] font-medium text-dark-text">{displayName}</span>
                           </div>
                         );
                       })}
                     </div>
                   </div>
                 </div>
-                <button onClick={saveMeta} className="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-bold">Salvar informações</button>
+                <button onClick={saveMeta} className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-bold">Salvar informações</button>
               </div>
             )}
 
@@ -596,7 +594,7 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
 
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {commentsLoading ? (
-                <div className="flex justify-center py-8"><Loader2 size={18} className="animate-spin text-slate-400" /></div>
+                <CarregandoBloco className="py-8" />
               ) : comments.length === 0 ? (
                 <p className="text-center text-slate-500 text-xs py-8">Nenhum comentário ainda.</p>
               ) : (
@@ -652,7 +650,7 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
               <textarea value={newComment} onChange={e => setNewComment(e.target.value)}
                 onPaste={handlePaste}
                 placeholder="Escreva um comentário ou cole um print (Ctrl+V)..."
-                className="w-full bg-white dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 outline-none focus:border-violet-500/50 resize-none h-20 mb-2 transition-colors" />
+                className="w-full bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-xs text-dark-text placeholder-gray-400 dark:placeholder-slate-500 outline-none focus:border-violet-500/50 resize-none h-20 mb-2 transition-colors" />
               <div className="flex items-center justify-between">
                 <div>
                   <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
@@ -661,7 +659,7 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
                   </button>
                 </div>
                 <button onClick={addComment} disabled={(!newComment.trim() && newFiles.length === 0) || commenting}
-                  className="px-4 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5">
+                  className="px-4 py-1.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-40 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5">
                   {commenting ? <Loader2 size={12} className="animate-spin" /> : null} Responder
                 </button>
               </div>

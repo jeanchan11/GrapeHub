@@ -28,11 +28,12 @@ interface ClientRow {
 
 // ── Result colors (same map used across the app) ──────────────────────────────
 const RESULT_COLOR_MAP: Record<string, string> = {
-  'resultado ok': '#2ecc8f',
-  'resultado ruim': '#f74c4c',
-  'resultado bom': '#059669',   // verde fechado — Bom é melhor que Ok, que usa o menta #2ecc8f
-  'campanha pausada': '#f5c842',
-  'testando': '#4c8ef7',
+  // Cores de status do padrão (18/11/2026), as mesmas do Dashboard Operacional
+  'resultado ok': '#10b981',
+  'resultado ruim': '#f43f5e',
+  'resultado bom': '#059669',   // emerald-600 — Bom é melhor que Ok (emerald-500)
+  'campanha pausada': '#f59e0b',
+  'testando': '#0ea5e9',
   'aguardando criativos': '#94a3b8',
   'aguardando artigo': '#94a3b8',
   'aguardando lp': '#94a3b8',
@@ -382,7 +383,7 @@ export const RiscoDeChurnTab = ({ projects, heads = [] }: { projects: ProjectRow
                 active
                   ? 'bg-violet-500/10 dark:bg-violet-500/20 border-violet-500/30 shadow-[0_0_15px_rgba(124,58,237,0.15)]'
                   : 'bg-white dark:bg-dark-card border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5'}`}>
-              <span className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 shrink-0 border border-slate-200 dark:border-white/10">
+              <span className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-slate-100 dark:bg-dark-card text-slate-500 dark:text-slate-400 shrink-0 border border-slate-200 dark:border-white/10">
                 {h.picture
                   ? <img src={h.picture} alt={firstName} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                   : <Users size={14} />}

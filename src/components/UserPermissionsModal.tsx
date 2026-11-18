@@ -6,6 +6,7 @@ import { Modal } from './ui/Modal';
 import { designSystem } from '../design-system';
 import LoadingSpinner from './LoadingSpinner';
 import OptionPicker from './ui/OptionPicker';
+import { Abas } from './ui/Abas';
 
 interface Props {
   isOpen: boolean;
@@ -31,10 +32,7 @@ export const UserPermissionsModal: React.FC<Props> = ({
   isOpen, onClose, user, menu, roles, currentData, isSaving,
   changeRole, changeName, changeSquad, togglePage, toggleSection, toggleSubSession, toggleMenuSection, savePermissions, discardChanges, refreshMenu
 }) => {
-  console.log('UserPermissionsModal rendering, isOpen:', isOpen);
   const [activeTab, setActiveTab] = useState<'perfil' | 'permissoes'>('perfil');
-
-  if (!isOpen) return null;
 
   return (
     <Modal
@@ -62,31 +60,26 @@ export const UserPermissionsModal: React.FC<Props> = ({
       }
     >
       <div className="flex flex-col h-full">
-        {/* Tabs */}
-        <div className="flex border-b modal-divider shrink-0 mb-6">
-          <button
-            onClick={() => setActiveTab('perfil')}
-            className={`py-4 px-6 text-sm font-bold transition-colors ${activeTab === 'perfil' ? 'modal-tab-active' : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'}`}
-          >
-            Perfil
-          </button>
-          <button
-            onClick={() => setActiveTab('permissoes')}
-            className={`py-4 px-6 text-sm font-bold transition-colors ${activeTab === 'permissoes' ? 'modal-tab-active' : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'}`}
-          >
-            Permissões
-          </button>
-        </div>
+        {/* Abas */}
+        <Abas
+          className="shrink-0 mb-6"
+          abas={[
+            { id: 'perfil', rotulo: 'Perfil' },
+            { id: 'permissoes', rotulo: 'Permissões' },
+          ]}
+          ativa={activeTab}
+          onChange={(id) => setActiveTab(id as typeof activeTab)}
+        />
 
         <div className="flex-1 overflow-y-auto">
           {activeTab === 'perfil' ? (
             <div className="space-y-6">
               <div className="flex items-center gap-4">
-                <div className="w-20 h-20 rounded-full bg-slate-700 flex items-center justify-center text-white font-bold text-2xl overflow-hidden shrink-0">
+                <div className="w-20 h-20 rounded-full bg-violet-500/15 flex items-center justify-center text-violet-500 font-bold text-2xl overflow-hidden shrink-0">
                   {user.picture ? <img src={user.picture} alt={user.name || user.email} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : (user.name || user.email)[0].toUpperCase()}
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">Foto de Perfil</h3>
+                  <h3 className="text-lg font-bold text-dark-text">Foto de Perfil</h3>
                   <p className="text-sm text-gray-500 dark:text-slate-400">Clique na foto para alterar. JPG, PNG, GIF ou WebP. Máx 5MB.</p>
                 </div>
               </div>
@@ -167,11 +160,11 @@ export const UserPermissionsModal: React.FC<Props> = ({
                   return (
                     <div key={section.id} className="space-y-4">
                       <div className="flex items-center justify-between border-b border-gray-200 dark:border-white/5 pb-2">
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">{section.title}</h3>
+                        <h3 className="text-lg font-bold text-dark-text">{section.title}</h3>
                         <button
                           onClick={() => toggleMenuSection(user.id, section.id)}
                           className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${
-                            allAllowed ? 'bg-purple-600 dark:bg-violet-600 text-white' : someAllowed ? 'bg-purple-600/40 dark:bg-violet-600/40 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-500'
+                            allAllowed ? 'bg-violet-600 text-white' : someAllowed ? 'bg-violet-600/40 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-500'
                           }`}
                         >
                           {allAllowed ? 'Liberar Tudo' : someAllowed ? 'Parcial' : 'Bloquear'}
@@ -188,7 +181,7 @@ export const UserPermissionsModal: React.FC<Props> = ({
                                 key={page.id}
                                 onClick={() => togglePage(user.id, page.id)}
                                 className={`px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2 border ${
-                                  isAllowed ? 'bg-purple-600/10 dark:bg-violet-600/10 text-purple-600 dark:text-violet-400 border-purple-500/30 dark:border-violet-500/30' : 'bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-slate-400 border-gray-200 dark:border-white/5'
+                                  isAllowed ? 'bg-violet-600/10 text-violet-600 dark:text-violet-400 border-violet-500/30' : 'bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-slate-400 border-gray-200 dark:border-white/5'
                                 }`}
                               >
                                 {isAllowed ? <Unlock size={12} /> : <Lock size={12} />}
@@ -211,7 +204,7 @@ export const UserPermissionsModal: React.FC<Props> = ({
                               <button
                                 onClick={() => toggleSection(user.id, sss.id)}
                                 className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${
-                                  sssAll ? 'bg-purple-600 dark:bg-violet-600 text-white' : sssSome ? 'bg-purple-600/40 dark:bg-violet-600/40 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-500'
+                                  sssAll ? 'bg-violet-600 text-white' : sssSome ? 'bg-violet-600/40 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-500'
                                 }`}
                               >
                                 {sssAll ? 'Liberar Tudo' : sssSome ? 'Parcial' : 'Bloquear'}
@@ -223,7 +216,7 @@ export const UserPermissionsModal: React.FC<Props> = ({
                                 return (
                                   <button key={page.id} onClick={() => togglePage(user.id, page.id)}
                                     className={`px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2 border ${
-                                      isAllowed ? 'bg-purple-600/10 dark:bg-violet-600/10 text-purple-600 dark:text-violet-400 border-purple-500/30 dark:border-violet-500/30' : 'bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-slate-400 border-gray-200 dark:border-white/5'
+                                      isAllowed ? 'bg-violet-600/10 text-violet-600 dark:text-violet-400 border-violet-500/30' : 'bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-slate-400 border-gray-200 dark:border-white/5'
                                     }`}
                                   >
                                     {isAllowed ? <Unlock size={12} /> : <Lock size={12} />}
@@ -248,11 +241,11 @@ export const UserPermissionsModal: React.FC<Props> = ({
                         return (
                           <div key={subSession.id} className="ml-4 space-y-4">
                             <div className="flex items-center justify-between">
-                              <h4 className="text-md font-bold text-purple-600 dark:text-violet-500">{subSession.label}</h4>
+                              <h4 className="text-md font-bold text-violet-600 dark:text-violet-500">{subSession.label}</h4>
                               <button
                                 onClick={() => toggleSubSession(user.id, subSession.id)}
                                 className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${
-                                  ssAll ? 'bg-purple-600 dark:bg-violet-600 text-white' : ssSome ? 'bg-purple-600/40 dark:bg-violet-600/40 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-500'
+                                  ssAll ? 'bg-violet-600 text-white' : ssSome ? 'bg-violet-600/40 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-500'
                                 }`}
                               >
                                 {ssAll ? 'Liberar Tudo' : ssSome ? 'Parcial' : 'Bloquear'}
@@ -267,7 +260,7 @@ export const UserPermissionsModal: React.FC<Props> = ({
                                   return (
                                     <button key={page.id} onClick={() => togglePage(user.id, page.id)}
                                       className={`px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2 border ${
-                                        isAllowed ? 'bg-purple-600/10 dark:bg-violet-600/10 text-purple-600 dark:text-violet-400 border-purple-500/30 dark:border-violet-500/30' : 'bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-slate-400 border-gray-200 dark:border-white/5'
+                                        isAllowed ? 'bg-violet-600/10 text-violet-600 dark:text-violet-400 border-violet-500/30' : 'bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-slate-400 border-gray-200 dark:border-white/5'
                                       }`}
                                     >
                                       {isAllowed ? <Unlock size={12} /> : <Lock size={12} />}
@@ -290,7 +283,7 @@ export const UserPermissionsModal: React.FC<Props> = ({
                                     <button
                                       onClick={() => toggleSection(user.id, sss.id)}
                                       className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${
-                                        sssAll ? 'bg-purple-600 dark:bg-violet-600 text-white' : sssSome ? 'bg-purple-600/40 dark:bg-violet-600/40 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-500'
+                                        sssAll ? 'bg-violet-600 text-white' : sssSome ? 'bg-violet-600/40 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-500'
                                       }`}
                                     >
                                       {sssAll ? 'Liberar Tudo' : sssSome ? 'Parcial' : 'Bloquear'}
@@ -302,7 +295,7 @@ export const UserPermissionsModal: React.FC<Props> = ({
                                       return (
                                         <button key={page.id} onClick={() => togglePage(user.id, page.id)}
                                           className={`px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2 border ${
-                                            isAllowed ? 'bg-purple-600/10 dark:bg-violet-600/10 text-purple-600 dark:text-violet-400 border-purple-500/30 dark:border-violet-500/30' : 'bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-slate-400 border-gray-200 dark:border-white/5'
+                                            isAllowed ? 'bg-violet-600/10 text-violet-600 dark:text-violet-400 border-violet-500/30' : 'bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-slate-400 border-gray-200 dark:border-white/5'
                                           }`}
                                         >
                                           {isAllowed ? <Unlock size={12} /> : <Lock size={12} />}

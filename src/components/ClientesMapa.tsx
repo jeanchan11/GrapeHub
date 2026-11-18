@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Loader2, AlertCircle, ArrowLeft, ShieldAlert } from 'lucide-react';
+import { MapPin, AlertCircle, ArrowLeft, ShieldAlert } from 'lucide-react';
+import LoadingSpinner from './LoadingSpinner';
 
 /**
  * Aba "Mapa" de Clientes Ativos: uma bolinha por cidade, do tamanho do número de clientes.
@@ -134,12 +135,12 @@ const ClientesMapa: React.FC<{ onAbrirCliente: (id: string) => void }> = ({ onAb
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
-      <div className="relative isolate rounded-3xl overflow-hidden border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-dark-card h-[640px]">
+      <div className="relative isolate rounded-2xl overflow-hidden border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-dark-card h-[640px]">
         <div ref={divRef} className="absolute inset-0" />
         <div className="absolute top-3 left-3 z-[500] flex p-1 rounded-xl bg-white/95 dark:bg-dark-card/95 backdrop-blur border border-slate-200 dark:border-white/10 shadow-sm">
           {(['mapa', 'satelite'] as const).map(b => (
             <button key={b} onClick={() => setBase(b)}
-              className={`h-8 px-3 rounded-lg text-xs font-semibold transition-colors ${base === b ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`}>
+              className={`h-8 px-3 rounded-lg text-xs font-semibold transition-colors ${base === b ? 'bg-slate-100 dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`}>
               {b === 'mapa' ? 'Mapa' : 'Satélite'}
             </button>
           ))}
@@ -152,7 +153,7 @@ const ClientesMapa: React.FC<{ onAbrirCliente: (id: string) => void }> = ({ onAb
         )}
         {!itens && !erro && (
           <div className="absolute inset-0 z-[500] flex items-center justify-center bg-white/60 dark:bg-black/40">
-            <Loader2 size={24} className="animate-spin text-violet-500" />
+            <LoadingSpinner size="sm" />
           </div>
         )}
         {erro && (
@@ -171,7 +172,7 @@ const ClientesMapa: React.FC<{ onAbrirCliente: (id: string) => void }> = ({ onAb
         )}
       </div>
 
-      <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card/60 p-4 h-[640px] flex flex-col">
+      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-dark-card p-4 h-[640px] flex flex-col">
         {atual ? (
           <>
             <button onClick={() => { setSelecionada(null); enquadrado.current = false; enquadrar(); }} className="self-start flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-violet-500 mb-2"><ArrowLeft size={13} /> Todas as cidades</button>

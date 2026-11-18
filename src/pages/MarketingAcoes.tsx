@@ -13,7 +13,12 @@ import {
   PlayCircle, Clock, Zap,
   RefreshCw, Paperclip, Image as ImageIcon, FileText, Download
 } from 'lucide-react';
-import LoadingSpinner from '../components/LoadingSpinner';
+import { createPortal } from 'react-dom';
+import { CarregandoBloco } from '../components/LoadingSpinner';
+import { Modal } from '../components/ui/Modal';
+import { Abas } from '../components/ui/Abas';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
+import { CartaoKpi } from '../components/graficos';
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -171,7 +176,7 @@ function AttachmentList({ attachments, onRemove }: { attachments: ActionAttachme
       {images.length > 0 && (
         <div className={`grid gap-1.5 mt-2 ${images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {images.map(img => (
-            <div key={img.id} className="relative group rounded-xl overflow-hidden border border-white/10 cursor-pointer" style={{ maxHeight: 180 }}
+            <div key={img.id} className="relative group rounded-xl overflow-hidden border border-black/10 dark:border-white/10 cursor-pointer" style={{ maxHeight: 180 }}
               onClick={() => setLightbox(img.dataUrl)}>
               <img src={img.dataUrl} alt={img.name} className="w-full object-cover" style={{ maxHeight: 180 }} />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
@@ -212,13 +217,16 @@ function AttachmentList({ attachments, onRemove }: { attachments: ActionAttachme
       )}
 
       {/* lightbox */}
-      {lightbox && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setLightbox(null)}>
-          <img src={lightbox} className="max-w-[90vw] max-h-[90vh] rounded-2xl shadow-2xl" />
-          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors">
+      {/* Anexo é data URL: o MediaLightbox baixa pelo servidor (/api/file-download) e não serviria aqui.
+          Mesmo fundo/z do MediaLightbox, em portal para não ficar preso dentro do popup. */}
+      {lightbox && createPortal(
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/85 backdrop-blur-sm" onClick={() => setLightbox(null)}>
+          <img src={lightbox} className="max-w-[90vw] max-h-[90vh] rounded-lg object-contain" />
+          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors">
             <X size={18} />
           </button>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
@@ -376,7 +384,7 @@ export default function MarketingAcoes({ activePage }: Props) {
         <div className="flex items-center gap-2">
           {saving && <span className="flex items-center gap-1.5 text-xs text-slate-400"><RefreshCw size={12} className="animate-spin" /> Salvando…</span>}
           <button onClick={() => setAddCampaignOpen(true)}
-            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors shadow-lg shadow-violet-500/20">
+            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors">
             <Plus size={15} /> Adicionar Campanha
           </button>
         </div>
@@ -385,15 +393,7 @@ export default function MarketingAcoes({ activePage }: Props) {
       {/* Stats */}
       <div className="px-6 md:px-8 pb-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         {stats.map(s => (
-          <div key={s.label} className="bg-dark-card border border-white/10 rounded-2xl p-5 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{s.label}</span>
-              <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${s.cls.split(' ')[1]}`}>
-                <s.icon size={15} className={s.cls.split(' ')[0]} />
-              </div>
-            </div>
-            <div className="text-2xl font-black text-dark-text">{s.value}</div>
-          </div>
+          <CartaoKpi key={s.label} titulo={s.label} valor={s.value} />
         ))}
       </div>
 
@@ -402,41 +402,35 @@ export default function MarketingAcoes({ activePage }: Props) {
         <div className="relative flex-1 min-w-[220px]">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Buscar campanha ou cliente…"
-            className="w-full bg-dark-card border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm text-dark-text placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 transition-colors" />
+            className="w-full bg-dark-card border border-black/10 dark:border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm text-dark-text placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 transition-colors" />
         </div>
-        <div className="flex gap-2 flex-wrap">
-          {['Todos','Ativa','Pausada','Testando','Gargalo'].map(s => (
-            <button key={s} onClick={() => setStatusFilter(s)}
-              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
-                statusFilter === s ? 'bg-violet-600 text-white border-violet-500' : 'bg-dark-card border-white/10 text-slate-400 hover:border-violet-500/40 hover:text-dark-text'
-              }`}>{s}</button>
-          ))}
-        </div>
+        <Abas
+          variante="segmentado"
+          abas={['Todos','Ativa','Pausada','Testando','Gargalo'].map(s => ({ id: s, rotulo: s }))}
+          ativa={statusFilter}
+          onChange={setStatusFilter}
+        />
       </div>
 
       {/* List */}
       {loading ? (
-        <div className="flex justify-center items-center h-40">
-          <LoadingSpinner size="md" />
-        </div>
+        <CarregandoBloco />
       ) : (
         <div className="px-6 md:px-8 pb-8 space-y-3">
           {filtered.length === 0 && (
-            <div className="bg-dark-card border border-white/10 rounded-2xl p-12 text-center">
-              <Megaphone size={32} className="text-slate-600 mx-auto mb-3" />
-              <p className="text-slate-400 text-sm font-medium">Nenhuma campanha encontrada</p>
-              <p className="text-slate-500 text-xs mt-1">Clique em "Adicionar Campanha" para começar</p>
+            <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl">
+              <EstadoVazio Icone={Megaphone} titulo="Nenhuma campanha encontrada" descricao={'Clique em "Adicionar Campanha" para começar'} />
             </div>
           )}
 
           {filtered.map(campaign => {
             const isExpanded = expandedId === campaign.id;
             return (
-              <div key={campaign.id} className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
+              <div key={campaign.id} className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden">
                 {/* Row header */}
-                <div className="flex items-center gap-3 px-5 py-4 hover:bg-white/5 transition-colors cursor-pointer"
+                <div className="flex items-center gap-3 px-5 py-4 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors cursor-pointer"
                   onClick={() => setExpandedId(isExpanded ? null : campaign.id)}>
-                  <button className="w-6 h-6 rounded-lg hover:bg-white/10 flex items-center justify-center shrink-0" onClick={e => { e.stopPropagation(); setExpandedId(isExpanded ? null : campaign.id); }}>
+                  <button className="w-6 h-6 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center shrink-0" onClick={e => { e.stopPropagation(); setExpandedId(isExpanded ? null : campaign.id); }}>
                     <ChevronRight size={14} className={`text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
                   </button>
                   <div className="w-9 h-9 rounded-xl bg-violet-500/15 flex items-center justify-center shrink-0">
@@ -457,14 +451,14 @@ export default function MarketingAcoes({ activePage }: Props) {
                   <span className="text-xs text-slate-500 shrink-0">{campaign.actions.length} ação{campaign.actions.length !== 1 ? 'ões' : ''}</span>
                   <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                     <button onClick={() => openAddAction(campaign.id)} className="w-8 h-8 rounded-lg hover:bg-violet-500/15 flex items-center justify-center text-violet-400 transition-colors" title="Adicionar ação"><Plus size={14} /></button>
-                    <button onClick={() => openEditCampaign(campaign)} className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-dark-text transition-colors"><Pencil size={13} /></button>
+                    <button onClick={() => openEditCampaign(campaign)} className="w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-dark-text transition-colors"><Pencil size={13} /></button>
                     <button onClick={() => setCampaigns(prev => prev.filter(c => c.id !== campaign.id))} className="w-8 h-8 rounded-lg hover:bg-rose-500/10 flex items-center justify-center text-slate-400 hover:text-rose-400 transition-colors"><Trash2 size={13} /></button>
                   </div>
                 </div>
 
                 {/* Expanded actions */}
                 {isExpanded && (
-                  <div className="border-t border-white/10 px-5 py-4">
+                  <div className="border-t border-black/10 dark:border-white/10 px-5 py-4">
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Histórico de Ações</span>
                       <button onClick={() => openAddAction(campaign.id)} className="flex items-center gap-1.5 text-xs font-bold text-violet-400 hover:text-violet-300 transition-colors"><Plus size={12} /> Nova ação</button>
@@ -519,7 +513,7 @@ export default function MarketingAcoes({ activePage }: Props) {
         <ModalOverlay onClose={() => setAddCampaignOpen(false)} title="Adicionar Campanha">
           <CampaignForm data={newCampaign} onChange={setNewCampaign} />
           <div className="flex gap-3 mt-6">
-            <button onClick={() => setAddCampaignOpen(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-slate-400 border border-white/10 hover:bg-white/5 transition-colors">Cancelar</button>
+            <button onClick={() => setAddCampaignOpen(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-slate-400 border border-black/10 dark:border-white/10 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors">Cancelar</button>
             <button onClick={handleAddCampaign} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-violet-600 hover:bg-violet-700 transition-colors">Adicionar</button>
           </div>
         </ModalOverlay>
@@ -530,7 +524,7 @@ export default function MarketingAcoes({ activePage }: Props) {
         <ModalOverlay onClose={() => setEditCampaignOpen(false)} title="Editar Campanha">
           <CampaignForm data={newCampaign} onChange={setNewCampaign} />
           <div className="flex gap-3 mt-6">
-            <button onClick={() => setEditCampaignOpen(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-slate-400 border border-white/10 hover:bg-white/5 transition-colors">Cancelar</button>
+            <button onClick={() => setEditCampaignOpen(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-slate-400 border border-black/10 dark:border-white/10 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors">Cancelar</button>
             <button onClick={handleSaveEditCampaign} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-violet-600 hover:bg-violet-700 transition-colors">Salvar</button>
           </div>
         </ModalOverlay>
@@ -541,7 +535,7 @@ export default function MarketingAcoes({ activePage }: Props) {
         <ModalOverlay onClose={() => setAddActionOpen(false)} title="Registrar Ação" wide>
           <ActionForm data={newAction} onChange={setNewAction} />
           <div className="flex gap-3 mt-6">
-            <button onClick={() => setAddActionOpen(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-slate-400 border border-white/10 hover:bg-white/5 transition-colors">Cancelar</button>
+            <button onClick={() => setAddActionOpen(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-slate-400 border border-black/10 dark:border-white/10 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors">Cancelar</button>
             <button onClick={handleAddAction} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-violet-600 hover:bg-violet-700 transition-colors">Registrar</button>
           </div>
         </ModalOverlay>
@@ -554,23 +548,16 @@ export default function MarketingAcoes({ activePage }: Props) {
 
 function ModalOverlay({ onClose, title, children, wide }: { onClose: () => void; title: string; children: React.ReactNode; wide?: boolean }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative z-10 w-full ${wide ? 'max-w-lg' : 'max-w-md'} bg-dark-card border border-white/10 rounded-2xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto`}>
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-base font-black text-dark-text">{title}</h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-400 transition-colors"><X size={15} /></button>
-        </div>
-        {children}
-      </div>
-    </div>
+    <Modal isOpen onClose={onClose} title={title} maxWidth={wide ? 'max-w-lg' : 'max-w-md'}>
+      {children}
+    </Modal>
   );
 }
 
 // ── Campaign form ──────────────────────────────────────────────────────────────
 
 function CampaignForm({ data, onChange }: { data: Partial<Campaign>; onChange: (d: Partial<Campaign>) => void }) {
-  const cls = "w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50 transition-colors";
+  const cls = "w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50 transition-colors";
   return (
     <div className="space-y-4">
       <div>
@@ -627,7 +614,7 @@ function CampaignForm({ data, onChange }: { data: Partial<Campaign>; onChange: (
 // ── Action form (with paste + file upload) ─────────────────────────────────────
 
 function ActionForm({ data, onChange }: { data: Partial<CampaignAction>; onChange: (d: Partial<CampaignAction>) => void }) {
-  const cls       = "w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50 transition-colors";
+  const cls       = "w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50 transition-colors";
   const fileRef   = useRef<HTMLInputElement>(null);
   const attachments = data.attachments || [];
 
@@ -712,11 +699,11 @@ function ActionForm({ data, onChange }: { data: Partial<CampaignAction>; onChang
         <div
           onDragOver={e => e.preventDefault()}
           onDrop={handleDrop}
-          className="border border-dashed border-white/20 rounded-xl px-4 py-3 text-center text-xs text-slate-500 hover:border-violet-500/40 hover:text-violet-400 transition-colors cursor-pointer"
+          className="border border-dashed border-black/10 dark:border-white/20 rounded-xl px-4 py-3 text-center text-xs text-slate-500 hover:border-violet-500/40 hover:text-violet-400 transition-colors cursor-pointer"
           onClick={() => fileRef.current?.click()}
         >
           <ImageIcon size={16} className="mx-auto mb-1 opacity-50" />
-          Arraste arquivos ou clique para selecionar · Cole imagens com <kbd className="px-1 py-0.5 rounded text-[10px] bg-white/10 font-mono">Ctrl+V</kbd>
+          Arraste arquivos ou clique para selecionar · Cole imagens com <kbd className="px-1 py-0.5 rounded text-[10px] bg-black/5 dark:bg-white/10 font-mono">Ctrl+V</kbd>
         </div>
 
         {/* Preview */}

@@ -485,8 +485,8 @@ async function categorizeMovements(pool, opts = {}) {
     transferId = (await pool.query("SELECT id FROM fin_categories WHERE structure='99'")).rows[0]?.id;
   }
   const colab = (await pool.query("SELECT DISTINCT name FROM collaborators")).rows.map((r) => r.name).filter(Boolean);
-  const employees = colab.map((n) => {
-    const t = norm2(n).split(/\s+/).filter(Boolean);
+  const employees = colab.map((n2) => {
+    const t = norm2(n2).split(/\s+/).filter(Boolean);
     return { first: t[0], second: (t[1] || "").slice(0, 3) };
   });
   const POR_TIPO = {
@@ -1707,7 +1707,7 @@ import https2 from "https";
 import pg from "pg";
 import dotenv from "dotenv";
 import crypto4 from "crypto";
-import Anthropic2 from "@anthropic-ai/sdk";
+import Anthropic3 from "@anthropic-ai/sdk";
 import admin3 from "firebase-admin";
 
 // src/routes/collection.ts
@@ -2620,7 +2620,13 @@ function setupDispatchRoutes(app, pool) {
       const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
       params.push(parseInt(limit), parseInt(offset));
       const r = await pool.query(
-        `SELECT * FROM fin_dispatch_queue ${where} ORDER BY scheduled_date ASC, created_at ASC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+        // client_id/client_name_internal: o cadastro do GrapeHub, achado pelo cliente do Asaas. A tela
+        // casava pelo NOME e errava quando o nome no Asaas é outro (8 de 13 inadimplentes em 17/11/2026).
+        `SELECT q.*, c.id AS client_id, c.name AS client_name_internal
+           FROM (SELECT * FROM fin_dispatch_queue ${where} ORDER BY scheduled_date ASC, created_at ASC LIMIT $${params.length - 1} OFFSET $${params.length}) q
+           LEFT JOIN LATERAL (SELECT grapehub_client_id FROM fin_people WHERE asaas_id = q.customer_asaas_id LIMIT 1) fp ON true
+           LEFT JOIN clients c ON c.id = fp.grapehub_client_id
+          ORDER BY q.scheduled_date ASC, q.created_at ASC`,
         params
       );
       res.json(r.rows);
@@ -3601,6 +3607,1581 @@ function setupClientesMapaRoutes(app, pool) {
   });
 }
 
+// src/routes/cliente-historico.ts
+var TIPOS_CONTATO = ["Cobran\xE7a manual", "Contato realizado", "Promessa de pagamento", "Acordo fechado", "Pedido de sa\xEDda"];
+var RESULTADOS = {
+  sem_resposta: "Sem resposta",
+  prometeu: "Prometeu pagar",
+  pediu_prazo: "Pediu prazo",
+  reclamou: "Reclamou / insatisfeito",
+  pagou: "Disse que j\xE1 pagou"
+};
+var brl2 = (v) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+var dataBR = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+var SQL_ASAAS_DO_CLIENTE = `
+  SELECT DISTINCT fp.asaas_id FROM fin_people fp
+  WHERE fp.asaas_id IS NOT NULL
+    AND (fp.grapehub_client_id = $1 OR fp.guid = (SELECT fin_people_guid FROM clients WHERE id = $1))`;
+async function setupClienteHistoricoRoutes(app, pool) {
+  try {
+    await pool.query(`ALTER TABLE crm_comments ADD COLUMN IF NOT EXISTS meta JSONB`);
+    await pool.query(`ALTER TABLE churn ADD COLUMN IF NOT EXISTS client_id TEXT`);
+  } catch (e) {
+    console.error("[cliente-historico] migra\xE7\xE3o:", e?.message || e);
+  }
+  const emailDe = (req) => String(req.user?.email || "").toLowerCase() || "desconhecido";
+  app.post("/api/clientes/:id/historico", async (req, res) => {
+    try {
+      const { type, content, meta } = req.body || {};
+      if (!type || !content) return res.status(400).json({ error: "type e content s\xE3o obrigat\xF3rios." });
+      const r = await pool.query(
+        `INSERT INTO crm_comments (client_id, user_id, type, content, images, meta)
+         VALUES ($1, $2, $3, $4, '{}', $5) RETURNING *`,
+        [req.params.id, emailDe(req), String(type), String(content), meta ? JSON.stringify(meta) : null]
+      );
+      res.json(r.rows[0]);
+    } catch (e) {
+      console.error("[cliente-historico] evento:", e?.message || e);
+      res.status(500).json({ error: "N\xE3o foi poss\xEDvel registrar no hist\xF3rico." });
+    }
+  });
+  app.post("/api/clientes/:id/historico/cobranca-manual", async (req, res) => {
+    try {
+      const { canal = "whatsapp", valor = 0, qtd = 1, mensagem = "", customer_id = null } = req.body || {};
+      const nomeCanal = String(canal).toLowerCase().includes("mail") ? "e-mail" : "WhatsApp";
+      const content = `Cobran\xE7a manual via ${nomeCanal} \u2014 ${brl2(Number(valor) || 0)} em aberto (${qtd} ${Number(qtd) === 1 ? "cobran\xE7a vencida" : "cobran\xE7as vencidas"})` + (mensagem ? `
+
+${String(mensagem).slice(0, 2e3)}` : "");
+      const r = await pool.query(
+        `INSERT INTO crm_comments (client_id, user_id, type, content, images, meta)
+         VALUES ($1, $2, 'Cobran\xE7a manual', $3, '{}', $4) RETURNING *`,
+        [req.params.id, emailDe(req), content, JSON.stringify({ canal: nomeCanal, valor: Number(valor) || 0, qtd: Number(qtd) || 1, customer_id, resultado: null })]
+      );
+      res.json(r.rows[0]);
+    } catch (e) {
+      console.error("[cliente-historico] cobran\xE7a manual:", e?.message || e);
+      res.status(500).json({ error: "N\xE3o foi poss\xEDvel registrar a cobran\xE7a." });
+    }
+  });
+  const TIPOS_EDITAVEIS = ["Observa\xE7\xE3o", "Contato realizado", "Promessa de pagamento", "Acordo fechado", "Pedido de sa\xEDda", "Cobran\xE7a manual"];
+  app.patch("/api/crm-comments/:id", async (req, res) => {
+    try {
+      const email = emailDe(req);
+      const atual = await pool.query("SELECT user_id, type, meta FROM crm_comments WHERE id = $1", [req.params.id]);
+      if (!atual.rows[0]) return res.status(404).json({ error: "Nota n\xE3o encontrada" });
+      const nota = atual.rows[0];
+      const papel2 = (await pool.query("SELECT role FROM users WHERE LOWER(email) = $1", [email])).rows[0]?.role;
+      if (String(nota.user_id || "").toLowerCase() !== email && papel2 !== "superadmin") {
+        return res.status(403).json({ error: "S\xF3 quem escreveu a nota pode edit\xE1-la" });
+      }
+      if (!TIPOS_EDITAVEIS.includes(nota.type)) return res.status(400).json({ error: "Registro autom\xE1tico n\xE3o pode ser editado" });
+      const { content, type } = req.body || {};
+      if (typeof content !== "string" || !content.trim()) return res.status(400).json({ error: "Texto vazio" });
+      const tipo = type && TIPOS_EDITAVEIS.includes(type) ? type : nota.type;
+      const meta = { ...nota.meta || {}, editado_por: email, editado_em: (/* @__PURE__ */ new Date()).toISOString() };
+      const r = await pool.query("UPDATE crm_comments SET content = $1, type = $2, meta = $3 WHERE id = $4 RETURNING *", [content, tipo, meta, req.params.id]);
+      res.json(r.rows[0]);
+    } catch (e) {
+      console.error("[cliente-historico] editar nota:", e?.message || e);
+      res.status(500).json({ error: "Falha ao editar a nota" });
+    }
+  });
+  app.patch("/api/crm-comments/:id/resultado", async (req, res) => {
+    try {
+      const { resultado, promessa_data } = req.body || {};
+      if (!RESULTADOS[resultado]) return res.status(400).json({ error: "Resultado inv\xE1lido." });
+      if (resultado === "prometeu" && !/^\d{4}-\d{2}-\d{2}$/.test(String(promessa_data || ""))) {
+        return res.status(400).json({ error: "Informe a data prometida." });
+      }
+      const atual = await pool.query("SELECT content, meta FROM crm_comments WHERE id = $1", [req.params.id]);
+      if (!atual.rows.length) return res.status(404).json({ error: "Registro n\xE3o encontrado." });
+      const meta = { ...atual.rows[0].meta || {}, resultado, promessa_data: resultado === "prometeu" ? promessa_data : null, resultado_por: emailDe(req), resultado_em: (/* @__PURE__ */ new Date()).toISOString() };
+      const [primeira, ...resto] = String(atual.rows[0].content || "").split("\n");
+      const base = primeira.split(" \xB7 Resultado:")[0];
+      const rot = resultado === "prometeu" ? `${RESULTADOS[resultado]} em ${dataBR(promessa_data)}` : RESULTADOS[resultado];
+      const content = [`${base} \xB7 Resultado: ${rot}`, ...resto].join("\n");
+      const r = await pool.query("UPDATE crm_comments SET meta = $2, content = $3 WHERE id = $1 RETURNING *", [req.params.id, JSON.stringify(meta), content]);
+      res.json(r.rows[0]);
+    } catch (e) {
+      console.error("[cliente-historico] resultado:", e?.message || e);
+      res.status(500).json({ error: "N\xE3o foi poss\xEDvel salvar o resultado." });
+    }
+  });
+  app.get("/api/clientes/:id/resumo-relacionamento", async (req, res) => {
+    try {
+      const id = req.params.id;
+      const [cli, atraso, contato, promessa] = await Promise.all([
+        pool.query(`SELECT c.id, c.name, c.status, c.tags, c.crm_status, c.aviso_previo_date::text AS aviso_previo_date,
+                           rc.title AS etapa, rc.color AS etapa_cor, rc.emoji AS etapa_emoji
+                      FROM clients c LEFT JOIN retencao_columns rc ON rc.id = c.crm_status WHERE c.id = $1`, [id]),
+        pool.query(`SELECT COUNT(*)::int AS qtd, COALESCE(SUM(value),0)::numeric(14,2) AS valor,
+                           (CURRENT_DATE - MIN(due_date))::int AS dias
+                      FROM fin_receivables WHERE status = 'OVERDUE' AND customer_id IN (${SQL_ASAAS_DO_CLIENTE})`, [id]),
+        pool.query(`SELECT c.created_at, c.type, COALESCE(u.name, c.user_id) AS autor
+                      FROM crm_comments c LEFT JOIN users u ON u.email = c.user_id
+                     WHERE c.client_id = $1 AND c.user_id <> 'sistema' AND c.type = ANY($2)
+                     ORDER BY c.created_at DESC LIMIT 1`, [id, TIPOS_CONTATO]),
+        pool.query(`SELECT meta->>'promessa_data' AS data, created_at FROM crm_comments
+                     WHERE client_id = $1 AND meta->>'resultado' = 'prometeu' AND meta->>'promessa_data' IS NOT NULL
+                     ORDER BY created_at DESC LIMIT 1`, [id])
+      ]);
+      if (!cli.rows.length) return res.status(404).json({ error: "Cliente n\xE3o encontrado." });
+      const c = cli.rows[0];
+      let tags = [];
+      try {
+        tags = Array.isArray(c.tags) ? c.tags : JSON.parse(c.tags || "[]");
+      } catch {
+      }
+      const a = atraso.rows[0];
+      const p = promessa.rows[0];
+      const hoje = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      res.json({
+        client_id: c.id,
+        status: c.status,
+        retencao_etiqueta: tags.includes("quarentena"),
+        etapa: c.crm_status ? { id: c.crm_status, titulo: c.etapa || c.crm_status, cor: c.etapa_cor, emoji: c.etapa_emoji } : null,
+        aviso_previo_date: c.aviso_previo_date,
+        atraso: Number(a.qtd) > 0 ? { qtd: Number(a.qtd), valor: Number(a.valor), dias: Number(a.dias) } : null,
+        ultimo_contato: contato.rows[0] || null,
+        // promessa só interessa enquanto houver atraso
+        promessa: p && Number(a.qtd) > 0 ? { data: p.data, vencida: p.data < hoje } : null
+      });
+    } catch (e) {
+      console.error("[cliente-historico] resumo:", e?.message || e);
+      res.status(500).json({ error: "N\xE3o foi poss\xEDvel montar o resumo." });
+    }
+  });
+  app.get("/api/fin/silencio", async (req, res) => {
+    try {
+      const dias = Math.max(1, parseInt(String(req.query.dias || "15"), 10) || 15);
+      const r = await pool.query(`
+        WITH atraso AS (
+          SELECT c.id AS client_id, c.name, MIN(r.due_date) AS desde, SUM(r.value)::numeric(14,2) AS valor, COUNT(*)::int AS qtd
+            FROM fin_receivables r
+            JOIN fin_people fp ON fp.asaas_id = r.customer_id
+            JOIN clients c ON c.id = fp.grapehub_client_id OR (c.fin_people_guid IS NOT NULL AND c.fin_people_guid = fp.guid)
+           WHERE r.status = 'OVERDUE' AND c.status = 'Ativo'
+           GROUP BY c.id, c.name
+        )
+        SELECT a.client_id, a.name, a.desde::text AS desde, (CURRENT_DATE - a.desde)::int AS dias, a.valor, a.qtd,
+               (SELECT MAX(created_at) FROM crm_comments k
+                 WHERE k.client_id = a.client_id AND k.user_id <> 'sistema' AND k.type = ANY($2)) AS ultimo_contato
+          FROM atraso a
+         WHERE CURRENT_DATE - a.desde >= $1
+           AND NOT EXISTS (SELECT 1 FROM crm_comments k
+                            WHERE k.client_id = a.client_id AND k.user_id <> 'sistema' AND k.type = ANY($2)
+                              AND k.created_at >= a.desde)
+         ORDER BY dias DESC`, [dias, TIPOS_CONTATO]);
+      res.json({ dias, clientes: r.rows });
+    } catch (e) {
+      console.error("[cliente-historico] sil\xEAncio:", e?.message || e);
+      res.status(500).json({ error: "N\xE3o foi poss\xEDvel calcular." });
+    }
+  });
+}
+
+// src/routes/fechamento-detalhe.ts
+var ORIGENS = ["campanhas", "indica\xE7\xE3o"];
+async function setupFechamentoDetalheRoutes(app, pool) {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS fechamentos_removidos (
+      id SERIAL PRIMARY KEY, fechamento_id INTEGER, dados JSONB, motivo TEXT,
+      removido_por TEXT, removido_em TIMESTAMP DEFAULT NOW())`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS fechamentos_log (
+      id SERIAL PRIMARY KEY, fechamento_id INTEGER, acao TEXT, de TEXT, para TEXT,
+      por TEXT, em TIMESTAMP DEFAULT NOW())`);
+  } catch (e) {
+    console.error("[fechamento-detalhe] migra\xE7\xE3o:", e?.message || e);
+  }
+  const emailDe = (req) => String(req.user?.email || "").toLowerCase();
+  const podeEditar = async (email) => {
+    if (!email) return false;
+    const papel2 = String((await pool.query("SELECT role FROM users WHERE LOWER(email) = $1", [email])).rows[0]?.role || "");
+    return papel2 === "superadmin" || papel2 === "admin" || papel2 === "gerente-comercial" || papel2.startsWith("diretor");
+  };
+  const colunas = async () => {
+    const r = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'fechamentos' ORDER BY ordinal_position`);
+    const c = r.rows.map((x) => x.column_name);
+    return {
+      nome: c.find((x) => x.toLowerCase() === "nome") || "Nome",
+      valor: c.find((x) => x.toLowerCase().includes("valor")) || "Valor",
+      origem: c.find((x) => x.toLowerCase().includes("indica") || x.toLowerCase().includes("campa") || x.toLowerCase().includes("origem")) || "INDICA\xC7\xC3O / CAMPANHA",
+      fat: c.find((x) => x.toLowerCase().includes("fatura")) || "FATURAMENTO",
+      cidade: c.find((x) => x.toLowerCase().includes("cidade")) || "CIDADE"
+    };
+  };
+  app.get("/api/fechamentos/:id/detalhe", async (req, res) => {
+    try {
+      const col = await colunas();
+      const f = (await pool.query(
+        `SELECT id, to_char(day, 'YYYY-MM-DD') AS dia, "${col.nome}" AS nome, "${col.valor}" AS valor,
+                "${col.origem}" AS origem, "${col.fat}" AS faturamento, "${col.cidade}" AS cidade,
+                COALESCE(lead_nome, '') AS lead_nome
+           FROM fechamentos WHERE id = $1`,
+        [req.params.id]
+      )).rows[0];
+      if (!f) return res.status(404).json({ error: "Fechamento n\xE3o encontrado" });
+      const lead = (await pool.query(
+        `SELECT l.id, l.nome, l.form_nome_fantasia, l.telefone, l.email, l.instagram, l.origem,
+                l.utm_platform, l.utm_campaign, l.utm_set, l.utm_creative, l.utm_position,
+                l.faturamento, l.nicho, l.tempo_oab, l.form_cidade, l.form_estado, l.office_location,
+                l.form_cnpj_cpf, l.valor, l.forma_pagamento, l.investimento, l.monthly_closings,
+                l.closing_goal, l.observacoes, l.created_at, l.reunion_date, l.lead_score,
+                u.name AS responsavel, u.picture AS responsavel_foto,
+                COALESCE(c.title, lg.title) AS etapa, k.nome AS kanban
+           FROM crm_comercial_leads l
+           LEFT JOIN users u ON u.id = l.responsavel_id
+           LEFT JOIN crm_comercial_columns c ON c.id::text = l.coluna::text
+           LEFT JOIN crm_comercial_columns_legacy lg ON lg.id = l.coluna::text
+           LEFT JOIN crm_comercial_kanbans k ON k.id::text = l.kanban_id::text
+          WHERE ($1 <> '' AND l.nome = $1)
+             OR ($1 = '' AND (l.form_nome_fantasia = $2 OR l.nome = $2))
+          ORDER BY l.created_at DESC NULLS LAST LIMIT 1`,
+        [f.lead_nome, f.nome]
+      )).rows[0] || null;
+      let historico = [];
+      let reunioes = [];
+      if (lead) {
+        historico = (await pool.query(
+          `SELECT h.created_at, h.action_type, h.description, COALESCE(h.user_name, h.moved_by) AS autor,
+                  COALESCE(cf.title, lf.title) AS de, COALESCE(ct.title, lt.title) AS para
+             FROM crm_comercial_history h
+             LEFT JOIN crm_comercial_columns cf ON cf.id::text = h.from_coluna::text
+             LEFT JOIN crm_comercial_columns_legacy lf ON lf.id = h.from_coluna::text
+             LEFT JOIN crm_comercial_columns ct ON ct.id::text = h.to_coluna::text
+             LEFT JOIN crm_comercial_columns_legacy lt ON lt.id = h.to_coluna::text
+            WHERE h.lead_id::text = $1
+            ORDER BY h.created_at ASC LIMIT 80`,
+          [lead.id]
+        )).rows;
+        reunioes = (await pool.query(
+          `SELECT meeting_date, title, responsible_name FROM crm_comercial_meetings
+            WHERE lead_id = $1 ORDER BY meeting_date ASC`,
+          [String(lead.id)]
+        )).rows;
+      }
+      res.json({ fechamento: f, lead, historico, reunioes, pode_editar: await podeEditar(emailDe(req)) });
+    } catch (e) {
+      console.error("[fechamento-detalhe] detalhe:", e?.message || e);
+      res.status(500).json({ error: "Falha ao carregar o fechamento" });
+    }
+  });
+  app.patch("/api/fechamentos/:id", async (req, res) => {
+    try {
+      const email = emailDe(req);
+      if (!await podeEditar(email)) return res.status(403).json({ error: "Sem permiss\xE3o para alterar fechamentos" });
+      const origem = String(req.body?.origem || "").toLowerCase();
+      if (!ORIGENS.includes(origem)) return res.status(400).json({ error: "Origem inv\xE1lida" });
+      const col = await colunas();
+      const atual = (await pool.query(`SELECT "${col.origem}" AS origem FROM fechamentos WHERE id = $1`, [req.params.id])).rows[0];
+      if (!atual) return res.status(404).json({ error: "Fechamento n\xE3o encontrado" });
+      await pool.query(`UPDATE fechamentos SET "${col.origem}" = $1 WHERE id = $2`, [origem, req.params.id]);
+      await pool.query(
+        `INSERT INTO fechamentos_log (fechamento_id, acao, de, para, por) VALUES ($1, 'origem', $2, $3, $4)`,
+        [req.params.id, atual.origem || "", origem, email]
+      );
+      res.json({ ok: true, origem });
+    } catch (e) {
+      console.error("[fechamento-detalhe] origem:", e?.message || e);
+      res.status(500).json({ error: "Falha ao mudar a origem" });
+    }
+  });
+  app.delete("/api/fechamentos/:id", async (req, res) => {
+    const email = emailDe(req);
+    if (!await podeEditar(email)) return res.status(403).json({ error: "Sem permiss\xE3o para alterar fechamentos" });
+    const c = await pool.connect();
+    try {
+      await c.query("BEGIN");
+      const linha = (await c.query(`SELECT row_to_json(f) AS dados FROM fechamentos f WHERE id = $1`, [req.params.id])).rows[0];
+      if (!linha) {
+        await c.query("ROLLBACK");
+        return res.status(404).json({ error: "Fechamento n\xE3o encontrado" });
+      }
+      await c.query(
+        `INSERT INTO fechamentos_removidos (fechamento_id, dados, motivo, removido_por) VALUES ($1, $2, $3, $4)`,
+        [req.params.id, linha.dados, String(req.body?.motivo || "").slice(0, 500) || null, email]
+      );
+      await c.query(`DELETE FROM fechamentos WHERE id = $1`, [req.params.id]);
+      await c.query(`INSERT INTO fechamentos_log (fechamento_id, acao, por) VALUES ($1, 'removido', $2)`, [req.params.id, email]);
+      await c.query("COMMIT");
+      res.json({ ok: true });
+    } catch (e) {
+      await c.query("ROLLBACK").catch(() => {
+      });
+      console.error("[fechamento-detalhe] remover:", e?.message || e);
+      res.status(500).json({ error: "Falha ao tirar o fechamento" });
+    } finally {
+      c.release();
+    }
+  });
+}
+
+// src/routes/gerentes.ts
+import Anthropic from "@anthropic-ai/sdk";
+var MODELO = "claude-opus-5-5";
+var MAX_VOLTAS = 8;
+var n = (v) => v == null ? null : Math.round(Number(v) * 100) / 100;
+var hojeSP = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(/* @__PURE__ */ new Date());
+var limitar = (v, min, max, padrao) => {
+  const x = Number(v);
+  return Number.isFinite(x) ? Math.min(max, Math.max(min, Math.round(x))) : padrao;
+};
+var dataOk = (s) => typeof s === "string" && /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(s);
+async function saldoAtual(pool) {
+  const r = (await pool.query(
+    `SELECT balance, to_char(transaction_date, 'YYYY-MM-DD') AS dia
+       FROM fin_movements_asaas WHERE account = 'asaas' AND balance IS NOT NULL
+      ORDER BY transaction_date DESC, id DESC LIMIT 1`
+  )).rows[0];
+  return { saldo: n(r?.balance), atualizado_em: r?.dia || null };
+}
+var FERRAMENTAS = {
+  // ── Financeiro ──
+  caixa_atual: {
+    areas: ["financeiro", "assistente"],
+    def: {
+      name: "caixa_atual",
+      description: "Saldo atual da conta Asaas (caixa da Grape) e o que entrou e saiu da conta no m\xEAs corrente at\xE9 hoje. Valores em reais.",
+      input_schema: { type: "object", properties: {}, additionalProperties: false }
+    },
+    run: async (pool) => {
+      const s = await saldoAtual(pool);
+      const mes = (await pool.query(
+        `SELECT COALESCE(SUM(value) FILTER (WHERE type = 1), 0) AS entradas,
+                COALESCE(SUM(value) FILTER (WHERE type = -1), 0) AS saidas
+           FROM fin_movements_asaas
+          WHERE account = 'asaas' AND transaction_date >= date_trunc('month', (NOW() AT TIME ZONE 'America/Sao_Paulo')::date)`
+      )).rows[0];
+      return { ...s, mes_corrente: { entradas: n(mes.entradas), saidas: n(mes.saidas) } };
+    }
+  },
+  previsao_caixa: {
+    areas: ["financeiro", "assistente"],
+    def: {
+      name: "previsao_caixa",
+      description: "Proje\xE7\xE3o do caixa dia a dia para os pr\xF3ximos N dias: parte do saldo atual, soma as cobran\xE7as a receber (PENDING pelo vencimento; cart\xE3o j\xE1 pago pela data prevista de cr\xE9dito) e subtrai as contas a pagar lan\xE7adas. N\xE3o conta inadimplentes como entrada. Mostra o menor saldo do per\xEDodo e o dia.",
+      input_schema: {
+        type: "object",
+        properties: { dias: { type: "integer", description: "Horizonte em dias (padr\xE3o 30, m\xE1x. 90)" } },
+        additionalProperties: false
+      }
+    },
+    run: async (pool, input) => {
+      const dias = limitar(input?.dias, 1, 90, 30);
+      const s = await saldoAtual(pool);
+      const entra = (await pool.query(
+        `SELECT to_char(d, 'YYYY-MM-DD') AS dia, SUM(v) AS total FROM (
+           SELECT due_date AS d, value AS v FROM fin_receivables
+            WHERE status = 'PENDING' AND due_date >= CURRENT_DATE AND due_date <= CURRENT_DATE + $1::int
+           UNION ALL
+           SELECT COALESCE(estimated_credit_date, credit_date, due_date + 30), COALESCE(net_value, value) FROM fin_receivables
+            WHERE status = 'CONFIRMED'
+              AND COALESCE(estimated_credit_date, credit_date, due_date + 30) BETWEEN CURRENT_DATE AND CURRENT_DATE + $1::int
+         ) x GROUP BY 1`,
+        [dias]
+      )).rows;
+      const sai = (await pool.query(
+        `SELECT to_char(e.due_date, 'YYYY-MM-DD') AS dia, SUM(e.expected_value) AS total,
+                string_agg(b.name || ' ' || round(e.expected_value)::text, '; ' ORDER BY e.expected_value DESC) AS itens
+           FROM fin_bill_entries e JOIN fin_bills b ON b.id = e.bill_id
+          WHERE e.status NOT IN ('paid', 'cancelled') AND e.due_date >= CURRENT_DATE AND e.due_date <= CURRENT_DATE + $1::int
+          GROUP BY 1`,
+        [dias]
+      )).rows;
+      const atrasadas = (await pool.query(
+        `SELECT COUNT(*)::int AS qtd, COALESCE(SUM(expected_value), 0) AS total
+           FROM fin_bill_entries WHERE status NOT IN ('paid', 'cancelled') AND due_date < CURRENT_DATE`
+      )).rows[0];
+      const mapaE = new Map(entra.map((r) => [r.dia, Number(r.total)]));
+      const mapaS = new Map(sai.map((r) => [r.dia, { total: Number(r.total), itens: r.itens }]));
+      let saldo = s.saldo || 0;
+      let minimo = { saldo, dia: hojeSP() };
+      const linhas = [];
+      const base = /* @__PURE__ */ new Date(hojeSP() + "T12:00:00");
+      for (let i = 0; i <= dias; i++) {
+        const d = new Date(base);
+        d.setDate(d.getDate() + i);
+        const dia = d.toISOString().slice(0, 10);
+        const e = mapaE.get(dia) || 0;
+        const sx = mapaS.get(dia);
+        if (!e && !sx) continue;
+        saldo += e - (sx?.total || 0);
+        if (saldo < minimo.saldo) minimo = { saldo, dia };
+        linhas.push({ dia, entra: n(e), sai: n(sx?.total || 0), contas: sx?.itens || void 0, saldo: n(saldo) });
+      }
+      return {
+        saldo_hoje: s.saldo,
+        horizonte_dias: dias,
+        dias_com_movimento: linhas,
+        saldo_final: n(saldo),
+        menor_saldo: { valor: n(minimo.saldo), dia: minimo.dia },
+        contas_a_pagar_vencidas_em_aberto: { qtd: atrasadas.qtd, total: n(atrasadas.total) },
+        observacao: "Entradas = cobran\xE7as em aberto pelo vencimento; inadimplentes ficam de fora. Sa\xEDdas = s\xF3 o que est\xE1 lan\xE7ado em Contas a Pagar (fatura do cart\xE3o entra quando lan\xE7ada)."
+      };
+    }
+  },
+  inadimplentes: {
+    areas: ["financeiro", "assistente"],
+    def: {
+      name: "inadimplentes",
+      description: "Clientes com cobran\xE7a vencida (OVERDUE): valor em aberto, dias de atraso, status no CRM e o \xFAltimo contato registrado no hist\xF3rico do cliente (cobran\xE7a manual, promessa de pagamento, etc.).",
+      input_schema: { type: "object", properties: {}, additionalProperties: false }
+    },
+    run: async (pool) => {
+      const rows = (await pool.query(
+        `SELECT COALESCE(c.name, fp.name, r.customer_name) AS cliente,
+                SUM(r.value) AS em_aberto, COUNT(*)::int AS cobrancas,
+                (CURRENT_DATE - MIN(r.due_date))::int AS dias_atraso,
+                c.crm_status, c.status AS status_cliente, c.id AS client_id
+           FROM fin_receivables r
+           LEFT JOIN fin_people fp ON fp.asaas_id = r.customer_id
+           LEFT JOIN clients c ON c.fin_people_guid = fp.guid
+          WHERE r.status = 'OVERDUE'
+          GROUP BY 1, c.crm_status, c.status, c.id
+          ORDER BY em_aberto DESC`
+      )).rows;
+      const ids = rows.map((r) => r.client_id).filter(Boolean);
+      const contatos = ids.length ? (await pool.query(
+        `SELECT DISTINCT ON (client_id) client_id, type, LEFT(content, 160) AS texto,
+                to_char(created_at, 'YYYY-MM-DD') AS dia, meta->>'resultado' AS resultado, meta->>'promessa_data' AS promessa
+           FROM crm_comments WHERE client_id = ANY($1)
+          ORDER BY client_id, created_at DESC`,
+        [ids]
+      )).rows : [];
+      const porId = new Map(contatos.map((c) => [c.client_id, c]));
+      return {
+        total_em_aberto: n(rows.reduce((s, r) => s + Number(r.em_aberto), 0)),
+        clientes: rows.map((r) => {
+          const c = porId.get(r.client_id);
+          return {
+            cliente: r.cliente,
+            em_aberto: n(r.em_aberto),
+            cobrancas: r.cobrancas,
+            dias_atraso: r.dias_atraso,
+            status_crm: r.crm_status || null,
+            status_cliente: r.status_cliente || null,
+            ultimo_registro: c ? { dia: c.dia, tipo: c.type, resultado: c.resultado || void 0, promessa: c.promessa || void 0, texto: c.texto } : null
+          };
+        })
+      };
+    }
+  },
+  contas_a_pagar: {
+    areas: ["financeiro", "assistente"],
+    def: {
+      name: "contas_a_pagar",
+      description: "Contas a pagar em aberto: as vencidas e as que vencem nos pr\xF3ximos N dias, com nome, categoria, valor e vencimento.",
+      input_schema: {
+        type: "object",
+        properties: { dias: { type: "integer", description: "Janela \xE0 frente em dias (padr\xE3o 14, m\xE1x. 60)" } },
+        additionalProperties: false
+      }
+    },
+    run: async (pool, input) => {
+      const dias = limitar(input?.dias, 1, 60, 14);
+      const rows = (await pool.query(
+        `SELECT b.name AS conta, b.category AS categoria, e.expected_value AS valor,
+                to_char(e.due_date, 'YYYY-MM-DD') AS vencimento, (e.due_date < CURRENT_DATE) AS vencida
+           FROM fin_bill_entries e JOIN fin_bills b ON b.id = e.bill_id
+          WHERE e.status NOT IN ('paid', 'cancelled') AND e.due_date <= CURRENT_DATE + $1::int
+          ORDER BY e.due_date, e.expected_value DESC LIMIT 80`,
+        [dias]
+      )).rows;
+      return {
+        janela_dias: dias,
+        observacao: "Vencidas de meses atr\xE1s podem j\xE1 estar pagas sem baixa no sistema \u2014 confirme antes de tratar como d\xEDvida.",
+        total: n(rows.reduce((s, r) => s + Number(r.valor), 0)),
+        contas: rows.map((r) => ({ ...r, valor: n(r.valor) }))
+      };
+    }
+  },
+  meses_fechados: {
+    areas: ["financeiro", "assistente"],
+    def: {
+      name: "meses_fechados",
+      description: "Totais congelados dos meses fechados no DFC (regime de caixa): receitas (grupo 01), custos/despesas (02, 04, 05), transfer\xEAncias (99), gera\xE7\xE3o de caixa e saldos inicial/final. Use para comparar meses e ver tend\xEAncia.",
+      input_schema: {
+        type: "object",
+        properties: { meses: { type: "integer", description: "Quantos meses fechados, do mais recente para tr\xE1s (padr\xE3o 6, m\xE1x. 12)" } },
+        additionalProperties: false
+      }
+    },
+    run: async (pool, input) => {
+      const meses = limitar(input?.meses, 1, 12, 6);
+      const rows = (await pool.query(
+        `SELECT month AS mes, totais FROM fin_month_closings WHERE status = 'fechado' ORDER BY month DESC LIMIT $1`,
+        [meses]
+      )).rows;
+      return {
+        legenda: { "01": "receitas", "02": "custos e despesas operacionais", "04": "investimentos/retiradas", "05": "despesas financeiras/impostos", "99": "transfer\xEAncias entre contas e pagamento de fatura (fora do resultado)" },
+        meses: rows
+      };
+    }
+  },
+  // ── Comercial ──
+  funil_periodo: {
+    areas: ["comercial", "assistente", "marketing"],
+    def: {
+      name: "funil_periodo",
+      description: "N\xFAmeros do funil comercial num per\xEDodo: leads novos (por origem), reuni\xF5es marcadas (mesma regra das M\xE9tricas), fechamentos (quantidade e valor de contrato) e leads perdidos.",
+      input_schema: {
+        type: "object",
+        properties: {
+          de: { type: "string", description: "Data inicial AAAA-MM-DD (padr\xE3o: 1\xBA dia do m\xEAs corrente)" },
+          ate: { type: "string", description: "Data final AAAA-MM-DD, inclusiva (padr\xE3o: hoje)" }
+        },
+        additionalProperties: false
+      }
+    },
+    run: async (pool, input) => {
+      const hoje = hojeSP();
+      const de = dataOk(input?.de) ? input.de : hoje.slice(0, 8) + "01";
+      const ate = dataOk(input?.ate) ? input.ate : hoje;
+      const [leads, reun, fech, perd] = await Promise.all([
+        pool.query(
+          `SELECT COALESCE(NULLIF(origem, ''), 'sem origem') AS origem, COUNT(*)::int AS qtd
+             FROM crm_comercial_leads
+            WHERE (created_at AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN $1 AND $2
+            GROUP BY 1 ORDER BY 2 DESC`,
+          [de, ate]
+        ),
+        pool.query(sqlReunioesMarcadas("$1", "$2"), [de, ate]),
+        pool.query(
+          `SELECT COUNT(*)::int AS qtd,
+                  COALESCE(SUM(NULLIF(replace(regexp_replace("Valor", '[^0-9,]', '', 'g'), ',', '.'), '')::numeric), 0) AS valor
+             FROM fechamentos WHERE day BETWEEN $1 AND $2`,
+          [de, ate]
+        ).catch(() => ({ rows: [{ qtd: null, valor: null }] })),
+        pool.query(
+          `SELECT COUNT(*)::int AS qtd FROM crm_comercial_leads
+            WHERE is_lost = TRUE AND (updated_at AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN $1 AND $2`,
+          [de, ate]
+        )
+      ]);
+      const totalLeads = leads.rows.reduce((s, r) => s + r.qtd, 0);
+      return {
+        periodo: { de, ate },
+        leads_novos: totalLeads,
+        leads_por_origem: leads.rows,
+        reunioes_marcadas: reun.rows[0]?.marcadas ?? 0,
+        fechamentos: { qtd: fech.rows[0].qtd, valor_contratos: n(fech.rows[0].valor) },
+        perdidos_no_periodo: perd.rows[0].qtd,
+        observacao: "Perdidos usa a data da \xFAltima atualiza\xE7\xE3o do lead (aproxima\xE7\xE3o)."
+      };
+    }
+  },
+  leads_parados: {
+    areas: ["comercial", "assistente"],
+    def: {
+      name: "leads_parados",
+      description: "Leads em aberto (n\xE3o perdidos) que n\xE3o mudam de etapa entre N e M dias, com etapa, respons\xE1vel, valor e dias parado \u2014 a faixa ainda recuper\xE1vel. Traz tamb\xE9m quantos leads abertos est\xE3o parados h\xE1 mais de M dias (provavelmente mortos, sem ningu\xE9m marcar como perdido).",
+      input_schema: {
+        type: "object",
+        properties: {
+          dias: { type: "integer", description: "Dias m\xEDnimos sem mudar de etapa (padr\xE3o 3)" },
+          max_dias: { type: "integer", description: "Dias m\xE1ximos (padr\xE3o 30)" }
+        },
+        additionalProperties: false
+      }
+    },
+    run: async (pool, input) => {
+      const dias = limitar(input?.dias, 1, 365, 3);
+      const max = Math.max(dias, limitar(input?.max_dias, 1, 365, 30));
+      const resumo = (await pool.query(
+        `SELECT c.title AS etapa,
+                COUNT(*) FILTER (WHERE COALESCE(l.etapa_updated_at, l.created_at) >= NOW() - ($2::int * interval '1 day')
+                                   AND COALESCE(l.etapa_updated_at, l.created_at) < NOW() - ($1::int * interval '1 day'))::int AS na_faixa,
+                COUNT(*) FILTER (WHERE COALESCE(l.etapa_updated_at, l.created_at) < NOW() - ($2::int * interval '1 day'))::int AS mais_antigos
+           FROM crm_comercial_leads l JOIN crm_comercial_columns c ON c.id::text = l.coluna::text
+          WHERE COALESCE(l.is_lost, FALSE) = FALSE AND LOWER(c.title) NOT SIMILAR TO '%(ganho|fechad|perdid)%'
+          GROUP BY 1 ORDER BY 2 DESC`,
+        [dias, max]
+      )).rows;
+      const rows = (await pool.query(
+        `SELECT COALESCE(NULLIF(l.form_nome_fantasia, ''), l.nome) AS lead, c.title AS etapa, u.name AS responsavel,
+                l.valor, (CURRENT_DATE - COALESCE(l.etapa_updated_at, l.created_at)::date)::int AS dias_parado
+           FROM crm_comercial_leads l
+           JOIN crm_comercial_columns c ON c.id::text = l.coluna::text
+           LEFT JOIN users u ON u.id::text = l.responsavel_id::text
+          WHERE COALESCE(l.is_lost, FALSE) = FALSE
+            AND LOWER(c.title) NOT SIMILAR TO '%(ganho|fechad|perdid)%'
+            AND COALESCE(l.etapa_updated_at, l.created_at) < NOW() - ($1::int * interval '1 day')
+            AND COALESCE(l.etapa_updated_at, l.created_at) >= NOW() - ($2::int * interval '1 day')
+          ORDER BY dias_parado DESC LIMIT 60`,
+        [dias, max]
+      )).rows;
+      return { faixa_dias: [dias, max], por_etapa: resumo, leads: rows.map((r) => ({ ...r, valor: n(r.valor) })) };
+    }
+  },
+  tarefas_atrasadas: {
+    areas: ["comercial", "assistente"],
+    def: {
+      name: "tarefas_atrasadas",
+      description: "Tarefas do CRM comercial n\xE3o conclu\xEDdas com prazo vencido nos \xFAltimos N dias, com o lead, o tipo, o respons\xE1vel e os dias de atraso. Traz tamb\xE9m quantas mais antigas seguem abertas (prov\xE1vel lixo de follow-up).",
+      input_schema: {
+        type: "object",
+        properties: { dias: { type: "integer", description: "Janela de atraso em dias (padr\xE3o 30)" } },
+        additionalProperties: false
+      }
+    },
+    run: async (pool, input) => {
+      const dias = limitar(input?.dias, 1, 365, 30);
+      const antigas = (await pool.query(
+        `SELECT COUNT(*)::int AS qtd FROM crm_comercial_tasks
+          WHERE COALESCE(completed, FALSE) = FALSE AND due_date < NOW() - ($1::int * interval '1 day')`,
+        [dias]
+      )).rows[0].qtd;
+      const rows = (await pool.query(
+        `SELECT t.title AS tarefa, t.type AS tipo, COALESCE(NULLIF(l.form_nome_fantasia, ''), l.nome) AS lead,
+                u.name AS responsavel, (CURRENT_DATE - t.due_date::date)::int AS dias_atraso
+           FROM crm_comercial_tasks t
+           LEFT JOIN crm_comercial_leads l ON l.id = t.lead_id
+           LEFT JOIN users u ON u.id::text = t.responsible_id::text
+          WHERE COALESCE(t.completed, FALSE) = FALSE AND t.due_date < NOW()
+            AND t.due_date >= NOW() - ($1::int * interval '1 day')
+          ORDER BY t.due_date LIMIT 60`,
+        [dias]
+      )).rows;
+      const porResp = {};
+      for (const r of rows) porResp[r.responsavel || "sem respons\xE1vel"] = (porResp[r.responsavel || "sem respons\xE1vel"] || 0) + 1;
+      return { janela_dias: dias, total: rows.length, por_responsavel: porResp, abertas_mais_antigas: antigas, tarefas: rows };
+    }
+  },
+  fechamentos_recentes: {
+    areas: ["comercial", "assistente"],
+    def: {
+      name: "fechamentos_recentes",
+      description: "\xDAltimos contratos fechados: data, cliente, valor, origem (campanha ou indica\xE7\xE3o), faturamento e cidade declarados.",
+      input_schema: {
+        type: "object",
+        properties: { limite: { type: "integer", description: "Quantos (padr\xE3o 15, m\xE1x. 50)" } },
+        additionalProperties: false
+      }
+    },
+    run: async (pool, input) => {
+      const lim = limitar(input?.limite, 1, 50, 15);
+      const rows = (await pool.query(`SELECT to_char(day, 'YYYY-MM-DD') AS dia, * FROM fechamentos ORDER BY day DESC, id DESC LIMIT $1`, [lim])).rows;
+      return rows.map((r) => {
+        const o = { dia: r.dia };
+        for (const [k, v] of Object.entries(r)) if (!["day", "dia", "id"].includes(k) && v != null && v !== "") o[k.toLowerCase()] = v;
+        return o;
+      });
+    }
+  },
+  // ── Marketing (aquisição da própria Grape) ──
+  anuncios_grape: {
+    areas: ["marketing", "assistente"],
+    def: {
+      name: "anuncios_grape",
+      description: "An\xFAncios da pr\xF3pria Grape na Meta (conta Capta\xE7\xE3o) num per\xEDodo, por campanha ou por an\xFAncio/criativo: gasto, impress\xF5es, cliques no link, visitas \xE0 LP (landing_page_view), leads que a Meta contou, e os leads que de fato entraram no CRM com aquela UTM \u2014 com CPL calculado sobre os leads do CRM. Com por_dia=true traz tamb\xE9m o gasto e as visitas dia a dia (bom para gr\xE1fico).",
+      input_schema: {
+        type: "object",
+        properties: {
+          de: { type: "string", description: "AAAA-MM-DD (padr\xE3o: 1\xBA dia do m\xEAs corrente)" },
+          ate: { type: "string", description: "AAAA-MM-DD, inclusiva (padr\xE3o: hoje)" },
+          nivel: { type: "string", enum: ["campanha", "anuncio"], description: "Agrupar por campanha (padr\xE3o) ou por an\xFAncio/criativo" },
+          por_dia: { type: "boolean", description: "Incluir a s\xE9rie di\xE1ria de gasto e visitas" }
+        },
+        additionalProperties: false
+      }
+    },
+    run: async (pool, input) => {
+      const token = process.env.META_GRAPE_ACCESS_TOKEN;
+      if (!token) return { erro: "Falta o token da conta de an\xFAncio da Grape (META_GRAPE_ACCESS_TOKEN) no servidor." };
+      const conta = String(process.env.META_GRAPE_ACCOUNT_ID || "690496082457749").replace(/^act_/, "");
+      const hoje = hojeSP();
+      const de = dataOk(input?.de) ? input.de : hoje.slice(0, 8) + "01";
+      const ate = dataOk(input?.ate) ? input.ate : hoje;
+      const porAnuncio = input?.nivel === "anuncio";
+      const tr = encodeURIComponent(JSON.stringify({ since: de, until: ate }));
+      const base = `https://graph.facebook.com/v21.0/act_${conta}/insights?time_range=${tr}&limit=200&access_token=${encodeURIComponent(token)}`;
+      const meta = async (url) => {
+        const r = await fetch(url);
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error) throw new Error(j?.error?.message || `Meta HTTP ${r.status}`);
+        return j.data || [];
+      };
+      const acao = (row, tipo) => Number((row.actions || []).find((a) => a.action_type === tipo)?.value || 0);
+      const chave = (t) => String(t || "").normalize("NFD").replace(/[^A-Za-z0-9\[\]]/g, "").toUpperCase();
+      const brutas = await meta(`${base}&level=${porAnuncio ? "ad" : "campaign"}&fields=campaign_name,ad_name,spend,impressions,inline_link_clicks,actions`);
+      const somadas = /* @__PURE__ */ new Map();
+      for (const l of brutas) {
+        const nome = porAnuncio ? l.ad_name : l.campaign_name;
+        const k = chave(nome);
+        const a = somadas.get(k);
+        const acts = /* @__PURE__ */ new Map();
+        for (const x of [...a?.actions || [], ...l.actions || []]) acts.set(x.action_type, (acts.get(x.action_type) || 0) + Number(x.value || 0));
+        somadas.set(k, {
+          campaign_name: a ? [.../* @__PURE__ */ new Set([...String(a.campaign_name).split(" + "), l.campaign_name])].join(" + ") : l.campaign_name,
+          ad_name: l.ad_name,
+          spend: Number(a?.spend || 0) + Number(l.spend || 0),
+          impressions: Number(a?.impressions || 0) + Number(l.impressions || 0),
+          inline_link_clicks: Number(a?.inline_link_clicks || 0) + Number(l.inline_link_clicks || 0),
+          actions: [...acts].map(([action_type, value]) => ({ action_type, value }))
+        });
+      }
+      const linhas = [...somadas.values()];
+      const crm = (await pool.query(
+        `SELECT COALESCE(NULLIF(${porAnuncio ? "utm_creative" : "utm_campaign"}, ''), '(sem UTM)') AS nome, COUNT(*)::int AS leads,
+                COUNT(*) FILTER (WHERE is_lost)::int AS perdidos
+           FROM crm_comercial_leads
+          WHERE (created_at AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN $1 AND $2
+          GROUP BY 1`,
+        [de, ate]
+      )).rows;
+      const porChave = /* @__PURE__ */ new Map();
+      for (const c of crm) porChave.set(chave(c.nome), c);
+      const usados = /* @__PURE__ */ new Set();
+      const itens = linhas.map((l) => {
+        const nome = porAnuncio ? l.ad_name : l.campaign_name;
+        const k = chave(nome);
+        const c = porChave.get(k);
+        if (c) usados.add(k);
+        const gasto = Number(l.spend || 0);
+        const leadsCrm = c?.leads || 0;
+        return {
+          nome,
+          campanha: porAnuncio ? l.campaign_name : void 0,
+          gasto: n(gasto),
+          impressoes: Number(l.impressions || 0),
+          cliques_link: Number(l.inline_link_clicks || 0),
+          visitas_lp: acao(l, "landing_page_view"),
+          leads_meta: acao(l, "lead"),
+          leads_crm: leadsCrm,
+          perdidos_crm: c?.perdidos || 0,
+          cpl_crm: leadsCrm ? n(gasto / leadsCrm) : null
+        };
+      }).sort((a, b) => b.gasto - a.gasto);
+      const semMeta = crm.filter((c) => !usados.has(chave(c.nome))).map((c) => ({ utm: c.nome, leads: c.leads }));
+      const total = itens.reduce((t, i) => ({ gasto: t.gasto + i.gasto, leads_crm: t.leads_crm + i.leads_crm, visitas_lp: t.visitas_lp + i.visitas_lp }), { gasto: 0, leads_crm: 0, visitas_lp: 0 });
+      let diario;
+      if (input?.por_dia) {
+        const d = await meta(`${base}&level=account&time_increment=1&fields=spend,actions`);
+        diario = d.map((x) => ({ dia: x.date_start, gasto: n(x.spend), visitas_lp: acao(x, "landing_page_view") }));
+      }
+      return {
+        periodo: { de, ate },
+        nivel: porAnuncio ? "anuncio" : "campanha",
+        total: { gasto: n(total.gasto), visitas_lp: total.visitas_lp, leads_crm: total.leads_crm, cpl_crm: total.leads_crm ? n(total.gasto / total.leads_crm) : null },
+        itens,
+        leads_crm_sem_anuncio_correspondente: semMeta,
+        diario,
+        observacao: "Leads do CRM s\xE3o casados pelo nome da UTM (sem emoji). Reuni\xE3o marcada e fechamento por campanha n\xE3o s\xE3o rastreados aqui \u2014 use funil_periodo para o total."
+      };
+    }
+  },
+  postagens_instagram: {
+    areas: ["marketing", "assistente"],
+    def: {
+      name: "postagens_instagram",
+      description: "Postagens planejadas para os Instagrams da Grape e do Jean (p\xE1gina Postagens IG): t\xEDtulo, perfil, formato, etapa e data de publica\xE7\xE3o.",
+      input_schema: { type: "object", properties: {}, additionalProperties: false }
+    },
+    run: async (pool) => {
+      const r = (await pool.query(
+        `SELECT client_name AS titulo, produto AS perfil, entregavel AS formato, status_group AS etapa,
+                to_char(due_date, 'YYYY-MM-DD') AS publicar_em
+           FROM onboarding_tasks WHERE type = 'lista-postagens'
+          ORDER BY due_date NULLS LAST LIMIT 60`
+      )).rows;
+      return { total: r.length, postagens: r };
+    }
+  },
+  // ── Operacional ──
+  carteira: {
+    areas: ["operacional", "assistente"],
+    def: {
+      name: "carteira",
+      description: "Situa\xE7\xE3o atual da carteira de projetos (clientes em gest\xE3o de tr\xE1fego): quantos em cada resultado (BOM, OK, RUIM, TESTANDO, PAUSADA\u2026), quantos em gargalo e por respons\xE1vel; lista os projetos com resultado ruim ou em gargalo.",
+      input_schema: { type: "object", properties: {}, additionalProperties: false }
+    },
+    run: async (pool) => {
+      const rows = (await pool.query(
+        `SELECT partner AS projeto, project_result AS resultado, status, responsible AS responsavel, squad, investment AS investimento, last_update
+           FROM projects`
+      )).rows;
+      const porResultado = {};
+      const porResp = {};
+      for (const r of rows) {
+        const res = r.resultado || "sem resultado";
+        porResultado[res] = (porResultado[res] || 0) + 1;
+        const resp = r.responsavel || "sem respons\xE1vel";
+        porResp[resp] = porResp[resp] || {};
+        porResp[resp][res] = (porResp[resp][res] || 0) + 1;
+      }
+      return {
+        total: rows.length,
+        por_resultado: porResultado,
+        em_gargalo: rows.filter((r) => r.status === "Gargalo").length,
+        por_responsavel: porResp,
+        atencao: rows.filter((r) => r.resultado === "RESULTADO RUIM" || r.status === "Gargalo").map((r) => ({ projeto: r.projeto, resultado: r.resultado, status: r.status, responsavel: r.responsavel, squad: r.squad }))
+      };
+    }
+  },
+  evolucao_carteira: {
+    areas: ["operacional", "assistente"],
+    def: {
+      name: "evolucao_carteira",
+      description: "Evolu\xE7\xE3o da carteira semana a semana (fotos di\xE1rias dos resultados): quantos projetos Bom+Ok, Ruim e outros, para ver se est\xE1 melhorando ou piorando.",
+      input_schema: {
+        type: "object",
+        properties: { dias: { type: "integer", description: "Janela em dias (padr\xE3o 60, m\xE1x. 180)" } },
+        additionalProperties: false
+      }
+    },
+    run: async (pool, input) => {
+      const dias = limitar(input?.dias, 7, 180, 60);
+      const rows = (await pool.query(
+        `WITH f AS (
+           SELECT DISTINCT ON (date_trunc('week', snapshot_date), project_id)
+                  to_char(date_trunc('week', snapshot_date), 'YYYY-MM-DD') AS semana, project_result
+             FROM project_result_snapshots
+            WHERE snapshot_date >= CURRENT_DATE - $1::int
+            ORDER BY date_trunc('week', snapshot_date), project_id, snapshot_date DESC)
+         SELECT semana,
+                COUNT(*) FILTER (WHERE project_result IN ('RESULTADO BOM', 'RESULTADO OK'))::int AS bom_ok,
+                COUNT(*) FILTER (WHERE project_result = 'RESULTADO RUIM')::int AS ruim,
+                COUNT(*) FILTER (WHERE project_result NOT IN ('RESULTADO BOM', 'RESULTADO OK', 'RESULTADO RUIM') OR project_result IS NULL)::int AS outros
+           FROM f GROUP BY semana ORDER BY semana`,
+        [dias]
+      )).rows;
+      return { semanas: rows };
+    }
+  },
+  retencao: {
+    areas: ["operacional", "assistente", "financeiro"],
+    def: {
+      name: "retencao",
+      description: 'Clientes em risco: os marcados com a etiqueta "quarentena" (fora do faturamento previs\xEDvel), os que est\xE3o no quadro de Reten\xE7\xE3o por etapa, e os que deram aviso pr\xE9vio, com a data.',
+      input_schema: { type: "object", properties: {}, additionalProperties: false }
+    },
+    run: async (pool) => {
+      const quarentena = (await pool.query(
+        `SELECT c.name AS cliente, COALESCE(rc.title, c.crm_status) AS etapa_retencao, c.squad FROM clients c
+           LEFT JOIN retencao_columns rc ON rc.id = c.crm_status
+          WHERE c.status ILIKE 'ativo%' AND c.tags ILIKE '%quarentena%' ORDER BY c.name`
+      )).rows;
+      const etapas = (await pool.query(
+        `SELECT COALESCE(rc.title, c.crm_status) AS etapa, COUNT(*)::int AS qtd,
+                string_agg(c.name || CASE WHEN c.status ILIKE 'ativo%' THEN '' ELSE ' (inativo)' END, ', ' ORDER BY c.name) AS clientes
+           FROM clients c LEFT JOIN retencao_columns rc ON rc.id = c.crm_status
+          WHERE COALESCE(c.crm_status, '') <> '' AND c.crm_archived_at IS NULL
+          GROUP BY 1, rc.order_index ORDER BY rc.order_index NULLS LAST`
+      )).rows;
+      const aviso = (await pool.query(
+        `SELECT name AS cliente, aviso_previo_date AS aviso_previo, status FROM clients
+          WHERE COALESCE(aviso_previo_date, '') <> '' AND status ILIKE 'ativo%' ORDER BY aviso_previo_date`
+      )).rows;
+      const ativos = (await pool.query(`SELECT COUNT(*)::int AS qtd FROM clients WHERE status ILIKE 'ativo%'`)).rows[0].qtd;
+      return { clientes_ativos: ativos, quarentena, quadro_retencao: etapas, aviso_previo: aviso };
+    }
+  },
+  // ── Fila "Para decidir" (a única escrita) ──
+  propor_decisao: {
+    areas: ["assistente", "financeiro", "comercial", "operacional", "marketing"],
+    def: {
+      name: "propor_decisao",
+      description: 'Coloca um item na fila "Para decidir" do Jean. Use s\xF3 para algo que precisa de uma decis\xE3o humana (gastar, cortar, cobrar, mudar processo, conversar com algu\xE9m) e que voc\xEA sustentou com n\xFAmeros das ferramentas. N\xE3o repita item igual j\xE1 pendente.',
+      input_schema: {
+        type: "object",
+        properties: {
+          titulo: { type: "string", description: 'A decis\xE3o em uma frase curta (ex.: "Antecipar R$ 12 mil de receb\xEDveis antes do dia 20")' },
+          contexto: { type: "string", description: "Os n\xFAmeros que justificam, em 2\u20134 frases" },
+          recomendacao: { type: "string", description: "O que voc\xEA faria e por qu\xEA, em 1\u20132 frases" },
+          urgencia: { type: "string", enum: ["alta", "media", "baixa"] }
+        },
+        required: ["titulo", "contexto", "recomendacao", "urgencia"],
+        additionalProperties: false
+      }
+    },
+    run: async (pool, input, ctx) => {
+      const titulo = String(input?.titulo || "").trim().slice(0, 200);
+      if (!titulo) return { erro: "titulo vazio" };
+      const igual = (await pool.query(
+        `SELECT id FROM ia_para_decidir WHERE status = 'pendente' AND LOWER(titulo) = LOWER($1)`,
+        [titulo]
+      )).rows[0];
+      if (igual) return { ok: false, motivo: "J\xE1 existe um item pendente com esse t\xEDtulo", id: igual.id };
+      const urg = ["alta", "media", "baixa"].includes(input?.urgencia) ? input.urgencia : "media";
+      const r = await pool.query(
+        `INSERT INTO ia_para_decidir (gerente, titulo, contexto, recomendacao, urgencia, criado_por)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [ctx.gerente, titulo, String(input?.contexto || "").slice(0, 2e3), String(input?.recomendacao || "").slice(0, 1e3), urg, ctx.email || "rotina"]
+      );
+      return { ok: true, id: r.rows[0].id };
+    }
+  },
+  // ── Memória (vale para todas as conversas e relatórios do gerente) ──
+  lembrar: {
+    areas: ["assistente", "financeiro", "comercial", "operacional", "marketing"],
+    def: {
+      name: "lembrar",
+      description: "Guarda uma anota\xE7\xE3o na sua mem\xF3ria permanente. Ela passa a aparecer em todas as suas pr\xF3ximas conversas e relat\xF3rios. Use sempre que a pessoa disser algo que deve valer depois: prefer\xEAncia, corre\xE7\xE3o ao seu trabalho, fato da empresa que n\xE3o est\xE1 no sistema, decis\xE3o tomada, plano, prazo, contexto de um cliente ou pessoa. Escreva uma frase autossuficiente, com data quando importar. N\xE3o anote n\xFAmeros que mudam todo dia (saldo, leads de hoje).",
+      input_schema: {
+        type: "object",
+        properties: {
+          texto: { type: "string", description: 'A anota\xE7\xE3o, em uma ou duas frases (ex.: "Jean prefere n\xE3o pegar empr\xE9stimo; antes, antecipar receb\xEDveis (18/11/2026).")' },
+          tipo: { type: "string", enum: ["preferencia", "correcao", "fato", "decisao", "plano"] }
+        },
+        required: ["texto", "tipo"],
+        additionalProperties: false
+      }
+    },
+    run: async (pool, input, ctx) => {
+      const texto = String(input?.texto || "").trim().slice(0, 600);
+      if (!texto) return { erro: "texto vazio" };
+      const igual = (await pool.query(
+        `SELECT id FROM ia_gerentes_memoria WHERE ativo AND gerente = $1 AND LOWER(texto) = LOWER($2)`,
+        [ctx.gerente, texto]
+      )).rows[0];
+      if (igual) return { ok: true, id: igual.id, observacao: "j\xE1 estava anotado" };
+      const tipo = ["preferencia", "correcao", "fato", "decisao", "plano"].includes(input?.tipo) ? input.tipo : "fato";
+      const r = await pool.query(
+        `INSERT INTO ia_gerentes_memoria (gerente, texto, tipo, origem, conversa_id, criado_por)
+         VALUES ($1, $2, $3, 'conversa', $4, $5) RETURNING id`,
+        [ctx.gerente, texto, tipo, ctx.conversaId || null, ctx.email || "rotina"]
+      );
+      return { ok: true, id: r.rows[0].id };
+    }
+  },
+  esquecer: {
+    areas: ["assistente", "financeiro", "comercial", "operacional", "marketing"],
+    def: {
+      name: "esquecer",
+      description: "Desativa uma anota\xE7\xE3o da sua mem\xF3ria que ficou errada ou desatualizada (o id aparece entre colchetes na lista de mem\xF3ria). Se a informa\xE7\xE3o mudou, esque\xE7a a antiga e lembre a nova.",
+      input_schema: {
+        type: "object",
+        properties: { id: { type: "integer" } },
+        required: ["id"],
+        additionalProperties: false
+      }
+    },
+    run: async (pool, input, ctx) => {
+      const r = await pool.query(
+        `UPDATE ia_gerentes_memoria SET ativo = FALSE, desativado_por = $3, desativado_em = NOW()
+          WHERE id = $1 AND ativo AND ($2 = 'assistente' OR gerente = $2) RETURNING id`,
+        [Number(input?.id) || 0, ctx.gerente, ctx.email || "rotina"]
+      );
+      return r.rowCount ? { ok: true } : { ok: false, motivo: "anota\xE7\xE3o n\xE3o encontrada na sua mem\xF3ria" };
+    }
+  },
+  buscar_conversas: {
+    areas: ["assistente", "financeiro", "comercial", "operacional", "marketing"],
+    def: {
+      name: "buscar_conversas",
+      description: 'Procura nas conversas antigas (todas, de todos os gerentes que a pessoa usa) por um termo \u2014 para responder "o que eu falei sobre X?" ou retomar um assunto. Devolve trechos com data e gerente.',
+      input_schema: {
+        type: "object",
+        properties: {
+          termo: { type: "string", description: 'Palavra ou nome a procurar (ex.: "Erick", "empr\xE9stimo")' },
+          dias: { type: "integer", description: "S\xF3 nos \xFAltimos N dias (padr\xE3o: tudo)" }
+        },
+        required: ["termo"],
+        additionalProperties: false
+      }
+    },
+    run: async (pool, input, ctx) => {
+      const termo = String(input?.termo || "").trim().slice(0, 80);
+      if (termo.length < 2) return { erro: "termo curto demais" };
+      const dias = input?.dias ? limitar(input.dias, 1, 3650, 30) : null;
+      const r = (await pool.query(
+        `SELECT c.gerente, c.titulo, m.papel, m.texto, to_char(m.criado_em AT TIME ZONE 'America/Sao_Paulo', 'DD/MM/YYYY HH24:MI') AS quando
+           FROM ia_gerentes_mensagens m JOIN ia_gerentes_conversas c ON c.id = m.conversa_id
+          WHERE m.texto ILIKE '%' || $1 || '%'
+            AND ($2 = '' OR c.email = $2)
+            AND ($3::int IS NULL OR m.criado_em > NOW() - ($3::int * interval '1 day'))
+          ORDER BY m.criado_em DESC LIMIT 15`,
+        [termo, ctx.email || "", dias]
+      )).rows;
+      return {
+        encontrados: r.length,
+        trechos: r.map((x) => {
+          const t = String(x.texto);
+          const i = t.toLowerCase().indexOf(termo.toLowerCase());
+          const ini = Math.max(0, i - 220);
+          return {
+            quando: x.quando,
+            gerente: x.gerente,
+            conversa: x.titulo,
+            quem: x.papel === "usuario" ? "pessoa" : "gerente",
+            trecho: (ini > 0 ? "\u2026" : "") + t.slice(ini, i + 380) + (i + 380 < t.length ? "\u2026" : "")
+          };
+        })
+      };
+    }
+  },
+  decisoes_pendentes: {
+    areas: ["assistente", "financeiro", "comercial", "operacional", "marketing"],
+    def: {
+      name: "decisoes_pendentes",
+      description: 'A fila de decis\xF5es e tarefas da p\xE1gina: "pendentes" (esperando o Jean decidir), "em_andamento" (aprovadas \u2014 viraram tarefa com respons\xE1vel e prazo; diz se est\xE1 atrasada), e as conclu\xEDdas/descartadas dos \xFAltimos 14 dias com a observa\xE7\xE3o de quem decidiu.',
+      input_schema: { type: "object", properties: {}, additionalProperties: false }
+    },
+    run: async (pool) => {
+      const r = (await pool.query(
+        `SELECT id, gerente, titulo, urgencia, status, observacao, recomendacao,
+                to_char(criado_em, 'YYYY-MM-DD') AS criado, to_char(decidido_em, 'YYYY-MM-DD') AS aprovado_ou_decidido,
+                responsavel_nome, to_char(prazo, 'YYYY-MM-DD') AS prazo,
+                CASE WHEN status = 'aprovado' AND prazo < CURRENT_DATE THEN (CURRENT_DATE - prazo) END AS dias_atrasado,
+                to_char(concluido_em, 'YYYY-MM-DD') AS concluido
+           FROM ia_para_decidir
+          WHERE status IN ('pendente', 'aprovado')
+             OR COALESCE(concluido_em, decidido_em) > NOW() - interval '14 days'
+          ORDER BY criado_em DESC LIMIT 60`
+      )).rows;
+      const de = (st) => r.filter((x) => st.includes(x.status));
+      return { pendentes: de(["pendente"]), em_andamento: de(["aprovado"]), feitos: de(["feito"]), descartados: de(["descartado"]) };
+    }
+  }
+};
+var BASE = `Voc\xEA trabalha dentro do GrapeHub, o sistema interno da Grape M\xEDdia \u2014 ag\xEAncia de tr\xE1fego pago para escrit\xF3rios de advocacia (previdenci\xE1rio, banc\xE1rio, trabalhista). O dono \xE9 o Jean. Quem conversa com voc\xEA \xE9 algu\xE9m do time, identificado abaixo.
+
+Como trabalhar:
+- Responda em portugu\xEAs do Brasil. Conclus\xE3o primeiro, em 1\u20132 frases. Depois, no m\xE1ximo tr\xEAs blocos curtos.
+- N\xFAmero antes de opini\xE3o. Todo n\xFAmero vem de uma ferramenta chamada nesta conversa; se a ferramenta n\xE3o tem o dado, diga que n\xE3o tem \u2014 nunca invente nem estime sem avisar.
+- Diga a data e a fonte do n\xFAmero quando importar ("saldo do Asaas em 18/11").
+- D\xEA uma recomenda\xE7\xE3o clara, n\xE3o uma lista de op\xE7\xF5es ponderadas.
+- Voc\xEA s\xF3 l\xEA o sistema. N\xE3o prometa que vai alterar, cobrar, mover ou enviar nada. Quando algo precisa de uma decis\xE3o humana, use propor_decisao e diga que foi para a fila "Para decidir".
+- Valores em reais no formato R$ 12.345,67. Datas em DD/MM.
+- Formata\xE7\xE3o: par\xE1grafos curtos, listas com "- " e **negrito** para o n\xFAmero que importa. Sem tabelas largas.
+- Ferramentas se usam chamando de verdade (tool use), nunca escrevendo a chamada no texto. N\xE3o inclua tags XML internas na resposta.
+
+Mem\xF3ria: tudo o que a pessoa conversa com voc\xEA fica salvo. Voc\xEA tem uma mem\xF3ria permanente (lista abaixo, quando houver) que vale acima das suas suposi\xE7\xF5es.
+- Sempre que a pessoa disser algo que deve valer depois \u2014 prefer\xEAncia, corre\xE7\xE3o ao seu trabalho, fato que o sistema n\xE3o mostra, decis\xE3o, plano, contexto de cliente ou de algu\xE9m do time \u2014 chame lembrar na hora, sem pedir licen\xE7a, e diga numa frase curta que anotou.
+- Se uma anota\xE7\xE3o ficou velha ou errada, chame esquecer com o id e lembre a vers\xE3o nova.
+- Para algo falado em conversa antiga que n\xE3o est\xE1 na mem\xF3ria, use buscar_conversas.
+
+Gr\xE1ficos: a tela desenha gr\xE1ficos. Quando pedirem um gr\xE1fico, ou quando uma s\xE9rie no tempo, uma compara\xE7\xE3o entre itens ou uma composi\xE7\xE3o ficar mais clara desenhada, inclua um bloco assim (JSON v\xE1lido, sem coment\xE1rios):
+\`\`\`grafico
+{"tipo": "linha", "titulo": "Saldo previsto", "unidade": "R$", "x": ["18/11", "20/11", "22/11"], "series": [{"nome": "Saldo", "valores": [36554.65, 6092.42, 1735.9]}]}
+\`\`\`
+- "tipo": "linha" (evolu\xE7\xE3o no tempo), "area" (evolu\xE7\xE3o de um total), "barras" (comparar itens ou meses; v\xE1rias s\xE9ries ficam lado a lado), "barras_empilhadas" (partes de um total por per\xEDodo), "pizza" (composi\xE7\xE3o; uma s\xE9rie s\xF3, at\xE9 6 fatias).
+- "unidade": "R$", "%" ou "" (quantidade). "x" s\xE3o os r\xF3tulos (datas em DD/MM, meses em "set/26"); cada s\xE9rie tem um valor por r\xF3tulo, na mesma ordem. At\xE9 4 s\xE9ries e 40 pontos.
+- Opcional: "referencia": {"valor": 0, "rotulo": "zero"} desenha uma linha horizontal (ex.: limite, meta).
+- Cor: cada s\xE9rie aceita "cor" ("vermelho", "verde", "amarelo", "laranja", "azul", "roxo", "cinza", "rosa" ou hex como "#f43f5e"); na pizza, "cores" \xE9 uma lista na ordem do "x". Sem cor, a tela pinta pelo nome: Ruim/perdido/atrasado = vermelho, Bom/Ok/ganho = verde, Outros/testando/pausado = cinza. Se a pessoa pediu cores (veja a mem\xF3ria), mande "cor" sempre.
+- S\xF3 n\xFAmeros que vieram das ferramentas. Escreva uma frase antes do gr\xE1fico dizendo o que ele mostra. No m\xE1ximo 2 gr\xE1ficos por resposta.`;
+var RELATORIO = `Fa\xE7a o relat\xF3rio de hoje da sua \xE1rea. Chame as ferramentas que precisar. Formato exato, em markdown:
+
+**Andou** \u2014 o que melhorou ou foi conclu\xEDdo desde ontem/na semana (2\u20134 itens com n\xFAmero)
+**Travou** \u2014 o que est\xE1 parado, piorando ou em risco (2\u20134 itens com n\xFAmero e nome)
+**Espera sua decis\xE3o** \u2014 s\xF3 o que precisa do Jean; para cada item, chame propor_decisao (sem repetir o que j\xE1 est\xE1 pendente \u2014 confira com decisoes_pendentes)
+
+Acompanhe as tarefas em andamento da sua \xE1rea (decisoes_pendentes \u2192 em_andamento): diga quais est\xE3o atrasadas e com quem, e, quando os n\xFAmeros permitirem, se o resultado melhorou desde a aprova\xE7\xE3o.
+
+Se houver uma s\xE9rie ou compara\xE7\xE3o que conte a hist\xF3ria do dia (ex.: saldo previsto, leads por semana, carteira por semana), inclua 1 gr\xE1fico logo depois da conclus\xE3o.
+
+Seja curto: o Jean l\xEA isso \xE0s 7h no celular.`;
+var GERENTES = [
+  {
+    id: "assistente",
+    nome: "CEO",
+    area: "Vis\xE3o geral",
+    descricao: "Junta financeiro, comercial e operacional. Faz o resumo das 7h.",
+    papeis: (p) => p === "superadmin",
+    prompt: `Voc\xEA \xE9 o CEO da Grape M\xEDdia (uma IA que trabalha para o Jean, dono da empresa). Enxerga todas as \xE1reas \u2014 financeiro, comercial, marketing e operacional \u2014, cobra os outros gerentes pelo que est\xE1 atrasado e ajuda o Jean a decidir o que fazer hoje. No relat\xF3rio, priorize o que pode virar problema de caixa ou perda de cliente nos pr\xF3ximos 15 dias.`
+  },
+  {
+    id: "financeiro",
+    nome: "Financeiro",
+    area: "Financeiro",
+    descricao: "Caixa, previs\xE3o, inadimpl\xEAncia, contas a pagar e meses fechados.",
+    papeis: (p) => p === "superadmin",
+    prompt: `Voc\xEA \xE9 o gerente financeiro da Grape M\xEDdia. Cuida do caixa: saldo, previs\xE3o de entradas e sa\xEDdas, inadimpl\xEAncia e contas a pagar. Regras da casa: o DFC \xE9 regime de caixa; pagamento de fatura do cart\xE3o e Pix entre contas s\xE3o transfer\xEAncia (grupo 99), n\xE3o despesa; a fatura do cart\xE3o Sicredi (~R$ 40 mil/m\xEAs) junta o tr\xE1fego da pr\xF3pria Grape (~R$ 15 mil/m\xEAs), ferramentas e outros gastos do m\xEAs \u2014 \xE9 normal ser bem maior que o tr\xE1fego, e n\xE3o d\xE1 para segurar nem atrasar; o pr\xF3-labore do Jean \xE9 R$ 15 mil no dia 1. Antes de recomendar empr\xE9stimo, veja se a previs\xE3o realmente quebra e em que dia.`
+  },
+  {
+    id: "comercial",
+    nome: "Comercial",
+    area: "Comercial",
+    descricao: "Funil, reuni\xF5es, fechamentos, leads parados e tarefas atrasadas.",
+    papeis: (p) => ["superadmin", "admin", "gerente-comercial"].includes(p) || p.startsWith("diretor"),
+    prompt: `Voc\xEA \xE9 o gerente comercial da Grape M\xEDdia. Acompanha o funil (lead \u2192 reuni\xE3o marcada \u2192 fechamento), o ritmo dos closers e onde os leads param. Leads chegam pelo formul\xE1rio/an\xFAncio e pelo WhatsApp; a reuni\xE3o \xE9 o principal indicador intermedi\xE1rio. Aponte nomes de lead e de respons\xE1vel quando houver algo parado.`
+  },
+  {
+    id: "operacional",
+    nome: "Operacional",
+    area: "Operacional",
+    descricao: "Resultado dos projetos, evolu\xE7\xE3o da carteira e reten\xE7\xE3o.",
+    papeis: (p) => ["superadmin", "admin", "diretor-operacional", "gerente-operacional"].includes(p),
+    prompt: `Voc\xEA \xE9 o gerente operacional da Grape M\xEDdia. Acompanha a carteira de clientes em gest\xE3o de tr\xE1fego: resultado de cada projeto (BOM, OK, RUIM), gargalos, respons\xE1veis e clientes em risco de sair. Um projeto RUIM por muito tempo costuma virar pedido de sa\xEDda \u2014 aponte quais e de quem s\xE3o.`
+  },
+  {
+    id: "marketing",
+    nome: "Marketing",
+    area: "Marketing",
+    descricao: "An\xFAncios da Grape, CPL por campanha e criativo, funil e postagens.",
+    papeis: (p) => ["superadmin", "admin", "gerente-marketing"].includes(p) || p.startsWith("diretor"),
+    prompt: `Voc\xEA \xE9 o gerente de marketing da Grape M\xEDdia \u2014 cuida da aquisi\xE7\xE3o de clientes da PR\xD3PRIA Grape (n\xE3o dos clientes). Os an\xFAncios rodam na Meta (conta Capta\xE7\xE3o), levam para uma LP com bot\xE3o de agendar; o lead cai no CRM e o closer faz a reuni\xE3o. Olhe gasto, visitas \xE0 LP, leads no CRM, CPL por campanha e por criativo, e cruze com o funil (reuni\xF5es e fechamentos) para dizer o que escalar, o que pausar e qual criativo testar. Os leads que a Meta conta e os que entram no CRM diferem \u2014 a refer\xEAncia \xE9 o CRM. Tamb\xE9m acompanha as postagens do Instagram da Grape e do Jean.`
+  }
+];
+var gerentePorId = (id) => GERENTES.find((g) => g.id === id);
+var ferramentasDe = (g) => Object.values(FERRAMENTAS).filter((f) => f.areas.includes(g));
+var TAG_CHAMADA = /<(invoke|function_calls|parameter)\b/i;
+var limparTags = (t) => t.replace(/<function_calls>[\s\S]*?<\/function_calls>/gi, "").replace(/<invoke\b[\s\S]*?<\/invoke>/gi, "").replace(/\n{3,}/g, "\n\n").trim();
+async function rodarGerente(pool, client, g, historico, quem) {
+  const ferramentas = ferramentasDe(g.id);
+  const memoria = (await pool.query(
+    `SELECT id, gerente, texto, to_char(criado_em AT TIME ZONE 'America/Sao_Paulo', 'DD/MM/YY') AS dia,
+            split_part(COALESCE(criado_por, ''), '@', 1) AS autor
+       FROM ia_gerentes_memoria
+      WHERE ativo AND ($1 = 'assistente' OR gerente = $1)
+      ORDER BY criado_em DESC LIMIT 120`,
+    [g.id]
+  )).rows.reverse();
+  const blocoMemoria = memoria.length ? `Sua mem\xF3ria (${memoria.length} anota\xE7\xF5es; o n\xFAmero entre colchetes \xE9 o id):
+` + memoria.map((m) => `- [${m.id}] ${m.texto} (${m.dia}${m.autor && m.autor !== "rotina" ? ", " + m.autor : ""}${g.id === "assistente" && m.gerente !== "assistente" ? ", \xE1rea " + m.gerente : ""})`).join("\n") : "Sua mem\xF3ria ainda est\xE1 vazia.";
+  const tools = ferramentas.map((f) => f.def);
+  const system = [
+    { type: "text", text: `${BASE}
+
+${g.prompt}`, cache_control: { type: "ephemeral" } },
+    {
+      type: "text",
+      text: `Hoje \xE9 ${(/* @__PURE__ */ new Date()).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" })}. Conversando com: ${quem.nome || quem.email} (${quem.papel || "rotina autom\xE1tica"}).
+
+${blocoMemoria}`
+    }
+  ];
+  const mensagens = [...historico];
+  let repetiu = false;
+  let textoGuardado = "";
+  const usadas = [];
+  const uso = { entrada: 0, saida: 0, cache: 0 };
+  for (let volta = 0; volta < MAX_VOLTAS; volta++) {
+    const resp = await client.beta.messages.create({
+      model: MODELO,
+      max_tokens: 16e3,
+      system,
+      tools,
+      messages: mensagens,
+      output_config: { effort: "medium" },
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default"
+    });
+    uso.entrada += resp.usage?.input_tokens || 0;
+    uso.saida += resp.usage?.output_tokens || 0;
+    uso.cache += resp.usage?.cache_read_input_tokens || 0;
+    if (resp.stop_reason === "refusal") {
+      return { texto: "N\xE3o consegui responder a esse pedido. Tente reformular.", usadas, uso };
+    }
+    mensagens.push({ role: "assistant", content: resp.content });
+    if (resp.stop_reason === "pause_turn") continue;
+    const chamadas = resp.content.filter((b) => b.type === "tool_use");
+    if (resp.stop_reason !== "tool_use" || chamadas.length === 0) {
+      const bruto = resp.content.filter((b) => b.type === "text").map((b) => b.text).join("\n\n");
+      if (TAG_CHAMADA.test(bruto) && !repetiu) {
+        repetiu = true;
+        mensagens.push({ role: "user", content: 'Voc\xEA escreveu chamadas de ferramenta como texto, e elas n\xE3o rodaram. Chame as ferramentas de verdade agora (sem repetir o texto do relat\xF3rio) e, ao terminar, responda s\xF3 "ok".' });
+        textoGuardado = limparTags(bruto);
+        continue;
+      }
+      const final = limparTags(bruto);
+      const texto = textoGuardado && (!final || /^ok\.?$/i.test(final)) ? textoGuardado : final;
+      return { texto: texto || "(sem resposta)", usadas, uso };
+    }
+    const resultados = await Promise.all(chamadas.map(async (c) => {
+      usadas.push(c.name);
+      const f = ferramentas.find((x) => x.def.name === c.name);
+      if (!f) return { type: "tool_result", tool_use_id: c.id, content: `Ferramenta ${c.name} n\xE3o dispon\xEDvel para este gerente.`, is_error: true };
+      try {
+        const out = await f.run(pool, c.input || {}, { gerente: g.id, email: quem.email, conversaId: quem.conversaId });
+        return { type: "tool_result", tool_use_id: c.id, content: JSON.stringify(out) };
+      } catch (e) {
+        console.error(`[gerentes] ferramenta ${c.name}:`, e?.message || e);
+        return { type: "tool_result", tool_use_id: c.id, content: `Erro ao consultar: ${e?.message || "falha"}`, is_error: true };
+      }
+    }));
+    mensagens.push({ role: "user", content: resultados });
+  }
+  return { texto: "A an\xE1lise ficou longa demais e parei antes de terminar. Pe\xE7a de novo com um recorte menor.", usadas, uso };
+}
+async function setupGerentesRoutes(app, pool) {
+  try {
+    await pool.query(`CREATE TABLE IF NOT EXISTS ia_gerentes_conversas (
+      id SERIAL PRIMARY KEY, gerente TEXT NOT NULL, email TEXT NOT NULL, titulo TEXT,
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(), atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS ia_gerentes_conversas_email ON ia_gerentes_conversas (email, gerente, atualizado_em DESC)`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS ia_gerentes_mensagens (
+      id SERIAL PRIMARY KEY, conversa_id INTEGER NOT NULL REFERENCES ia_gerentes_conversas(id) ON DELETE CASCADE,
+      papel TEXT NOT NULL, texto TEXT NOT NULL, ferramentas TEXT[], uso JSONB,
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS ia_gerentes_relatorios (
+      id SERIAL PRIMARY KEY, gerente TEXT NOT NULL, dia DATE NOT NULL, status TEXT NOT NULL DEFAULT 'gerando',
+      texto TEXT, ferramentas TEXT[], uso JSONB, erro TEXT,
+      criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(), concluido_em TIMESTAMPTZ, UNIQUE (gerente, dia))`);
+    await pool.query(`ALTER TABLE IF EXISTS ia_para_decidir
+      ADD COLUMN IF NOT EXISTS responsavel TEXT, ADD COLUMN IF NOT EXISTS responsavel_nome TEXT,
+      ADD COLUMN IF NOT EXISTS prazo DATE, ADD COLUMN IF NOT EXISTS concluido_em TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS concluido_por TEXT`).catch(() => {
+    });
+    await pool.query(`CREATE TABLE IF NOT EXISTS ia_gerentes_memoria (
+      id SERIAL PRIMARY KEY, gerente TEXT NOT NULL, texto TEXT NOT NULL, tipo TEXT, origem TEXT NOT NULL DEFAULT 'conversa',
+      conversa_id INTEGER, criado_por TEXT, criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ativo BOOLEAN NOT NULL DEFAULT TRUE, desativado_por TEXT, desativado_em TIMESTAMPTZ)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS ia_gerentes_memoria_g ON ia_gerentes_memoria (gerente, ativo)`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS ia_para_decidir (
+      id SERIAL PRIMARY KEY, gerente TEXT NOT NULL, titulo TEXT NOT NULL, contexto TEXT, recomendacao TEXT,
+      urgencia TEXT NOT NULL DEFAULT 'media', status TEXT NOT NULL DEFAULT 'pendente',
+      criado_por TEXT, criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      decidido_por TEXT, decidido_em TIMESTAMPTZ, observacao TEXT)`);
+  } catch (e) {
+    console.error("[gerentes] migra\xE7\xE3o:", e?.message || e);
+  }
+  const chave = () => process.env.ANTHROPIC_API_KEY;
+  const cliente = () => new Anthropic({ apiKey: chave() });
+  const quemE = async (req) => {
+    const email = String(req.user?.email || "").toLowerCase();
+    if (!email) return null;
+    const u = (await pool.query("SELECT name, role FROM users WHERE LOWER(email) = $1", [email])).rows[0];
+    return { email, nome: u?.name || email, papel: String(u?.role || "") };
+  };
+  const permitidos = (papel2) => GERENTES.filter((g) => g.papeis(papel2));
+  app.get("/api/gerentes", async (req, res) => {
+    try {
+      const quem = await quemE(req);
+      if (!quem) return res.status(401).json({ error: "Sem usu\xE1rio" });
+      const lista = permitidos(quem.papel);
+      const ids = lista.map((g) => g.id);
+      const rel = ids.length ? (await pool.query(
+        `SELECT DISTINCT ON (gerente) gerente, to_char(dia, 'YYYY-MM-DD') AS dia, status, concluido_em
+           FROM ia_gerentes_relatorios WHERE gerente = ANY($1) ORDER BY gerente, dia DESC`,
+        [ids]
+      )).rows : [];
+      const pend = ids.length ? (await pool.query(
+        `SELECT gerente, COUNT(*)::int AS qtd FROM ia_para_decidir WHERE status = 'pendente' AND gerente = ANY($1) GROUP BY 1`,
+        [ids]
+      )).rows : [];
+      res.json({
+        configurado: !!chave(),
+        gerentes: lista.map((g) => ({
+          id: g.id,
+          nome: g.nome,
+          area: g.area,
+          descricao: g.descricao,
+          ultimo_relatorio: rel.find((r) => r.gerente === g.id) || null,
+          pendentes: pend.find((p) => p.gerente === g.id)?.qtd || 0
+        }))
+      });
+    } catch (e) {
+      console.error("[gerentes] lista:", e?.message || e);
+      res.status(500).json({ error: "Erro ao carregar gerentes" });
+    }
+  });
+  const exigir = async (req, res) => {
+    const quem = await quemE(req);
+    if (!quem) {
+      res.status(401).json({ error: "Sem usu\xE1rio" });
+      return null;
+    }
+    const g = gerentePorId(req.params.id);
+    if (!g) {
+      res.status(404).json({ error: "Gerente n\xE3o encontrado" });
+      return null;
+    }
+    if (!g.papeis(quem.papel)) {
+      res.status(403).json({ error: "Voc\xEA n\xE3o tem acesso a este gerente" });
+      return null;
+    }
+    return { quem, g };
+  };
+  app.get("/api/gerentes/:id/conversas", async (req, res) => {
+    try {
+      const ok = await exigir(req, res);
+      if (!ok) return;
+      const r = await pool.query(
+        `SELECT id, titulo, atualizado_em FROM ia_gerentes_conversas WHERE email = $1 AND gerente = $2
+          ORDER BY atualizado_em DESC LIMIT 30`,
+        [ok.quem.email, ok.g.id]
+      );
+      res.json(r.rows);
+    } catch (e) {
+      res.status(500).json({ error: e?.message || "erro" });
+    }
+  });
+  app.get("/api/gerentes/:id/conversas/:cid", async (req, res) => {
+    try {
+      const ok = await exigir(req, res);
+      if (!ok) return;
+      const c = (await pool.query(
+        `SELECT id FROM ia_gerentes_conversas WHERE id = $1 AND email = $2 AND gerente = $3`,
+        [req.params.cid, ok.quem.email, ok.g.id]
+      )).rows[0];
+      if (!c) return res.status(404).json({ error: "Conversa n\xE3o encontrada" });
+      const m = await pool.query(`SELECT id, papel, texto, ferramentas, criado_em FROM ia_gerentes_mensagens WHERE conversa_id = $1 ORDER BY id`, [c.id]);
+      res.json(m.rows.map((x) => ({ ...x, texto: limparTags(x.texto || "") })));
+    } catch (e) {
+      res.status(500).json({ error: e?.message || "erro" });
+    }
+  });
+  app.delete("/api/gerentes/:id/conversas/:cid", async (req, res) => {
+    try {
+      const ok = await exigir(req, res);
+      if (!ok) return;
+      await pool.query(`DELETE FROM ia_gerentes_conversas WHERE id = $1 AND email = $2 AND gerente = $3`, [req.params.cid, ok.quem.email, ok.g.id]);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e?.message || "erro" });
+    }
+  });
+  app.post("/api/gerentes/:id/chat", async (req, res) => {
+    try {
+      const ok = await exigir(req, res);
+      if (!ok) return;
+      if (!chave()) return res.status(503).json({ error: "ANTHROPIC_API_KEY n\xE3o configurada no servidor." });
+      const texto = String(req.body?.mensagem || "").trim().slice(0, 8e3);
+      if (!texto) return res.status(400).json({ error: "Mensagem vazia" });
+      let conversaId = Number(req.body?.conversa_id) || null;
+      if (conversaId) {
+        const c = (await pool.query(
+          `SELECT id FROM ia_gerentes_conversas WHERE id = $1 AND email = $2 AND gerente = $3`,
+          [conversaId, ok.quem.email, ok.g.id]
+        )).rows[0];
+        if (!c) conversaId = null;
+      }
+      if (!conversaId) {
+        conversaId = (await pool.query(
+          `INSERT INTO ia_gerentes_conversas (gerente, email, titulo) VALUES ($1, $2, $3) RETURNING id`,
+          [ok.g.id, ok.quem.email, texto.slice(0, 80)]
+        )).rows[0].id;
+      }
+      const ant = (await pool.query(
+        `SELECT papel, texto FROM (SELECT id, papel, texto FROM ia_gerentes_mensagens WHERE conversa_id = $1 ORDER BY id DESC LIMIT 30) x ORDER BY id`,
+        [conversaId]
+      )).rows;
+      const historico = ant.map((m) => ({ role: m.papel === "assistente" ? "assistant" : "user", content: m.texto }));
+      while (historico.length && historico[0].role !== "user") historico.shift();
+      historico.push({ role: "user", content: texto });
+      await pool.query(`INSERT INTO ia_gerentes_mensagens (conversa_id, papel, texto) VALUES ($1, 'usuario', $2)`, [conversaId, texto]);
+      const r = await rodarGerente(pool, cliente(), ok.g, historico, { ...ok.quem, conversaId });
+      const ferr = [...new Set(r.usadas)];
+      await pool.query(
+        `INSERT INTO ia_gerentes_mensagens (conversa_id, papel, texto, ferramentas, uso) VALUES ($1, 'assistente', $2, $3, $4)`,
+        [conversaId, r.texto, ferr, JSON.stringify(r.uso)]
+      );
+      await pool.query(`UPDATE ia_gerentes_conversas SET atualizado_em = NOW() WHERE id = $1`, [conversaId]);
+      res.json({ conversa_id: conversaId, resposta: r.texto, ferramentas: ferr });
+    } catch (e) {
+      console.error("[gerentes] chat:", e?.status || "", e?.message || e);
+      const msg = e instanceof Anthropic.RateLimitError ? "Limite de uso da IA atingido. Tente em um minuto." : e instanceof Anthropic.APIError ? `A IA devolveu erro (${e.status ?? "sem status"}).` : "Erro ao conversar com o gerente.";
+      res.status(500).json({ error: msg });
+    }
+  });
+  app.get("/api/gerentes/:id/relatorios", async (req, res) => {
+    try {
+      const ok = await exigir(req, res);
+      if (!ok) return;
+      const r = await pool.query(
+        `SELECT id, to_char(dia, 'YYYY-MM-DD') AS dia, status, texto, ferramentas, erro, concluido_em
+           FROM ia_gerentes_relatorios WHERE gerente = $1 ORDER BY dia DESC LIMIT 14`,
+        [ok.g.id]
+      );
+      res.json(r.rows.map((x) => ({ ...x, texto: x.texto ? limparTags(x.texto) : x.texto })));
+    } catch (e) {
+      res.status(500).json({ error: e?.message || "erro" });
+    }
+  });
+  app.post("/api/gerentes/:id/relatorios/gerar", async (req, res) => {
+    try {
+      const ok = await exigir(req, res);
+      if (!ok) return;
+      if (!chave()) return res.status(503).json({ error: "ANTHROPIC_API_KEY n\xE3o configurada no servidor." });
+      const rel = await gerarRelatorio(ok.g, true, ok.quem);
+      res.json(rel);
+    } catch (e) {
+      console.error("[gerentes] gerar:", e?.message || e);
+      res.status(500).json({ error: "Erro ao gerar o relat\xF3rio." });
+    }
+  });
+  app.get("/api/gerentes-decisoes", async (req, res) => {
+    try {
+      const quem = await quemE(req);
+      if (!quem) return res.status(401).json({ error: "Sem usu\xE1rio" });
+      const ids = permitidos(quem.papel).map((g) => g.id);
+      const r = ids.length ? await pool.query(
+        `SELECT id, gerente, titulo, contexto, recomendacao, urgencia, status, criado_em, decidido_por, decidido_em, observacao,
+                responsavel, responsavel_nome, to_char(prazo, 'YYYY-MM-DD') AS prazo, concluido_em, concluido_por
+           FROM ia_para_decidir
+          WHERE gerente = ANY($1) AND (status IN ('pendente', 'aprovado') OR COALESCE(concluido_em, decidido_em) > NOW() - interval '30 days')
+          ORDER BY (status = 'pendente') DESC,
+                   CASE urgencia WHEN 'alta' THEN 0 WHEN 'media' THEN 1 ELSE 2 END, criado_em DESC
+          LIMIT 100`,
+        [ids]
+      ) : { rows: [] };
+      res.json(r.rows);
+    } catch (e) {
+      res.status(500).json({ error: e?.message || "erro" });
+    }
+  });
+  app.patch("/api/gerentes-decisoes/:id", async (req, res) => {
+    try {
+      const quem = await quemE(req);
+      if (!quem) return res.status(401).json({ error: "Sem usu\xE1rio" });
+      const item = (await pool.query(`SELECT gerente FROM ia_para_decidir WHERE id = $1`, [req.params.id])).rows[0];
+      if (!item) return res.status(404).json({ error: "Item n\xE3o encontrado" });
+      const g = gerentePorId(item.gerente);
+      if (!g || !g.papeis(quem.papel)) return res.status(403).json({ error: "Sem acesso" });
+      const status = String(req.body?.status || "");
+      if (!["aprovado", "descartado", "pendente", "feito"].includes(status)) return res.status(400).json({ error: "status inv\xE1lido" });
+      const obs = req.body?.observacao != null ? String(req.body.observacao).slice(0, 1e3) : null;
+      const atual = (await pool.query(`SELECT status FROM ia_para_decidir WHERE id = $1`, [req.params.id])).rows[0];
+      let resp = null, respNome = null, prazo = null;
+      if (status === "aprovado") {
+        resp = String(req.body?.responsavel || quem.email).toLowerCase();
+        respNome = (await pool.query("SELECT name FROM users WHERE LOWER(email) = $1", [resp])).rows[0]?.name || resp;
+        prazo = dataOk(req.body?.prazo) ? req.body.prazo : null;
+      }
+      const r = status === "feito" || status === "aprovado" && atual?.status === "feito" ? await pool.query(
+        `UPDATE ia_para_decidir SET status = $2,
+                  concluido_em = CASE WHEN $2 = 'feito' THEN NOW() END,
+                  concluido_por = CASE WHEN $2 = 'feito' THEN $3 END,
+                  observacao = COALESCE($4, observacao)
+            WHERE id = $1 RETURNING *`,
+        [req.params.id, status, quem.email, obs]
+      ) : await pool.query(
+        `UPDATE ia_para_decidir
+              SET status = $2, observacao = COALESCE($3, observacao),
+                  decidido_por = CASE WHEN $2 = 'pendente' THEN NULL ELSE $4 END,
+                  decidido_em  = CASE WHEN $2 = 'pendente' THEN NULL ELSE NOW() END,
+                  responsavel = $5, responsavel_nome = $6, prazo = $7::date,
+                  concluido_em = NULL, concluido_por = NULL
+            WHERE id = $1 RETURNING *`,
+        [req.params.id, status, obs, quem.email, resp, respNome, prazo]
+      );
+      const d = r.rows[0];
+      if (obs && (status === "aprovado" || status === "descartado")) {
+        await pool.query(
+          `INSERT INTO ia_gerentes_memoria (gerente, texto, tipo, origem, criado_por) VALUES ($1, $2, 'decisao', 'decisao', $3)`,
+          [d.gerente, `${status === "aprovado" ? "Aprovado" : "Descartado"} em ${(/* @__PURE__ */ new Date()).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}: "${d.titulo}". Motivo: ${obs}`, quem.email]
+        );
+      }
+      res.json(d);
+    } catch (e) {
+      res.status(500).json({ error: e?.message || "erro" });
+    }
+  });
+  app.get("/api/gerentes/:id/memoria", async (req, res) => {
+    try {
+      const ok = await exigir(req, res);
+      if (!ok) return;
+      const r = await pool.query(
+        `SELECT id, gerente, texto, tipo, origem, criado_por, criado_em FROM ia_gerentes_memoria
+          WHERE ativo AND ($1 = 'assistente' OR gerente = $1) ORDER BY criado_em DESC LIMIT 200`,
+        [ok.g.id]
+      );
+      res.json(r.rows);
+    } catch (e) {
+      res.status(500).json({ error: e?.message || "erro" });
+    }
+  });
+  app.post("/api/gerentes/:id/memoria", async (req, res) => {
+    try {
+      const ok = await exigir(req, res);
+      if (!ok) return;
+      const texto = String(req.body?.texto || "").trim().slice(0, 600);
+      if (!texto) return res.status(400).json({ error: "Texto vazio" });
+      const r = await pool.query(
+        `INSERT INTO ia_gerentes_memoria (gerente, texto, tipo, origem, criado_por) VALUES ($1, $2, 'fato', 'manual', $3) RETURNING *`,
+        [ok.g.id, texto, ok.quem.email]
+      );
+      res.json(r.rows[0]);
+    } catch (e) {
+      res.status(500).json({ error: e?.message || "erro" });
+    }
+  });
+  app.delete("/api/gerentes/:id/memoria/:mid", async (req, res) => {
+    try {
+      const ok = await exigir(req, res);
+      if (!ok) return;
+      await pool.query(
+        `UPDATE ia_gerentes_memoria SET ativo = FALSE, desativado_por = $3, desativado_em = NOW()
+          WHERE id = $1 AND ($2 = 'assistente' OR gerente = $2)`,
+        [req.params.mid, ok.g.id, ok.quem.email]
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e?.message || "erro" });
+    }
+  });
+  async function gerarRelatorio(g, forcar, quem) {
+    const dia = hojeSP();
+    if (forcar) {
+      await pool.query(
+        `INSERT INTO ia_gerentes_relatorios (gerente, dia, status) VALUES ($1, $2, 'gerando')
+         ON CONFLICT (gerente, dia) DO UPDATE SET status = 'gerando', erro = NULL, criado_em = NOW()`,
+        [g.id, dia]
+      );
+    } else {
+      const vaga = await pool.query(
+        `INSERT INTO ia_gerentes_relatorios AS r (gerente, dia, status) VALUES ($1, $2, 'gerando')
+         ON CONFLICT (gerente, dia) DO UPDATE SET status = 'gerando', criado_em = NOW(), erro = NULL
+           WHERE r.status = 'gerando' AND r.criado_em < NOW() - interval '15 minutes'
+         RETURNING id`,
+        [g.id, dia]
+      );
+      if (vaga.rowCount === 0) return null;
+    }
+    try {
+      const anterior = (await pool.query(
+        `SELECT to_char(dia, 'DD/MM') AS dia, texto FROM ia_gerentes_relatorios
+          WHERE gerente = $1 AND dia < $2 AND status = 'pronto' ORDER BY dia DESC LIMIT 1`,
+        [g.id, dia]
+      )).rows[0];
+      const pedido = anterior?.texto ? `${RELATORIO}
+
+Seu relat\xF3rio anterior (${anterior.dia}), para comparar \u2014 diga o que mudou desde ent\xE3o e n\xE3o repita o que continua igual sem novidade:
+
+${limparTags(anterior.texto).slice(0, 6e3)}` : RELATORIO;
+      const r = await rodarGerente(
+        pool,
+        cliente(),
+        g,
+        [{ role: "user", content: pedido }],
+        quem || { nome: "Rotina das 7h", email: "", papel: "" }
+      );
+      const row = (await pool.query(
+        `UPDATE ia_gerentes_relatorios SET status = 'pronto', texto = $3, ferramentas = $4, uso = $5, concluido_em = NOW()
+          WHERE gerente = $1 AND dia = $2
+          RETURNING id, to_char(dia, 'YYYY-MM-DD') AS dia, status, texto, ferramentas, erro, concluido_em`,
+        [g.id, dia, r.texto, [...new Set(r.usadas)], JSON.stringify(r.uso)]
+      )).rows[0];
+      return row;
+    } catch (e) {
+      await pool.query(
+        `UPDATE ia_gerentes_relatorios SET status = 'erro', erro = $3 WHERE gerente = $1 AND dia = $2`,
+        [g.id, dia, String(e?.message || e).slice(0, 500)]
+      );
+      throw e;
+    }
+  }
+  let rodando = false;
+  const verificarRotina = async () => {
+    if (rodando || !chave() || process.env.GERENTES_ROTINA === "off") return;
+    const agora = new Date((/* @__PURE__ */ new Date()).toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    if (agora.getHours() < 7) return;
+    rodando = true;
+    try {
+      for (const id of ["financeiro", "comercial", "marketing", "operacional", "assistente"]) {
+        const g = gerentePorId(id);
+        try {
+          const feito = await gerarRelatorio(g, false);
+          if (feito) console.log(`[gerentes] relat\xF3rio de ${id} gerado (${feito.dia})`);
+        } catch (e) {
+          console.error(`[gerentes] relat\xF3rio de ${id}:`, e?.message || e);
+        }
+      }
+    } finally {
+      rodando = false;
+    }
+  };
+  setInterval(() => {
+    verificarRotina().catch(() => {
+    });
+  }, 5 * 60 * 1e3);
+  setTimeout(() => {
+    verificarRotina().catch(() => {
+    });
+  }, 60 * 1e3);
+}
+
 // server.ts
 init_fechamento();
 init_bill_category();
@@ -4058,7 +5639,7 @@ async function setupBolaoRoutes(app, pool) {
 }
 
 // src/routes/fatura-pdf.ts
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic2 from "@anthropic-ai/sdk";
 var SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -4105,7 +5686,7 @@ Regras:
 async function extrairFaturaPDF(pdf, hint) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY n\xE3o configurada no servidor \u2014 necess\xE1ria para ler faturas em PDF.");
-  const anthropic = new Anthropic({ apiKey });
+  const anthropic = new Anthropic2({ apiKey });
   const contexto = [
     hint?.fileName ? `Arquivo: ${hint.fileName}` : "",
     hint?.billingMonth ? `M\xEAs de compet\xEAncia selecionado na tela: ${hint.billingMonth} (use s\xF3 como desempate de ano; o vencimento impresso manda).` : ""
@@ -6317,8 +7898,8 @@ async function migrateCalculadoraContratos(pool) {
 }
 function setupCalculadoraContratosRoutes(app, pool) {
   const numero = (v, padrao) => {
-    const n = parseFloat(v);
-    return Number.isFinite(n) && n >= 0 ? n : padrao;
+    const n2 = parseFloat(v);
+    return Number.isFinite(n2) && n2 >= 0 ? n2 : padrao;
   };
   app.get("/api/calculadora-contratos", async (_req, res) => {
     try {
@@ -6413,11 +7994,11 @@ async function zapsign(caminho, init = {}) {
   return json;
 }
 function telefoneBR(bruto) {
-  let n = String(bruto || "").replace(/\D/g, "");
-  if (n.startsWith("55") && n.length > 11) n = n.slice(2);
-  n = n.replace(/^0+/, "");
-  if (n.length < 10 || n.length > 11) return null;
-  return { pais: "55", numero: n };
+  let n2 = String(bruto || "").replace(/\D/g, "");
+  if (n2.startsWith("55") && n2.length > 11) n2 = n2.slice(2);
+  n2 = n2.replace(/^0+/, "");
+  if (n2.length < 10 || n2.length > 11) return null;
+  return { pais: "55", numero: n2 };
 }
 async function migrateZapsign(pool) {
   await pool.query(`
@@ -6521,8 +8102,8 @@ function setupZapsignRoutes(app, pool) {
       const signerGrape = criado?.signers?.[1] || {};
       if (posicao && signer.token) {
         const pct = (v, padrao) => {
-          const n = Number(v);
-          return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : padrao;
+          const n2 = Number(v);
+          return Number.isFinite(n2) ? Math.max(0, Math.min(100, n2)) : padrao;
         };
         const rubrica = (pos, token) => ({
           page: Math.max(0, parseInt(pos.page, 10) || 0),
@@ -7063,6 +8644,7 @@ async function startServer() {
   if (dbUrl?.includes("neon.tech") || dbHost?.includes("neon.tech") || dbSSL === "require") {
     poolConfig.ssl = { rejectUnauthorized: false };
   }
+  pg.types.setTypeParser(1114, (s) => /* @__PURE__ */ new Date(s.replace(" ", "T") + "Z"));
   const pool = new Pool(poolConfig);
   pool.on("error", (err, client) => {
     console.error("Unexpected error on idle client", err);
@@ -9076,7 +10658,7 @@ async function startServer() {
         const ts = Date.parse(`${yyyy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}T${t || "00:00"}:00`);
         return isNaN(ts) ? 0 : ts;
       };
-      const pad = (n) => String(n).padStart(2, "0");
+      const pad = (n2) => String(n2).padStart(2, "0");
       const items = [
         ...opts.rows.map((o) => ({
           id: o.id,
@@ -9704,11 +11286,23 @@ async function startServer() {
                   `SELECT * FROM crm_sequence_steps WHERE sequence_id = $1 ORDER BY order_index ASC`,
                   [cfg.sequence_id]
                 );
+                const seqInfo = await pool.query(`SELECT skip_weekends FROM crm_sequences WHERE id = $1`, [cfg.sequence_id]);
+                const pularFds = seqInfo.rows[0]?.skip_weekends ?? true;
+                const hojeSP2 = (/* @__PURE__ */ new Date()).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+                const base = /* @__PURE__ */ new Date(`${hojeSP2}T12:00:00Z`);
+                const somarDias = (dias) => {
+                  const d = new Date(base);
+                  let somados = 0;
+                  while (somados < dias) {
+                    d.setUTCDate(d.getUTCDate() + 1);
+                    const dow = d.getUTCDay();
+                    if (!pularFds || dow !== 0 && dow !== 6) somados++;
+                  }
+                  return d.toISOString().slice(0, 10);
+                };
                 let diasAcumulados = 0;
                 for (const step of seqSteps.rows) {
                   diasAcumulados += Number(step.day_offset ?? 0);
-                  const dueDate = /* @__PURE__ */ new Date();
-                  dueDate.setDate(dueDate.getDate() + diasAcumulados);
                   await pool.query(
                     `INSERT INTO crm_comercial_tasks (lead_id, title, type, due_date, start_time, observations)
                      VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -9716,7 +11310,7 @@ async function startServer() {
                       leadId,
                       step.title || "",
                       step.type || "Tarefa",
-                      dueDate.toISOString().slice(0, 10),
+                      somarDias(diasAcumulados),
                       step.time_of_day || "09:00",
                       step.observations || null
                     ]
@@ -10639,7 +12233,7 @@ async function startServer() {
             acoes: []
           });
         }
-        const n = porNicho.get(chave);
+        const n2 = porNicho.get(chave);
         const acao = {
           nome: r.acao,
           produtos: Number(r.produtos),
@@ -10649,12 +12243,12 @@ async function startServer() {
           ok: Number(r.ok),
           ruim: Number(r.ruim)
         };
-        n.acoes.push(acao);
-        n.produtos += acao.produtos;
-        n.investimento += acao.investimento;
-        n.bom += acao.bom;
-        n.ok += acao.ok;
-        n.ruim += acao.ruim;
+        n2.acoes.push(acao);
+        n2.produtos += acao.produtos;
+        n2.investimento += acao.investimento;
+        n2.bom += acao.bom;
+        n2.ok += acao.ok;
+        n2.ruim += acao.ruim;
       }
       const cli = await pool.query(`
         SELECT
@@ -10691,8 +12285,8 @@ async function startServer() {
           status: r.status || null
         });
       }
-      for (const [chave, n] of porNicho) {
-        for (const a of n.acoes) a.clientes = clientesPorAcao.get(`${chave}||${a.nome}`) || [];
+      for (const [chave, n2] of porNicho) {
+        for (const a of n2.acoes) a.clientes = clientesPorAcao.get(`${chave}||${a.nome}`) || [];
       }
       const parc = await pool.query(`
         SELECT COALESCE(f.name, '__sem_pasta__') AS nicho, COUNT(DISTINCT p.project_id)::int AS parceiros
@@ -10704,8 +12298,8 @@ async function startServer() {
         GROUP BY 1
       `);
       for (const r of parc.rows) {
-        const n = porNicho.get(r.nicho);
-        if (n) n.parceiros = Number(r.parceiros);
+        const n2 = porNicho.get(r.nicho);
+        if (n2) n2.parceiros = Number(r.parceiros);
       }
       const julgados = (x) => x.bom + x.ok + x.ruim;
       const enriquecer = (x) => ({
@@ -10714,13 +12308,13 @@ async function startServer() {
         pctPositivo: julgados(x) > 0 ? Math.round((x.bom + x.ok) / julgados(x) * 100) : null,
         ticketMedio: x.produtos > 0 ? Math.round(x.investimento / x.produtos) : 0
       });
-      const nichos = [...porNicho.values()].map((n) => ({ ...enriquecer(n), acoes: n.acoes.map(enriquecer).sort((a, b) => b.produtos - a.produtos) })).sort((a, b) => Number(a.semPasta) - Number(b.semPasta) || b.produtos - a.produtos);
-      const totais = nichos.reduce((acc, n) => ({
-        produtos: acc.produtos + n.produtos,
-        investimento: acc.investimento + n.investimento,
-        bom: acc.bom + n.bom,
-        ok: acc.ok + n.ok,
-        ruim: acc.ruim + n.ruim
+      const nichos = [...porNicho.values()].map((n2) => ({ ...enriquecer(n2), acoes: n2.acoes.map(enriquecer).sort((a, b) => b.produtos - a.produtos) })).sort((a, b) => Number(a.semPasta) - Number(b.semPasta) || b.produtos - a.produtos);
+      const totais = nichos.reduce((acc, n2) => ({
+        produtos: acc.produtos + n2.produtos,
+        investimento: acc.investimento + n2.investimento,
+        bom: acc.bom + n2.bom,
+        ok: acc.ok + n2.ok,
+        ruim: acc.ruim + n2.ruim
       }), { produtos: 0, investimento: 0, bom: 0, ok: 0, ruim: 0 });
       const parcTotal = await pool.query(
         `SELECT COUNT(DISTINCT project_id)::int n FROM products
@@ -10741,7 +12335,7 @@ async function startServer() {
       if (rows[0].n > 0) return res.json({ seeded: 0, alreadyPopulated: true });
       const lista = Array.isArray(req.body?.acoes) ? req.body.acoes : [];
       if (lista.length === 0) return res.json({ seeded: 0 });
-      let n = 0;
+      let n2 = 0;
       for (const a of lista) {
         if (!a?.nome || !a?.nicho) continue;
         await pool.query(
@@ -10765,10 +12359,10 @@ async function startServer() {
             a.observacoes || null
           ]
         );
-        n++;
+        n2++;
       }
-      console.log(`[playbook-acoes] seed inicial: ${n} a\xE7\xF5es`);
-      res.json({ seeded: n });
+      console.log(`[playbook-acoes] seed inicial: ${n2} a\xE7\xF5es`);
+      res.json({ seeded: n2 });
     } catch (err) {
       console.error("POST /api/playbook-acoes/seed error:", err.message);
       res.status(500).json({ error: "Erro ao popular o playbook." });
@@ -12737,9 +14331,9 @@ async function startServer() {
       const startDateStr = startD ? startD.toISOString().split("T")[0] : null;
       const reasonsStr = Array.isArray(exit_reasons) ? exit_reasons.join(", ") : exit_reasons || "";
       await pool.query(
-        `INSERT INTO churn ("CLIENTE", "day_exit", "Evitavel - inevitavel", "gestor", "LTV", "SQUAD", "Motivo de sa\xEDda", "day", "comments")
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [client_name, exitDateStr, churn_type || null, gestor || null, ltv, squad || null, reasonsStr || null, startDateStr, comments || null]
+        `INSERT INTO churn ("CLIENTE", "day_exit", "Evitavel - inevitavel", "gestor", "LTV", "SQUAD", "Motivo de sa\xEDda", "day", "comments", client_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [client_name, exitDateStr, churn_type || null, gestor || null, ltv, squad || null, reasonsStr || null, startDateStr, comments || null, client_id || null]
       );
       res.json({ success: true });
     } catch (err) {
@@ -12956,9 +14550,11 @@ async function startServer() {
   app.get("/api/churn/:clientName", async (req, res) => {
     const { clientName } = req.params;
     try {
+      const clientId = req.query.client_id ? String(req.query.client_id) : null;
       const result = await pool.query(
-        `SELECT * FROM churn WHERE "CLIENTE" = $1 ORDER BY day_exit DESC LIMIT 1`,
-        [clientName]
+        `SELECT * FROM churn WHERE ($2::text IS NOT NULL AND client_id = $2) OR "CLIENTE" = $1
+          ORDER BY ($2::text IS NOT NULL AND client_id = $2) DESC, day_exit DESC LIMIT 1`,
+        [clientName, clientId]
       );
       if (result.rows.length > 0) {
         res.json(result.rows[0]);
@@ -13555,10 +15151,10 @@ async function startServer() {
       const fn2 = fm2 === 12 ? 1 : fm2 + 1;
       const ny2 = fm2 === 12 ? fy2 + 1 : fy2;
       const fim = `${ny2}-${String(fn2).padStart(2, "0")}-01`;
-      let saldoAtual = 0;
+      let saldoAtual2 = 0;
       const balData = await asaasFetch("/finance/balance");
       if (balData?.balance !== void 0) {
-        saldoAtual = parseFloat(balData.balance);
+        saldoAtual2 = parseFloat(balData.balance);
       } else {
         const saldoRes = await pool.query(`
           SELECT
@@ -13566,7 +15162,7 @@ async function startServer() {
             COALESCE(SUM(CASE WHEN type = -1 THEN value ELSE 0 END), 0) AS saldo
           FROM fin_movements_asaas WHERE account = 'asaas'
         `);
-        saldoAtual = parseFloat(saldoRes.rows[0].saldo);
+        saldoAtual2 = parseFloat(saldoRes.rows[0].saldo);
       }
       const netAposRes = await pool.query(`
         SELECT
@@ -13587,7 +15183,7 @@ async function startServer() {
           AND is_anticipation_pair = false AND is_reversed_pair = false
       `, [inicio, fim]);
       const netMes = parseFloat(netMesRes.rows[0].net);
-      let saldoAnterior = saldoAtual - netMes - netAposMes;
+      let saldoAnterior = saldoAtual2 - netMes - netAposMes;
       const todayIso = new Date((/* @__PURE__ */ new Date()).getTime() - (/* @__PURE__ */ new Date()).getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
       if (inicio > todayIso) {
         const prevEntAteInicioRes = await pool.query(`
@@ -14129,6 +15725,9 @@ async function startServer() {
           r.id,
           r.asaas_id,
           COALESCE(p.name, r.customer_name) AS customer_name,
+          -- cadastro do GrapeHub (nome igual ao de Clientes Ativos); o do Asaas segue em customer_name
+          cg.id AS client_id,
+          cg.name AS client_name_internal,
           COALESCE(p.cnpjcpf, r.customer_cpfcnpj) AS customer_cpfcnpj,
           r.billing_type,
           r.status,
@@ -14142,6 +15741,7 @@ async function startServer() {
           r.raw_json
         FROM fin_receivables r
         LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
+        LEFT JOIN clients cg ON cg.id = p.grapehub_client_id
         WHERE r.due_date >= $1 AND r.due_date < $2
           AND r.status IN ('Pendente', 'PENDING', 'OVERDUE')
         ORDER BY r.due_date ASC
@@ -14155,6 +15755,9 @@ async function startServer() {
           r.id,
           r.asaas_id,
           COALESCE(p.name, r.customer_name) AS customer_name,
+          -- cadastro do GrapeHub (nome igual ao de Clientes Ativos); o do Asaas segue em customer_name
+          cg.id AS client_id,
+          cg.name AS client_name_internal,
           COALESCE(p.cnpjcpf, r.customer_cpfcnpj) AS customer_cpfcnpj,
           r.billing_type,
           r.status,
@@ -14168,6 +15771,7 @@ async function startServer() {
           r.raw_json->>'anticipated' AS anticipated
         FROM fin_receivables r
         LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
+        LEFT JOIN clients cg ON cg.id = p.grapehub_client_id
         WHERE r.due_date >= $1 AND r.due_date < $2
           AND (
             r.status IN ('Confirmado', 'CONFIRMED', 'RECEIVED', 'RECEIVED_IN_CASH')
@@ -14236,6 +15840,9 @@ async function startServer() {
           c.name AS client_name_internal,
           c.squad,
           n.note AS note,
+          pr.promessa_data,
+          pr.promessa_em,
+          ct.ultimo_contato,
           -- Aggregated data
           COUNT(r.id) AS total_charges,
           SUM(r.value::numeric) AS total_value,
@@ -14243,6 +15850,8 @@ async function startServer() {
           MAX(r.due_date) AS latest_due_date,
           (CURRENT_DATE - MIN(r.due_date)) AS max_days_overdue,
           -- Raw charges as JSON
+          to_char((uc.quando AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD HH24:MI') AS ultima_cobranca,
+          uc.tipo AS ultima_cobranca_tipo,
           json_agg(json_build_object(
             'id', r.id,
             'asaas_id', r.asaas_id,
@@ -14257,8 +15866,30 @@ async function startServer() {
         LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
         LEFT JOIN clients c ON c.id = p.grapehub_client_id
         LEFT JOIN fin_inadimplente_notes n ON n.customer_id = r.customer_id
+        LEFT JOIN LATERAL (
+          SELECT k.meta->>'promessa_data' AS promessa_data, k.created_at AS promessa_em
+            FROM crm_comments k
+           WHERE k.client_id = c.id AND k.meta->>'resultado' = 'prometeu' AND k.meta->>'promessa_data' IS NOT NULL
+           ORDER BY k.created_at DESC LIMIT 1
+        ) pr ON true
+        LEFT JOIN LATERAL (
+          SELECT MAX(k.created_at) AS ultimo_contato FROM crm_comments k
+           WHERE k.client_id = c.id AND k.user_id <> 'sistema'
+             AND k.type IN ('Cobran\xE7a manual','Contato realizado','Promessa de pagamento','Acordo fechado','Pedido de sa\xEDda')
+        ) ct ON true
+        -- \xDAltima cobran\xE7a: a r\xE9gua (fila ENVIADO) ou uma pessoa (hist\xF3rico). Hor\xE1rios gravados em UTC.
+        LEFT JOIN LATERAL (
+          SELECT u.quando, u.tipo FROM (
+            SELECT q.sent_at AS quando, 'auto' AS tipo FROM fin_dispatch_queue q
+             WHERE q.customer_asaas_id = r.customer_id AND q.status = 'ENVIADO' AND q.sent_at IS NOT NULL
+            UNION ALL
+            SELECT k.created_at, 'manual' FROM crm_comments k
+             WHERE k.client_id = c.id AND k.user_id <> 'sistema'
+               AND k.type IN ('Cobran\xE7a manual','Contato realizado','Promessa de pagamento','Acordo fechado')
+          ) u ORDER BY u.quando DESC LIMIT 1
+        ) uc ON true
         WHERE r.status = 'OVERDUE'
-        GROUP BY r.customer_id, p.name, p.phone, p.cnpjcpf, p.email, c.id, c.name, c.squad, n.note
+        GROUP BY r.customer_id, p.name, p.phone, p.cnpjcpf, p.email, c.id, c.name, c.squad, n.note, pr.promessa_data, pr.promessa_em, ct.ultimo_contato, uc.quando, uc.tipo
         ORDER BY max_days_overdue DESC, total_value DESC
       `);
       res.json(result.rows);
@@ -14579,9 +16210,9 @@ async function startServer() {
         const occPdf = /* @__PURE__ */ new Map();
         for (const t of transactions) {
           const key = `${t.dtposted}_${t.memo}_${t.trnamt.toFixed(2)}_${t.card || ""}`;
-          const n = occPdf.get(key) || 0;
-          occPdf.set(key, n + 1);
-          t.fitid = crypto4.createHash("md5").update(`${key}_${n}`).digest("hex").slice(0, 16);
+          const n2 = occPdf.get(key) || 0;
+          occPdf.set(key, n2 + 1);
+          t.fitid = crypto4.createHash("md5").update(`${key}_${n2}`).digest("hex").slice(0, 16);
         }
       } else if (isCSV) {
         const lines = content.split(/\r?\n/);
@@ -14686,9 +16317,9 @@ async function startServer() {
         const occ = /* @__PURE__ */ new Map();
         for (const t of transactions) {
           const key = `${t.dtposted}_${t.memo}_${t.trnamt.toFixed(2)}_${t.card || ""}`;
-          const n = occ.get(key) || 0;
-          occ.set(key, n + 1);
-          t.fitid = crypto4.createHash("md5").update(`${key}_${n}`).digest("hex").slice(0, 16);
+          const n2 = occ.get(key) || 0;
+          occ.set(key, n2 + 1);
+          t.fitid = crypto4.createHash("md5").update(`${key}_${n2}`).digest("hex").slice(0, 16);
         }
       } else {
         const trnRegex = /<STMTTRN>[\s\S]*?<\/STMTTRN>/gi;
@@ -16700,9 +18331,9 @@ async function startServer() {
          WHERE t.platform='meta_ads' AND t.status='active' AND t.account_id IS NOT NULL`
       );
       const now = /* @__PURE__ */ new Date();
-      const d = (n) => {
+      const d = (n2) => {
         const x = new Date(now);
-        x.setDate(now.getDate() - n);
+        x.setDate(now.getDate() - n2);
         return x.toISOString().slice(0, 10);
       };
       const since = d(30), until = d(1);
@@ -16862,9 +18493,9 @@ async function startServer() {
       );
       if (toks.rows.length === 0) return res.status(404).json({ error: "Projeto sem conta Meta configurada." });
       const now = /* @__PURE__ */ new Date();
-      const d = (n) => {
+      const d = (n2) => {
         const x = new Date(now);
-        x.setDate(now.getDate() - n);
+        x.setDate(now.getDate() - n2);
         return x.toISOString().slice(0, 10);
       };
       let since = req.query.start || d(30);
@@ -17349,7 +18980,7 @@ async function startServer() {
                k.nome as kanban_name
         FROM crm_comercial_leads l
         LEFT JOIN crm_comercial_columns c ON l.coluna::text = c.id::text
-        LEFT JOIN users u ON l.responsavel_id = u.email
+        LEFT JOIN users u ON u.id::text = l.responsavel_id::text  -- responsavel_id guarda o id do usu\xE1rio (antes cruzava com e-mail e vinha vazio)
         LEFT JOIN crm_comercial_kanbans k ON l.kanban_id::text = k.id::text
         WHERE 1=1
       `;
@@ -20887,7 +22518,7 @@ async function startServer() {
                 form_data->>'nome_fantasia' ILIKE ANY($1) OR
                 form_data->>'razao_social' ILIKE ANY($1))
          ORDER BY submitted_at DESC LIMIT 1`,
-        [names.map((n) => n.trim())]
+        [names.map((n2) => n2.trim())]
       );
       if (fallback.rows.length === 0) return res.status(404).json({ error: "Briefing n\xE3o encontrado." });
       const briefing = fallback.rows[0];
@@ -21637,7 +23268,7 @@ Cores dos gr\xE1ficos (usar em todos os temas):
 ${instrucoes_extras ? `# INSTRU\xC7\xD5ES ADICIONAIS
 ${instrucoes_extras}` : ""}
 `.trim();
-      const anthropic = new Anthropic2({ apiKey: anthropicKey });
+      const anthropic = new Anthropic3({ apiKey: anthropicKey });
       const response = await anthropic.messages.create({
         model: "claude-sonnet-4-6",
         max_tokens: 2048,
@@ -22970,11 +24601,11 @@ ${instrucoes_extras}` : ""}
       );
       const critAtual = new Map(critRows.map((c) => [Number(c.id), c]));
       const result = rows.map((r) => {
-        const notas = buildNotas(r).map((n) => {
-          const atual = critAtual.get(Number(n.criterio_id));
-          return atual ? { ...n, label: atual.label, descricao: atual.descricao, icon: atual.icon, cor: atual.cor } : n;
+        const notas = buildNotas(r).map((n2) => {
+          const atual = critAtual.get(Number(n2.criterio_id));
+          return atual ? { ...n2, label: atual.label, descricao: atual.descricao, icon: atual.icon, cor: atual.cor } : n2;
         });
-        const media = notas.length ? Math.round(notas.reduce((a, n) => a + Number(n.nota), 0) / notas.length * 100) / 100 : 0;
+        const media = notas.length ? Math.round(notas.reduce((a, n2) => a + Number(n2.nota), 0) / notas.length * 100) / 100 : 0;
         return { ...r, notas, media_geral: media };
       });
       res.json(result);
@@ -23045,13 +24676,13 @@ ${instrucoes_extras}` : ""}
           avaliadorId = avRes.rows[0].id;
         }
       }
-      const cleanNotas = notas.map((n) => ({
-        criterio_id: Number(n.criterio_id) || 0,
-        label: String(n.label || "Avalia\xE7\xE3o"),
-        descricao: n.descricao ?? null,
-        icon: String(n.icon || "Star"),
-        cor: String(n.cor || "violet"),
-        nota: Math.max(1, Math.min(5, Number(n.nota) || 0))
+      const cleanNotas = notas.map((n2) => ({
+        criterio_id: Number(n2.criterio_id) || 0,
+        label: String(n2.label || "Avalia\xE7\xE3o"),
+        descricao: n2.descricao ?? null,
+        icon: String(n2.icon || "Star"),
+        cor: String(n2.cor || "violet"),
+        nota: Math.max(1, Math.min(5, Number(n2.nota) || 0))
       }));
       const { rows } = await pool.query(
         `INSERT INTO collaborator_performance_cycles
@@ -23831,6 +25462,9 @@ ${instrucoes_extras}` : ""}
   setupAlertaSaldoRoutes(app, pool, fetchMetaAccountInfo);
   setupMenuPastaEmPastaRoutes(app, pool);
   setupClientesMapaRoutes(app, pool);
+  setupClienteHistoricoRoutes(app, pool);
+  setupFechamentoDetalheRoutes(app, pool);
+  setupGerentesRoutes(app, pool);
   migrateCrmReunioes(pool).catch((e) => console.error("[crm-reunioes] migrate:", e.message));
   await migrateCursos(pool).catch((e) => console.warn("[cursos] migrate:", e.message));
   setupCursosRoutes(app, pool);

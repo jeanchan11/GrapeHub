@@ -5,13 +5,13 @@ import SplitHeadline from '../SplitHeadline';
 interface PageHeaderProps {
   title: string;
   titleAccent?: string;
-  subtitle: string;
+  subtitle?: string;
   children?: React.ReactNode;
 }
 
 export const PageHeader: React.FC<PageHeaderProps> = ({ title, titleAccent, subtitle, children }) => {
   return (
-    <div className={`${designSystem.pageTitle.wrapper} flex justify-between items-start`}>
+    <div className={`${designSystem.pageTitle.wrapper} flex flex-wrap justify-between items-start gap-4`}>
       <SplitHeadline
         text={title ? title + ' ' : ''}
         highlight={titleAccent || ''}
@@ -20,7 +20,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ title, titleAccent, subt
         subtitleClassName={designSystem.pageTitle.subtitle}
       />
       {children && (
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {children}
         </div>
       )}

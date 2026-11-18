@@ -1,7 +1,7 @@
 
 // App component for GrapeHub
 // Last updated: 2026-04-02 21:00 UTC
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 
 import Sidebar from './src/components/Sidebar';
 import PageTransition from './src/components/PageTransition';
@@ -55,6 +55,8 @@ import ColaboradoresPage from './src/pages/ColaboradoresPage';
 import CollaboratorProfile from './src/pages/CollaboratorProfile';
 import MinhaEquipePage from './src/pages/MinhaEquipePage';
 import SuperAdminDashboard from './src/pages/SuperAdminDashboard';
+import PainelFinanceiro from './src/pages/PainelFinanceiro';
+import Gerentes from './src/pages/Gerentes';
 
 import MeetingNotes from './src/pages/MeetingNotes';
 import PlanejamentoCrescimento from './src/pages/PlanejamentoCrescimento';
@@ -75,18 +77,13 @@ import { auth, db, handleFirestoreError, OperationType, isFirebaseConfigValid } 
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { UserData, UserRole } from './types';
-import { 
-  SDRCalculator, 
-  GerenteOperacionalCalculator,
-  NotificationsPage,
-  SettingsPage,
-  SquadAblePage
-} from './src/pages/Placeholders';
 
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import AlertaSaldoBaixo from './src/components/AlertaSaldoBaixo';
 import { MenuProvider, useMenu } from './src/context/MenuContext';
 import ActivityToastStack from './src/components/ActivityToastStack';
+import BoasVindas from './src/components/BoasVindas';
+import Configuracoes from './src/pages/Configuracoes';
 import { MoodPopup } from './src/components/MoodPopup';
 
 // Vários templates são reaproveitados por mais de uma página do menu (7 páginas usam
@@ -140,6 +137,28 @@ const AppContent: React.FC = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
   });
+
+  // Página acompanha o menu sem re-layout a cada quadro (técnica FLIP): a margem muda de uma vez,
+  // a página nasce deslocada pela diferença e desliza até o lugar só com transform (GPU).
+  // Animar a margem derrubava o FPS; trocar sem animar fazia a página "pular".
+  const mainRef = useRef<HTMLElement>(null);
+  const margemAnterior = useRef(sidebarCollapsed ? 90 : 278);
+  useLayoutEffect(() => {
+    const el = mainRef.current;
+    const nova = sidebarCollapsed ? 90 : 278;
+    const delta = margemAnterior.current - nova;
+    margemAnterior.current = nova;
+    if (!el || !delta) return;
+    el.style.transition = 'none';
+    el.style.transform = `translateX(${delta}px)`;
+    el.getBoundingClientRect(); // fixa o ponto de partida antes de animar
+    el.style.transition = 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s';
+    el.style.transform = 'translateX(0)';
+    // sem transform no fim: transform faria popups (position: fixed) se prenderem à página
+    const fim = () => { el.style.transform = ''; el.style.transition = 'background-color 0.3s'; };
+    const t = setTimeout(fim, 340);
+    return () => clearTimeout(t);
+  }, [sidebarCollapsed]);
 
   // Sync URL hash when activePage changes
   useEffect(() => {
@@ -336,8 +355,8 @@ const AppContent: React.FC = () => {
         </div>
       );
     }
-    // Settings and notifications — accessible to ALL logged-in users
-    if (activePage === 'settings' || activePage === 'notifications') {
+    // Configurações — acessível a todo usuário logado
+    if (activePage === 'settings') {
       // fall through to switch below
     } else if (!isAllowed) {
       return (
@@ -356,18 +375,18 @@ const AppContent: React.FC = () => {
       case 'admin':
         return <AdminPanel />;
       case 'active-clients':
-        return <ActiveClients />;
+        return <ActiveClients pageLabel={findPageLabel(menu, activePage)} />;
       case 'crm-financeiro':
-        return <CrmFinanceiro />;
+        return <CrmFinanceiro pageLabel={findPageLabel(menu, activePage)} />;
       case 'crm-comercial':
         return <CrmComercial />;
       case 'comercial-grape':
         return <ComercialGrape />;
       case 'projects':
         console.log("AppContent: Rendering ProjectsModule with activePage:", activePage);
-        return <ProjectsModule key={activePage} activePage={activePage} />;
+        return <ProjectsModule key={activePage} activePage={activePage} pageLabel={findPageLabel(menu, activePage)} />;
       case 'todo':
-        return <TodoPage key={activePage} activePage={activePage} onPageChange={navigateTo} />;
+        return <TodoPage key={activePage} activePage={activePage} onPageChange={navigateTo} pageLabel={findPageLabel(menu, activePage)} />;
       case 'gestor-dashboard':
         return <GestorDashboard />;
       case 'closer':
@@ -378,22 +397,16 @@ const AppContent: React.FC = () => {
         return <GestorCalculator />;
       case 'head-operacao':
         return <HeadCalculator key={activePage} activePage={activePage} />;
-      case 'sdr':
-        return <SDRCalculator />;
-      case 'gerente-operacional':
-        return <GerenteOperacionalCalculator />;
       case 'squad-able':
         return <DashboardOperacional key={activePage} activePage={activePage} subsessionId="squad-able" />;
-      case 'notifications':
-        return <NotificationsPage />;
       case 'settings':
-        return <SettingsPage onPageChange={navigateTo} isSuperAdmin={userData?.role === 'superadmin'} />;
+        return <Configuracoes onPageChange={navigateTo} isSuperAdmin={userData?.role === 'superadmin'} themePref={themePref} setThemePref={setThemePref} />;
       case 'financeiro-dashboard':
-        return <FinanceiroDashboard />;
+        return <FinanceiroDashboard pageLabel={findPageLabel(menu, activePage)} />;
       case 'financeiro-dre':
-        return <Dre />;
+        return <Dre pageLabel={findPageLabel(menu, activePage)} />;
       case 'fin-extrato':
-        return <Extrato />;
+        return <Extrato pageLabel={findPageLabel(menu, activePage)} />;
       case 'kpis-squad':
         return <DashboardOperacional key={activePage} activePage={activePage} subsessionId={activeSubsessionId} />;
       case 'parceiros-squad':
@@ -433,11 +446,11 @@ const AppContent: React.FC = () => {
       case 'operacional-consolidado':
         return <DashboardOperacional key={activePage} activePage={activePage} mode="heads" />;
       case 'todo-staff':
-        return <TodoStaff key={activePage} activePage={activePage} />;
+        return <TodoStaff key={activePage} activePage={activePage} pageLabel={findPageLabel(menu, activePage)} />;
       case 'chamados-grapehub':
         return <ChamadosGrapehub key={activePage} activePage={activePage} pageLabel={findPageLabel(menu, activePage)} />;
       case 'ideais-criativos':
-        return <IdeaisCriativos key={activePage} activePage={activePage} />;
+        return <IdeaisCriativos key={activePage} activePage={activePage} pageLabel={findPageLabel(menu, activePage)} />;
       case 'onboarding-operacional':
         return <OnboardingOperacional />;
       case 'cursos':
@@ -458,15 +471,19 @@ const AppContent: React.FC = () => {
       case 'contratacao':
         return <ContratacaoPage />;
       case 'contas-a-pagar':
-        return <ContasAPagar />;
+        return <ContasAPagar pageLabel={findPageLabel(menu, activePage)} />;
       case 'contas-a-receber':
-        return <ContasAReceber />;
+        return <ContasAReceber pageLabel={findPageLabel(menu, activePage)} />;
       case 'colaboradores':
         return <ColaboradoresPage />;
       case 'minha-equipe':
         return <MinhaEquipePage />;
+      case 'painel-financeiro':
+        return <PainelFinanceiro key={activePage} pageLabel={findPageLabel(menu, activePage)} />;
+      case 'gerentes':
+        return <Gerentes key={activePage} pageLabel={findPageLabel(menu, activePage)} />;
       case 'superadmin-dashboard':
-        return <SuperAdminDashboard />;
+        return <SuperAdminDashboard pageLabel={findPageLabel(menu, activePage)} />;
       case 'colaborador-perfil': {
         const rawId = activePage.split('/')[1] || '';
         const cleanId = rawId.split('?')[0];
@@ -474,9 +491,9 @@ const AppContent: React.FC = () => {
         return <CollaboratorProfile id={cleanId} fromMinhaEquipe={fromMinhaEquipe} />;
       }
       case 'planejamento-crescimento':
-        return <PlanejamentoCrescimento />;
+        return <PlanejamentoCrescimento pageLabel={findPageLabel(menu, activePage)} />;
       case 'senhas':
-        return <SenhasPage activePage={activePage} />;
+        return <SenhasPage activePage={activePage} pageLabel={findPageLabel(menu, activePage)} />;
       case 'planos-de-carreira':
         return <PlanosDeCarreira key={activePage} activePage={activePage} />;
 
@@ -543,6 +560,8 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="h-screen overflow-hidden bg-light-bg dark:bg-dark-bg transition-colors duration-300">
+      {/* Brilhos atrás do menu de vidro (estilo MaternaHub, 18/11/2026) */}
+      <div className="gh-fundo" aria-hidden><i className="gh-brilho b1" /><i className="gh-brilho b2" /><i className="gh-brilho b3" /></div>
       <Sidebar 
         activePage={activePage} 
         onPageChange={navigateTo} 
@@ -556,10 +575,14 @@ const AppContent: React.FC = () => {
       {/* Saldo baixo nas contas de anúncio: só aparece para o gestor de uma página de Projetos */}
       <AlertaSaldoBaixo onAbrirPagina={navigateTo} />
       <main 
-        className="h-screen overflow-y-auto scrollbar-hide rounded-tl-[2.5rem] bg-light-bg dark:bg-dark-bg"
+        ref={mainRef}
+        className="gh-palco relative h-screen overflow-y-auto scrollbar-hide"
         style={{
-          marginLeft: sidebarCollapsed ? 80 : 280,
-          transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s',
+          // menu flutuante: 14px de margem + largura do painel (76 / 264)
+          marginLeft: sidebarCollapsed ? 90 : 278,
+          // Sem transição na margem (re-layout da página a cada quadro): o deslize é feito com
+          // transform no useLayoutEffect de `sidebarCollapsed` (FLIP).
+          transition: 'background-color 0.3s',
         }}
       >
         <PageTransition pageKey={activePage}>
@@ -568,6 +591,8 @@ const AppContent: React.FC = () => {
       </main>
       <ActivityToastStack />
       <MoodPopup />
+      {/* Recepção logo após o login (só quando o login acabou de acontecer nesta aba) */}
+      <BoasVindas nome={userData?.name || user.displayName} />
     </div>
   );
 };

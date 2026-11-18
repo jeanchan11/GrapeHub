@@ -43,7 +43,7 @@ export default function AgendarProximoInline({ titulo, legenda, valor, onChange,
             type="date"
             value={valor.data}
             onChange={e => set({ data: e.target.value })}
-            className="w-full bg-white dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 transition-colors"
+            className="w-full bg-white dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500 transition-colors"
           />
         </div>
         <div>
@@ -52,7 +52,7 @@ export default function AgendarProximoInline({ titulo, legenda, valor, onChange,
             type="time"
             value={valor.horario}
             onChange={e => set({ horario: e.target.value })}
-            className="w-full bg-white dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 transition-colors"
+            className="w-full bg-white dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500 transition-colors"
           />
         </div>
       </div>
@@ -64,7 +64,7 @@ export default function AgendarProximoInline({ titulo, legenda, valor, onChange,
           value={valor.observacao}
           onChange={e => set({ observacao: e.target.value })}
           placeholder={placeholderObs || 'Pauta ou ponto a preparar...'}
-          className="w-full bg-white dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
+          className="w-full bg-white dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
         />
       </div>
 

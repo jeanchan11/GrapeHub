@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { toast } from '@/src/lib/toast';
+// Estilo do MaternaHub (18/11/2026): vidro flutuante + pílula deslizante. Backup em backup-menu-antes-materna/
+import './sidebar-vidro.css';
 
 // ─── Page Permissions Modal ───────────────────────────────────────────────────
 
@@ -232,15 +234,19 @@ const PageItemWithMenu: React.FC<PageItemProps> = ({ page, isActive, paddingLeft
 
   return (
     <div
-      className={`group/page relative flex items-center gap-2 pr-2 rounded-lg cursor-pointer transition-all duration-200 ${isActive ? 'text-white font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'}`}
-      style={{ paddingLeft, paddingRight: '8px', paddingTop: '7px', paddingBottom: '7px', borderRadius: '8px', margin: '1px 8px 1px 0', background: isActive ? '#7C3AED' : 'transparent' }}
+      className={`group/page relative flex items-center gap-2 h-10 rounded-xl cursor-pointer transition-colors duration-200 ${isActive ? 'text-white font-semibold' : 'text-slate-600 dark:text-slate-400 font-medium hover:bg-slate-900/[0.04] dark:hover:bg-white/[0.04] hover:text-slate-900 dark:hover:text-white'}`}
+      style={{ paddingLeft, paddingRight: '8px', margin: '2px 0' }}
     >
-      <a className="flex-1 flex items-center gap-2 min-w-0 no-underline" href={`#/${page.id}`} onClick={(e) => { e.preventDefault(); onPageChange(page.id); }}>
-        {PageIcon && <PageIcon size={14} color={isActive ? '#FFFFFF' : (page.icon_color || '#9CA3AF')} />}
-        <span className="text-sm font-medium truncate" style={{ color: isActive ? '#FFFFFF' : 'inherit' }}>{page.label}</span>
+      {/* Pílula do item ativo: desliza de uma página para a outra (layoutId) */}
+      {isActive && (
+        <motion.span layoutId="gh-pilula" transition={{ type: 'spring', stiffness: 420, damping: 38 }} className="gh-pilula" aria-hidden />
+      )}
+      <a className="relative z-[1] flex-1 flex items-center gap-2.5 min-w-0 no-underline" href={`#/${page.id}`} onClick={(e) => { e.preventDefault(); onPageChange(page.id); }}>
+        {PageIcon && <PageIcon size={16} className="shrink-0" color={isActive ? '#FFFFFF' : (page.icon_color || '#9CA3AF')} />}
+        <span className="text-[13.5px] truncate" style={{ color: isActive ? '#FFFFFF' : 'inherit' }}>{page.label}</span>
       </a>
       {canManagePermissions && (
-        <div className="relative">
+        <div className="relative z-[1]">
           <button
             ref={buttonRef}
             onClick={handleToggleMenu}
@@ -488,19 +494,18 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
     setFlyoutTop(topo);
   }, [flyoutSection, flyoutY, flyoutGrupos]);
 
-  const bottomItems = [
-    { id: 'notifications', label: 'Notificações', icon: Bell, badge: 12 },
+  const bottomItems: { id: string; label: string; icon: React.ElementType; badge?: number }[] = [
     { id: 'settings', label: 'Configurações', icon: Settings },
   ];
 
   return (
     <>
       <aside
-        style={{ width: isCollapsed ? 80 : 280, transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}
-        className="fixed top-0 left-0 h-screen bg-white dark:bg-dark-bg/80 backdrop-blur-xl border-r border-slate-200 dark:border-white/10 flex flex-col z-50 shadow-2xl rounded-tr-[2.5rem] transition-colors duration-300"
+        style={{ width: isCollapsed ? 76 : 264, transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}
+        className="gh-vidro fixed top-3.5 left-3.5 bottom-3.5 rounded-[22px] flex flex-col z-50 transition-colors duration-300"
       >
         {/* ── Header ───────────────────────────────────────────── */}
-        <div className="p-6 flex items-center justify-between relative min-h-[80px]">
+        <div className="h-[72px] px-4 flex items-center justify-between relative shrink-0">
           <AnimatePresence mode="wait">
             {!isCollapsed && (
               <motion.div
@@ -512,12 +517,12 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                 className="flex items-center gap-3 cursor-pointer hover:opacity-85 select-none"
                 onClick={handleLogoClick}
               >
-                <div className="w-8 h-8 bg-violet-600 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
-                  <img src="logobranca.png" alt="Logo" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
+                <div className="w-10 h-10 rounded-[14px] bg-gradient-to-br from-violet-400 to-violet-700 flex items-center justify-center shrink-0 p-2 shadow-lg shadow-violet-600/25">
+                  <img src="logobranca.png" alt="Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                 </div>
                 <div className="flex items-baseline">
-                  <span className="font-bold text-2xl text-[#7c3aed] tracking-tight">Grape</span>
-                  <span className="font-light text-2xl text-slate-600 dark:text-violet-200/80">Hub</span>
+                  <span className="font-semibold text-[17px] text-slate-900 dark:text-white tracking-tight">Grape</span>
+                  <span className="font-light text-[17px] text-violet-500 dark:text-violet-300">Hub</span>
                 </div>
               </motion.div>
             )}
@@ -527,26 +532,25 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                 initial={{ opacity: 0, scale: 0.5 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.5 }}
-                className="w-8 h-8 bg-violet-600 rounded-lg flex items-center justify-center mx-auto shrink-0 overflow-hidden cursor-pointer hover:opacity-85"
+                className="w-10 h-10 rounded-[14px] bg-gradient-to-br from-violet-400 to-violet-700 flex items-center justify-center mx-auto shrink-0 p-2 shadow-lg shadow-violet-600/25 cursor-pointer hover:opacity-85"
                 onClick={handleLogoClick}
               >
-                <img src="logobranca.png" alt="Logo" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
+                <img src="logobranca.png" alt="Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
               </motion.div>
             )}
           </AnimatePresence>
 
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="absolute -right-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-white dark:bg-dark-tooltip border border-slate-200 dark:border-violet-500/20 rounded-lg flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-white transition-all shadow-xl z-[60] group"
+            className="gh-recolher absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center transition-colors z-[60]"
+            title={isCollapsed ? 'Expandir' : 'Recolher'}
           >
-            {isCollapsed
-              ? <ChevronRight size={16} className="group-hover:scale-110 transition-transform" />
-              : <ChevronLeft size={16} className="group-hover:scale-110 transition-transform" />}
+            {isCollapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
           </button>
         </div>
 
         {/* ── Search ───────────────────────────────────────────── */}
-        <div className={`mb-6 flex justify-center transition-all duration-300 ${isCollapsed ? 'px-0' : 'px-4'}`}>
+        <div className={`mb-3 flex justify-center transition-all duration-300 ${isCollapsed ? 'px-0' : 'px-3'}`}>
           <motion.div className="relative flex items-center h-10 w-full">
             <motion.div
               className={`z-10 text-slate-500 flex items-center justify-center transition-all duration-300 ${isCollapsed ? 'w-full' : 'absolute left-3'}`}
@@ -564,7 +568,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                   placeholder="Pesquisar"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-light-bg dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 pl-10 pr-4 text-sm text-light-text dark:text-white placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-violet-500/20 transition-colors overflow-hidden"
+                  className="w-full h-10 bg-slate-900/[0.03] dark:bg-white/[0.04] border border-slate-200/80 dark:border-white/10 rounded-xl pl-10 pr-4 text-[13.5px] text-light-text dark:text-white placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-violet-500/20 transition-colors overflow-hidden"
                 />
               )}
             </AnimatePresence>
@@ -573,7 +577,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
 
         {/* ── Navigation ───────────────────────────────────────── */}
         <motion.div
-          className={`flex-1 scrollbar-hide py-2 transition-all duration-300 px-2 ${
+          className={`flex-1 scrollbar-hide py-2 transition-all duration-300 px-2.5 ${
             isCollapsed ? 'overflow-y-auto' : 'overflow-y-auto space-y-1'
           }`}
         >
@@ -625,17 +629,18 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                   {allowedSections.map((section, idx) => {
                     const SectionIcon = iconMap[section.icon] || Folder;
                     const isHov = flyoutSection === section.id;
+                    const temAtiva = flattenSectionPages(section).some(g => g.itens.some(it => it.id === activePage));
 
                     return (
                       <React.Fragment key={section.id}>
-                        {idx > 0 && <div className="w-8 my-1.5 border-t border-white/10 self-center" />}
+                        {idx > 0 && <div className="h-1.5" />}
 
                         {/* Icon button — never changes appearance */}
                         <button
-                          className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-200 ${
-                            isHov
-                              ? 'bg-slate-100 dark:bg-white/10'
-                              : 'hover:bg-slate-100 dark:hover:bg-white/10'
+                          className={`relative w-11 h-11 flex items-center justify-center rounded-xl transition-colors duration-200 ${
+                            isHov && !temAtiva
+                              ? 'bg-slate-900/[0.05] dark:bg-white/[0.06]'
+                              : 'hover:bg-slate-900/[0.05] dark:hover:bg-white/[0.06]'
                           }`}
                           onMouseEnter={(e) => {
                             const rect = e.currentTarget.getBoundingClientRect();
@@ -648,7 +653,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                           }}
                           onMouseLeave={closeFlyout}
                         >
-                          <SectionIcon size={18} color={section.icon_color || '#9CA3AF'} />
+                          {temAtiva && <motion.span layoutId="gh-pilula" transition={{ type: 'spring', stiffness: 420, damping: 38 }} className="gh-pilula" aria-hidden />}
+                          <SectionIcon size={18} className="relative z-[1]" color={temAtiva ? '#FFFFFF' : (section.icon_color || '#9CA3AF')} />
                         </button>
                       </React.Fragment>
                     );
@@ -661,30 +667,22 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
             return allowedSections.map((section, sectionIndex) => (
               <div key={section.id}>
                 {sectionIndex > 0 && (
-                  <div className="mx-4 my-1 border-t border-slate-200/40 dark:border-white/5" />
+                  <div className="h-3" />
                 )}
                 <div className="mb-2">
                   <button
                     onClick={(section.subSessions?.length > 0 || section.pages?.length > 0) ? () => toggleExpand(`sec-${section.id}`) : undefined}
-                    className="w-full flex items-center gap-2 px-4 py-2 text-[10px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-widest hover:text-slate-900 dark:hover:text-slate-300 transition-colors group"
+                    className="w-full flex items-center gap-2 px-3 pt-1 pb-2 gh-secao text-[10.5px] font-bold uppercase tracking-[0.14em] transition-colors group"
                   >
-                    {(section.subSessions?.length > 0 || section.pages?.length > 0) ? (
-                      <div className="relative flex items-center justify-center w-4 h-4">
-                        <div className="opacity-100 group-hover:opacity-0 transition-opacity">
-                          {React.createElement(iconMap[section.icon] || Folder, { size: 14, color: section.icon_color || '#64748b' })}
-                        </div>
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <motion.div animate={{ rotate: (!!query || expanded[`sec-${section.id}`] !== false) ? 0 : -90 }}>
-                            <ChevronDown size={14} />
-                          </motion.div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="w-4 h-4 flex items-center justify-center text-slate-500">
-                        {React.createElement(iconMap[section.icon] || Folder, { size: 14, color: section.icon_color || '#64748b' })}
-                      </div>
+                    <span className="truncate">{section.title}</span>
+                    {(section.subSessions?.length > 0 || section.pages?.length > 0) && (
+                      <motion.span
+                        className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity"
+                        animate={{ rotate: (!!query || expanded[`sec-${section.id}`] !== false) ? 0 : -90 }}
+                      >
+                        <ChevronDown size={13} />
+                      </motion.span>
                     )}
-                    <span className="text-[11px]">{section.title}</span>
                   </button>
 
                   <AnimatePresence initial={false}>
@@ -703,7 +701,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                           <PageItemWithMenu
                             page={page}
                             isActive={activePage === page.id}
-                            paddingLeft="28px"
+                            paddingLeft="16px"
                             onPageChange={onPageChange}
                             canManagePermissions={canManageForSection(section.title)}
                             onOpenPermissions={(id, label) => setPermissionsPage({ id, label })}
@@ -717,8 +715,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                           return (
                             <div key={subSubSession.id} style={{ order: posicoesFilhos(section).get(`subsubsession:${subSubSession.id}`) }}>
                               <div onClick={(e) => { e.stopPropagation(); toggleExpand(`secsubsub-${subSubSession.id}`); }}
-                                style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '28px', paddingRight: '12px', paddingTop: '7px', paddingBottom: '7px', borderRadius: '8px', margin: '1px 8px 1px 0', cursor: 'pointer', background: 'transparent' }}
-                                className="w-full text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white transition-all group"
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '16px', paddingRight: '12px', height: '40px', borderRadius: '12px', margin: '2px 0', cursor: 'pointer', background: 'transparent' }}
+                                className="w-full text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-900/[0.04] dark:hover:bg-white/[0.04] hover:text-slate-900 dark:hover:text-white transition-colors group"
                               >
                                 <div className="relative flex items-center justify-center w-4 h-4">
                                   <div className="opacity-100 group-hover:opacity-0 transition-opacity">
@@ -730,7 +728,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                                       : <span style={{ width: 14 }} />}
                                   </div>
                                 </div>
-                                <span className="text-sm">{subSubSession.label}</span>
+                                <span className="text-[13.5px] truncate">{subSubSession.label}</span>
                               </div>
                               <AnimatePresence initial={false}>
                                 {(!!query || expanded[`secsubsub-${subSubSession.id}`]) && (
@@ -740,7 +738,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                                         key={page.id}
                                         page={page}
                                         isActive={activePage === page.id}
-                                        paddingLeft="40px"
+                                        paddingLeft="30px"
                                         onPageChange={onPageChange}
                                         canManagePermissions={canManageForSection(section.title)}
                                         onOpenPermissions={(id, label) => setPermissionsPage({ id, label })}
@@ -759,8 +757,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                           return (
                             <div key={subSession.id} style={{ order: posicoesFilhos(section).get(`subsession:${subSession.id}`) }}>
                               <div onClick={(e) => { e.stopPropagation(); toggleExpand(`sub-${subSession.id}`); }}
-                                style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '28px', paddingRight: '12px', paddingTop: '7px', paddingBottom: '7px', borderRadius: '8px', margin: '1px 8px 1px 0', cursor: 'pointer', background: 'transparent' }}
-                                className="w-full text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white transition-all group"
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '16px', paddingRight: '12px', height: '40px', borderRadius: '12px', margin: '2px 0', cursor: 'pointer', background: 'transparent' }}
+                                className="w-full text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-900/[0.04] dark:hover:bg-white/[0.04] hover:text-slate-900 dark:hover:text-white transition-colors group"
                               >
                                 <div className="relative flex items-center justify-center w-4 h-4">
                                   <div className="opacity-100 group-hover:opacity-0 transition-opacity">
@@ -772,7 +770,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                                       : <span style={{ width: 14 }} />}
                                   </div>
                                 </div>
-                                <span className="text-sm">{subSession.label}</span>
+                                <span className="text-[13.5px] truncate">{subSession.label}</span>
                               </div>
 
                               <AnimatePresence initial={false}>
@@ -783,7 +781,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                                       <PageItemWithMenu
                                         page={page}
                                         isActive={activePage === page.id}
-                                        paddingLeft="40px"
+                                        paddingLeft="30px"
                                         onPageChange={onPageChange}
                                         canManagePermissions={canManageForSection(section.title)}
                                         onOpenPermissions={(id, label) => setPermissionsPage({ id, label })}
@@ -796,8 +794,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                                       return (
                                         <div key={subSubSession.id} style={{ order: posicoesFilhos(subSession).get(`subsubsession:${subSubSession.id}`) }}>
                                           <div onClick={(e) => { e.stopPropagation(); toggleExpand(`subsub-${subSubSession.id}`); }}
-                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '40px', paddingRight: '12px', paddingTop: '7px', paddingBottom: '7px', borderRadius: '8px', margin: '1px 8px 1px 0', cursor: 'pointer', background: 'transparent' }}
-                                            className="w-full text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white group"
+                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '30px', paddingRight: '12px', height: '40px', borderRadius: '12px', margin: '2px 0', cursor: 'pointer', background: 'transparent' }}
+                                            className="w-full text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-900/[0.04] dark:hover:bg-white/[0.04] hover:text-slate-900 dark:hover:text-white group"
                                           >
                                             <div className="relative flex items-center justify-center w-4 h-4">
                                               <div className="opacity-100 group-hover:opacity-0 transition-opacity">
@@ -809,7 +807,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                                                   : <span style={{ width: 14 }} />}
                                               </div>
                                             </div>
-                                            <span className="text-sm">{subSubSession.label}</span>
+                                            <span className="text-[13.5px] truncate">{subSubSession.label}</span>
                                           </div>
                                           <AnimatePresence initial={false}>
                                             {(!!query || expanded[`subsub-${subSubSession.id}`]) && (
@@ -819,7 +817,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                                                     key={page.id}
                                                     page={page}
                                                     isActive={activePage === page.id}
-                                                    paddingLeft="52px"
+                                                    paddingLeft="44px"
                                                     onPageChange={onPageChange}
                                                     canManagePermissions={canManageForSection(section.title)}
                                                     onOpenPermissions={(id, label) => setPermissionsPage({ id, label })}
@@ -847,11 +845,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
         </motion.div>
 
         {/* ── Bottom Items ─────────────────────────────────────── */}
-        <div className={`border-t border-slate-200 dark:border-white/5 space-y-0.5 transition-all duration-300 ${isCollapsed ? 'py-2' : 'p-3'}`}>
+        <div className={`space-y-0.5 transition-all duration-300 pt-2 ${isCollapsed ? 'px-0' : 'px-2.5'}`}>
           <button
             onClick={toggleTheme}
-            className={`flex items-center rounded-xl text-slate-500 dark:text-slate-400 hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-white transition-all duration-200 group relative py-2 ${
-              isCollapsed ? 'w-10 h-10 justify-center mx-auto' : 'w-full px-4 gap-3'
+            className={`flex items-center rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-900/[0.04] dark:hover:bg-white/[0.04] hover:text-slate-900 dark:hover:text-white transition-colors duration-200 group relative h-10 ${
+              isCollapsed ? 'w-11 justify-center mx-auto' : 'w-full pl-4 pr-3 gap-3'
             }`}
           >
             <div className="shrink-0 relative w-5 h-5 flex items-center justify-center">
@@ -864,12 +862,12 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                   transition={{ duration: 0.25, ease: 'easeInOut' }}
                   className="absolute inset-0 flex items-center justify-center"
                 >
-                  {themePref === 'system' ? <Monitor size={20} /> : themePref === 'light' ? <Sun size={20} /> : <Moon size={20} />}
+                  {themePref === 'system' ? <Monitor size={17} /> : themePref === 'light' ? <Sun size={17} /> : <Moon size={17} />}
                 </motion.span>
               </AnimatePresence>
             </div>
             {!isCollapsed && (
-              <span className="text-sm font-medium whitespace-nowrap">
+              <span className="text-[13.5px] font-medium whitespace-nowrap">
                 {themeLabel}
               </span>
             )}
@@ -884,16 +882,16 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
             <button
               key={item.id}
               onClick={() => onPageChange(item.id)}
-              className={`flex items-center rounded-xl text-slate-500 dark:text-slate-400 hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-white transition-all duration-200 group relative py-2 ${
-                isCollapsed ? 'w-10 h-10 justify-center mx-auto' : 'w-full px-4 gap-3'
+              className={`flex items-center rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-900/[0.04] dark:hover:bg-white/[0.04] hover:text-slate-900 dark:hover:text-white transition-colors duration-200 group relative h-10 ${
+                isCollapsed ? 'w-11 justify-center mx-auto' : 'w-full pl-4 pr-3 gap-3'
               } ${activePage === item.id ? 'bg-violet-500/10 text-violet-600 dark:text-white' : ''}`}
             >
               <div className="shrink-0 flex items-center justify-center">
-                <item.icon size={20} />
+                <item.icon size={17} />
               </div>
               {!isCollapsed && (
                 <div className="flex-1 flex items-center justify-between">
-                  <span className="text-sm font-medium whitespace-nowrap">{item.label}</span>
+                  <span className="text-[13.5px] font-medium whitespace-nowrap">{item.label}</span>
                   {item.badge && (
                     <span className="bg-violet-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md min-w-[18px] text-center">
                       {item.badge}
@@ -911,8 +909,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
         </div>
 
         {/* ── User Profile ─────────────────────────────────────── */}
-        <div className={`mt-auto transition-all duration-300 ${isCollapsed ? 'p-2' : 'p-3'}`}>
-          <div className={`flex items-center gap-3 p-2 rounded-2xl bg-slate-100 dark:bg-dark-card/40 dark:backdrop-blur-md border border-slate-200 dark:border-white/10 ${isCollapsed ? 'justify-center border-none bg-transparent dark:bg-transparent' : ''}`}>
+        <div className={`transition-all duration-300 ${isCollapsed ? 'p-2' : 'p-2.5 pt-2'}`}>
+          <div className={`flex items-center gap-3 p-2 rounded-2xl bg-slate-900/[0.03] dark:bg-white/[0.04] border border-slate-200/70 dark:border-white/10 ${isCollapsed ? 'justify-center border-none bg-transparent dark:bg-transparent' : ''}`}>
             <div className="relative shrink-0">
               <div className="w-9 h-9 rounded-xl bg-violet-500/20 flex items-center justify-center overflow-hidden border border-violet-500/30">
                 <img
@@ -964,7 +962,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
           ref={flyoutRef}
           style={{
             position: 'fixed',
-            left: 84,
+            left: 98,
             top: flyoutTop ?? flyoutY,
             // antes de medir, fica invisível no lugar estimado (evita o "pulo")
             visibility: flyoutTop == null ? 'hidden' : 'visible',

@@ -135,11 +135,11 @@ export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeho
     dateVal.setHours(0, 0, 0, 0);
 
     if (dateVal.getTime() === today.getTime()) {
-      textColorClass = "text-amber-400";
+      textColorClass = "text-amber-600 dark:text-amber-400";
     } else if (dateVal.getTime() < today.getTime()) {
-      textColorClass = "text-red-400";
+      textColorClass = "text-rose-600 dark:text-rose-400";
     } else {
-      textColorClass = "text-white dark:text-white";
+      textColorClass = "text-dark-text";
     }
   }
 
@@ -168,22 +168,22 @@ export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeho
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -5 }}
               style={{ position: 'fixed', top: popoverPos.top, left: popoverPos.left }}
-              className="bg-white dark:bg-[#14141f] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl p-4 z-[100000] w-64"
+              className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl p-4 z-[100000] w-64"
             >
               {/* Header */}
               <div className="flex items-center justify-between mb-4">
                 <button 
                   onClick={handlePrevMonth}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors text-gray-500 dark:text-dark-text/60 hover:text-gray-900 dark:hover:text-white"
+                  className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors text-gray-500 dark:text-dark-text/60 hover:text-dark-text"
                 >
                   <ChevronLeft size={16} />
                 </button>
-                <span className="font-semibold text-sm text-gray-900 dark:text-white">
+                <span className="font-semibold text-sm text-dark-text">
                   {monthNames[currentMonth]} {currentYear}
                 </span>
                 <button 
                   onClick={handleNextMonth}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors text-gray-500 dark:text-dark-text/60 hover:text-gray-900 dark:hover:text-white"
+                  className="p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors text-gray-500 dark:text-dark-text/60 hover:text-dark-text"
                 >
                   <ChevronRight size={16} />
                 </button>
@@ -211,8 +211,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeho
                       onClick={() => handleSelectDate(day)}
                       className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-all ${
                         selected 
-                          ? 'bg-violet-600 text-white shadow-[0_0_15px_rgba(124,58,237,0.5)]' 
-                          : 'text-gray-700 dark:text-dark-text/80 hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white'
+                          ? 'bg-violet-600 text-white' 
+                          : 'text-gray-700 dark:text-dark-text/80 hover:bg-black/5 dark:hover:bg-white/10 hover:text-dark-text'
                       }`}
                     >
                       {day}

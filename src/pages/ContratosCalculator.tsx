@@ -35,7 +35,7 @@ const StatCard = ({ icon: Icon, title, value, subtitle, colorClass, statusLabel 
       <Icon size={20} className="text-white" />
     </div>
     <p className="text-sm font-medium mt-3 text-slate-500 dark:text-slate-400">{title}</p>
-    <h3 className="text-2xl font-bold text-light-text dark:text-white">{value}</h3>
+    <h3 className="text-2xl font-bold text-dark-text">{value}</h3>
     {subtitle && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{subtitle}</p>}
   </div>
 );
@@ -49,7 +49,7 @@ const InputField = ({ label, value, onChange, prefix, suffix, min = 0, step = 1,
       {helper && (
         <div className="group relative no-print">
           <Info size={14} className="text-slate-400 dark:text-slate-500 cursor-help" />
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-slate-800 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-dark-card border border-black/10 dark:border-white/10 text-dark-text text-[10px] rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
             {helper}
           </div>
         </div>
@@ -63,7 +63,7 @@ const InputField = ({ label, value, onChange, prefix, suffix, min = 0, step = 1,
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        className={`w-full bg-slate-100 dark:bg-dark-card-hover border border-slate-200 dark:border-white/5 rounded-xl py-2.5 transition-all focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 outline-none text-light-text dark:text-white font-medium no-print ${prefix ? 'pl-8' : 'pl-4'} ${suffix ? 'pr-20' : 'pr-4'}`}
+        className={`w-full bg-slate-100 dark:bg-dark-card-hover border border-slate-200 dark:border-white/5 rounded-xl py-2.5 transition-all focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 outline-none text-dark-text font-medium no-print ${prefix ? 'pl-8' : 'pl-4'} ${suffix ? 'pr-20' : 'pr-4'}`}
       />
       {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm no-print">{suffix}</span>}
     </div>
@@ -152,20 +152,19 @@ const ContratosCalculator: React.FC = () => {
   };
 
   const chartData = [
-    { name: 'Salário Fixo', value: data.baseSalary, color: '#7c4dff' },
+    { name: 'Salário Fixo', value: data.baseSalary, color: '#8b5cf6' },
     { name: 'Comissão', value: results.comissao, color: '#10b981' },
-    { name: 'Bonificação', value: results.bonus, color: '#ff7043' },
+    { name: 'Bonificação', value: results.bonus, color: '#f59e0b' },
   ].filter(item => item.value > 0);
 
   return (
-    <div ref={reportRef} className="min-h-screen text-light-text dark:text-white pb-20 transition-colors duration-300">
+    <div ref={reportRef} className="min-h-screen text-dark-text pb-20 transition-colors duration-300">
       <header className="pt-12 pb-20 px-6">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-start justify-between gap-8">
           <div className="flex-1">
             <SplitHeadline
               text="Calculadora de "
               highlight="Contratos"
-              className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1"
             />
             <p className="text-slate-500 text-sm max-w-2xl">
               A meta é medida em <span className="text-violet-600 dark:text-violet-400 font-medium">contratos fechados</span>, não em valor vendido.
@@ -174,16 +173,16 @@ const ContratosCalculator: React.FC = () => {
             </p>
           </div>
 
-          <div className="bg-light-card dark:bg-dark-card p-6 rounded-2xl border border-slate-200 dark:border-white/10 flex flex-col items-center min-w-[240px] shadow-2xl relative transition-colors duration-300">
+          <div className="bg-light-card dark:bg-dark-card p-6 rounded-2xl border border-slate-200 dark:border-white/10 flex flex-col items-center min-w-[240px] shadow-sm relative transition-colors duration-300">
             <div className="absolute -top-3 -right-3 bg-violet-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg flex items-center gap-1">
               <CheckCircle2 size={10} /> META {results.atingimento.toFixed(0)}% ATINGIDA
             </div>
 
             <span className="text-slate-500 text-[10px] font-bold tracking-widest uppercase mb-1">RENDA TOTAL MENSAL</span>
-            <span className="text-4xl font-bold text-light-text dark:text-white">{moeda(results.total)}</span>
+            <span className="text-4xl font-bold text-dark-text">{moeda(results.total)}</span>
             <div className="mt-2 text-[10px] text-slate-500 flex items-center gap-2 font-medium">
               <Target size={12} className="text-amber-500 dark:text-amber-400" />
-              <span>Meta: <span className="text-light-text dark:text-white">{contratos(data.contractsTarget)}</span></span>
+              <span>Meta: <span className="text-dark-text">{contratos(data.contractsTarget)}</span></span>
             </div>
           </div>
         </div>
@@ -193,10 +192,10 @@ const ContratosCalculator: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
 
           <div className="lg:col-span-4 flex flex-col gap-6">
-            <section className="bg-light-card dark:bg-dark-card p-8 rounded-3xl shadow-xl border border-slate-200 dark:border-white/5 h-fit sticky top-6 transition-colors duration-300">
+            <section className="bg-light-card dark:bg-dark-card p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-white/5 h-fit sticky top-6 transition-colors duration-300">
               <div className="flex items-center gap-2 mb-8 border-b border-slate-200 dark:border-white/5 pb-4">
                 <Calculator className="text-violet-600 dark:text-violet-500" size={20} />
-                <h2 className="text-xl font-bold text-light-text dark:text-white uppercase tracking-tight text-sm">Seus Parâmetros</h2>
+                <h2 className="text-xl font-bold text-dark-text uppercase tracking-tight text-sm">Seus Parâmetros</h2>
               </div>
 
               <div className="space-y-6">
@@ -254,8 +253,8 @@ const ContratosCalculator: React.FC = () => {
                     <Info size={16} className="text-violet-600 dark:text-violet-400 shrink-0 mt-0.5" />
                     <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
                       <span className="text-violet-600 dark:text-violet-400 font-bold">Regra de Bônus:</span> para o bônus parcial (50%),
-                      feche <span className="text-light-text dark:text-white font-bold">{contratos(results.metaParcial)}</span>.
-                      Para o bônus total (100%), feche <span className="text-light-text dark:text-white font-bold">{contratos(data.contractsTarget)}</span>.
+                      feche <span className="text-dark-text font-bold">{contratos(results.metaParcial)}</span>.
+                      Para o bônus total (100%), feche <span className="text-dark-text font-bold">{contratos(data.contractsTarget)}</span>.
                     </p>
                   </div>
                 </div>
@@ -263,7 +262,7 @@ const ContratosCalculator: React.FC = () => {
 
               <button
                 onClick={handleExportPNG}
-                className="w-full mt-8 px-6 py-3 rounded-xl bg-violet-600 text-white font-bold text-sm hover:bg-violet-700 transition-all shadow-lg shadow-violet-500/20 flex items-center justify-center gap-2 no-print"
+                className="w-full mt-8 px-6 py-3 rounded-xl bg-violet-600 text-white font-bold text-sm hover:bg-violet-700 transition-colors flex items-center justify-center gap-2 no-print"
               >
                 <FileDown size={18} /> Exportar Projeção
               </button>
@@ -297,9 +296,9 @@ const ContratosCalculator: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-              <div className="bg-light-card dark:bg-dark-card p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-white/5">
+              <div className="bg-light-card dark:bg-dark-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/5">
                 <div className="flex items-center justify-between mb-8">
-                  <h3 className="font-bold text-light-text dark:text-white flex items-center gap-2 uppercase tracking-tight text-sm">
+                  <h3 className="font-bold text-dark-text flex items-center gap-2 uppercase tracking-tight text-sm">
                     <TrendingUp size={18} className="text-violet-600 dark:text-violet-400" />
                     Composição da Renda
                   </h3>
@@ -324,9 +323,9 @@ const ContratosCalculator: React.FC = () => {
                 </div>
               </div>
 
-              <div className="bg-light-card dark:bg-dark-card p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-white/5 flex flex-col">
+              <div className="bg-light-card dark:bg-dark-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/5 flex flex-col">
                 <div className="flex items-center justify-between mb-8">
-                  <h3 className="font-bold text-light-text dark:text-white flex items-center gap-2 uppercase tracking-tight text-sm">
+                  <h3 className="font-bold text-dark-text flex items-center gap-2 uppercase tracking-tight text-sm">
                     <Zap size={18} className="text-violet-600 dark:text-violet-400" />
                     Potencial de Escala
                   </h3>
@@ -338,7 +337,7 @@ const ContratosCalculator: React.FC = () => {
                       <p className="text-[10px] font-bold text-slate-500 uppercase">
                         Se fechar {contratos(data.contractsTarget)} (100%)
                       </p>
-                      <p className="text-lg font-bold text-light-text dark:text-white">{moeda(results.total100)}</p>
+                      <p className="text-lg font-bold text-dark-text">{moeda(results.total100)}</p>
                     </div>
                     <div className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold px-3 py-1 rounded-full">
                       Bônus Integral
@@ -350,7 +349,7 @@ const ContratosCalculator: React.FC = () => {
                       <p className="text-[10px] font-bold text-slate-500 uppercase">
                         Meta parcial (70% — {contratos(results.metaParcial)})
                       </p>
-                      <p className="text-lg font-bold text-light-text dark:text-white">{moeda(results.totalParcial)}</p>
+                      <p className="text-lg font-bold text-dark-text">{moeda(results.totalParcial)}</p>
                     </div>
                     <div className="bg-violet-500/10 text-violet-600 dark:text-violet-400 text-[10px] font-bold px-3 py-1 rounded-full">
                       Bônus {moeda(data.bonusValue * 0.5)}
@@ -371,7 +370,7 @@ const ContratosCalculator: React.FC = () => {
 
                       <div className="mt-6">
                         <p className="text-[10px] font-bold text-slate-500 uppercase mb-1">Faturamento Final Previsto</p>
-                        <p className="text-4xl font-bold text-light-text dark:text-white">{moeda(results.total)}</p>
+                        <p className="text-4xl font-bold text-dark-text">{moeda(results.total)}</p>
                       </div>
 
                       <div className="mt-6 space-y-2">
@@ -396,8 +395,8 @@ const ContratosCalculator: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-light-card dark:bg-dark-card p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-white/5">
-              <h3 className="font-bold text-light-text dark:text-white mb-8 flex items-center gap-2 uppercase tracking-tight text-sm">
+            <div className="bg-light-card dark:bg-dark-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/5">
+              <h3 className="font-bold text-dark-text mb-8 flex items-center gap-2 uppercase tracking-tight text-sm">
                 <Activity size={18} className="text-violet-600 dark:text-violet-400" />
                 Dicas de Performance
               </h3>
@@ -405,17 +404,17 @@ const ContratosCalculator: React.FC = () => {
                 <div className="p-6 bg-slate-50 dark:bg-dark-card-hover/50 rounded-2xl border border-slate-200 dark:border-white/5">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-2 h-2 rounded-full bg-violet-500" />
-                    <h4 className="text-xs font-bold text-light-text dark:text-white uppercase tracking-wider">Impacto do Bônus Proporcional</h4>
+                    <h4 className="text-xs font-bold text-dark-text uppercase tracking-wider">Impacto do Bônus Proporcional</h4>
                   </div>
                   <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                    O primeiro porto seguro é fechar <span className="text-light-text dark:text-white font-bold">{contratos(results.metaParcial)}</span>.
-                    Só isso já soma <span className="text-light-text dark:text-white font-bold">{moeda(data.bonusValue * 0.5)}</span> ao mês.
+                    O primeiro porto seguro é fechar <span className="text-dark-text font-bold">{contratos(results.metaParcial)}</span>.
+                    Só isso já soma <span className="text-dark-text font-bold">{moeda(data.bonusValue * 0.5)}</span> ao mês.
                   </p>
                 </div>
                 <div className="p-6 bg-slate-50 dark:bg-dark-card-hover/50 rounded-2xl border border-slate-200 dark:border-white/5">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <h4 className="text-xs font-bold text-light-text dark:text-white uppercase tracking-wider">Próximo Nível</h4>
+                    <h4 className="text-xs font-bold text-dark-text uppercase tracking-wider">Próximo Nível</h4>
                   </div>
                   <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
                     {results.atingimento >= 100

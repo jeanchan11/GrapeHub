@@ -17,7 +17,7 @@ import SplitHeadline from '../components/SplitHeadline';
 const StatCard = ({ icon: Icon, title, value, subtitle, colorClass, highlighted = false, statusLabel }: { 
   icon: any, title: string, value: string, subtitle?: string, colorClass: string, highlighted?: boolean, statusLabel?: string
 }) => (
-  <div className={`p-6 rounded-2xl shadow-sm border transition-all relative overflow-hidden ${highlighted ? 'bg-slate-100 dark:bg-dark-card-hover border-violet-500/30 ring-1 ring-violet-500/20 shadow-lg shadow-violet-500/5' : 'bg-light-card dark:bg-dark-card border-slate-200 dark:border-white/5'}`}>
+  <div className={`p-6 rounded-2xl shadow-sm border transition-all relative overflow-hidden ${highlighted ? 'bg-slate-100 dark:bg-dark-card-hover border-violet-500/30 ring-1 ring-violet-500/20' : 'bg-light-card dark:bg-dark-card border-slate-200 dark:border-white/5'}`}>
     {statusLabel && (
       <div className="absolute top-2 right-2 px-2 py-0.5 bg-violet-600 text-white text-[8px] font-bold rounded-full uppercase tracking-tighter">
         {statusLabel}
@@ -27,7 +27,7 @@ const StatCard = ({ icon: Icon, title, value, subtitle, colorClass, highlighted 
       <Icon size={20} className="text-white" />
     </div>
     <p className={`text-sm font-medium mt-3 ${highlighted ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500 dark:text-slate-400'}`}>{title}</p>
-    <h3 className="text-2xl font-bold text-light-text dark:text-white">{value}</h3>
+    <h3 className="text-2xl font-bold text-dark-text">{value}</h3>
     {subtitle && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{subtitle}</p>}
   </div>
 );
@@ -41,7 +41,7 @@ const InputField = ({ label, value, onChange, prefix, suffix, min = 0, step = 1,
       {helper && (
         <div className="group relative no-print">
           <Info size={14} className="text-slate-400 dark:text-slate-500 cursor-help" />
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-slate-800 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-dark-card border border-black/10 dark:border-white/10 text-dark-text text-[10px] rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
             {helper}
           </div>
         </div>
@@ -56,7 +56,7 @@ const InputField = ({ label, value, onChange, prefix, suffix, min = 0, step = 1,
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        className={`w-full bg-slate-100 dark:bg-dark-card-hover border border-slate-200 dark:border-white/5 rounded-xl py-2.5 transition-all focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 outline-none text-light-text dark:text-white font-medium no-print ${prefix ? 'pl-8' : 'pl-4'} ${suffix ? 'pr-8' : 'pr-4'}`}
+        className={`w-full bg-slate-100 dark:bg-dark-card-hover border border-slate-200 dark:border-white/5 rounded-xl py-2.5 transition-all focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 outline-none text-dark-text font-medium no-print ${prefix ? 'pl-8' : 'pl-4'} ${suffix ? 'pr-8' : 'pr-4'}`}
       />
       <div className="hidden print:block font-bold text-slate-800 py-1">
         {prefix}{value}{suffix}
@@ -163,9 +163,9 @@ const GestorCalculator: React.FC = () => {
   }, [data]);
 
   const chartData = [
-    { name: 'Salário Fixo', value: data.baseSalary, color: '#7c4dff' },
+    { name: 'Salário Fixo', value: data.baseSalary, color: '#8b5cf6' },
     { name: 'Bônus Entrega', value: results.meetingBonus + results.reportBonus + results.taskBonus, color: '#10b981' },
-    { name: 'Bônus Resultado', value: results.resultBonus, color: '#ff7043' },
+    { name: 'Bônus Resultado', value: results.resultBonus, color: '#f59e0b' },
   ].filter(item => item.value > 0);
 
   const formatCurrency = (val: number) => 
@@ -202,23 +202,22 @@ const GestorCalculator: React.FC = () => {
   };
 
   return (
-    <div ref={reportRef} className="min-h-screen text-light-text dark:text-white pb-20 transition-colors duration-300">
+    <div ref={reportRef} className="min-h-screen text-dark-text pb-20 transition-colors duration-300">
       <header className="pt-12 pb-20 px-6">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-start justify-between gap-8">
           <div className="flex-1">
             <SplitHeadline
               text="Calculadora de "
               highlight="Bonificação"
-              className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1"
             />
             <p className="text-slate-500 text-sm max-w-2xl">
               Calcule sua remuneração baseada em <span className="text-violet-600 dark:text-violet-400 font-medium">critérios de entrega (30%)</span> e <span className="text-violet-600 dark:text-violet-400 font-medium">resultado de clientes (70%)</span>.
             </p>
           </div>
 
-          <div className="bg-light-card dark:bg-dark-card p-6 rounded-2xl border border-slate-200 dark:border-white/10 flex flex-col items-center min-w-[240px] shadow-2xl relative">
+          <div className="bg-light-card dark:bg-dark-card p-6 rounded-2xl border border-slate-200 dark:border-white/10 flex flex-col items-center min-w-[240px] shadow-sm relative">
             {results.totalBonus === data.maxBonus ? (
-              <div className="absolute -top-3 -right-3 bg-amber-500 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg flex items-center gap-1 animate-bounce">
+              <div className="absolute -top-3 -right-3 bg-amber-500 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-lg flex items-center gap-1">
                 <Star size={10} fill="currentColor" /> BÔNUS 100% ATINGIDO
               </div>
             ) : results.totalBonus > 0 ? (
@@ -233,7 +232,7 @@ const GestorCalculator: React.FC = () => {
             </span>
             <div className="mt-2 text-[10px] text-slate-500 flex items-center gap-2 font-medium">
               <Award size={12} className={results.totalBonus > 0 ? "text-amber-500 dark:text-amber-400 fill-current" : "text-slate-400 dark:text-slate-600"} /> 
-              <span>Bônus Máximo: <span className="text-light-text dark:text-white">{formatCurrency(data.maxBonus)}</span></span>
+              <span>Bônus Máximo: <span className="text-dark-text">{formatCurrency(data.maxBonus)}</span></span>
             </div>
           </div>
         </div>
@@ -244,10 +243,10 @@ const GestorCalculator: React.FC = () => {
           
           {/* Sidebar - Inputs */}
           <div className="lg:col-span-4 flex flex-col gap-6">
-            <section className="bg-light-card dark:bg-dark-card p-8 rounded-3xl shadow-xl border border-slate-200 dark:border-white/5 h-fit sticky top-6">
+            <section className="bg-light-card dark:bg-dark-card p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-white/5 h-fit sticky top-6">
               <div className="flex items-center gap-2 mb-8 border-b border-slate-200 dark:border-white/5 pb-4">
                 <Calculator className="text-violet-600 dark:text-violet-500" size={20} />
-                <h2 className="text-xl font-bold text-light-text dark:text-white">Parâmetros de Cálculo</h2>
+                <h2 className="text-xl font-bold text-dark-text">Parâmetros de Cálculo</h2>
               </div>
               
               <div className="space-y-6">
@@ -325,7 +324,7 @@ const GestorCalculator: React.FC = () => {
 
               <button 
                 onClick={handleExportPNG}
-                className="w-full mt-8 px-6 py-3 rounded-xl bg-violet-600 text-white font-bold text-sm hover:bg-violet-700 transition-all shadow-lg shadow-violet-500/20 flex items-center justify-center gap-2 no-print"
+                className="w-full mt-8 px-6 py-3 rounded-xl bg-violet-600 text-white font-bold text-sm hover:bg-violet-700 transition-colors flex items-center justify-center gap-2 no-print"
               >
                 <FileDown size={18} /> Exportar PNG
               </button>
@@ -350,7 +349,7 @@ const GestorCalculator: React.FC = () => {
                 title="Resultado Clientes" 
                 value={`${results.resultScore.toFixed(0)}%`}
                 subtitle={`${data.okResultClients} de ${data.activeClients} ativos`}
-                colorClass={results.resultScore >= 80 ? "bg-violet-600" : results.resultScore >= 50 ? "bg-blue-500" : "bg-slate-600"}
+                colorClass={results.resultScore >= 80 ? "bg-violet-600" : results.resultScore >= 50 ? "bg-amber-500" : "bg-slate-600"}
                 statusLabel="Peso 70%"
               />
               <StatCard 
@@ -373,9 +372,9 @@ const GestorCalculator: React.FC = () => {
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
               
               {/* Composition Chart */}
-              <div className="bg-light-card dark:bg-dark-card p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-white/5">
+              <div className="bg-light-card dark:bg-dark-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/5">
                 <div className="flex items-center justify-between mb-8">
-                  <h3 className="font-bold text-light-text dark:text-white flex items-center gap-2">
+                  <h3 className="font-bold text-dark-text flex items-center gap-2">
                     <TrendingUp size={20} className="text-violet-600 dark:text-violet-400" />
                     Composição da Renda
                   </h3>
@@ -410,9 +409,9 @@ const GestorCalculator: React.FC = () => {
               </div>
 
               {/* Detailed Breakdown */}
-              <div className="bg-light-card dark:bg-dark-card p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-white/5 flex flex-col">
+              <div className="bg-light-card dark:bg-dark-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/5 flex flex-col">
                  <div className="flex items-center justify-between mb-8">
-                  <h3 className="font-bold text-light-text dark:text-white flex items-center gap-2">
+                  <h3 className="font-bold text-dark-text flex items-center gap-2">
                     <Zap size={20} className="text-violet-600 dark:text-violet-400" />
                     Detalhamento dos Pesos
                   </h3>
@@ -422,7 +421,7 @@ const GestorCalculator: React.FC = () => {
                    <div className="p-4 bg-slate-100 dark:bg-dark-card-hover rounded-2xl flex justify-between items-center border border-slate-200 dark:border-white/5">
                       <div>
                         <p className="text-[10px] font-bold text-slate-500 uppercase">Entrega (Peso 30%)</p>
-                        <p className="text-lg font-bold text-light-text dark:text-white">
+                        <p className="text-lg font-bold text-dark-text">
                           {formatCurrency(results.meetingBonus + results.reportBonus + results.taskBonus)}
                         </p>
                       </div>
@@ -433,7 +432,7 @@ const GestorCalculator: React.FC = () => {
                    <div className="p-4 bg-slate-100 dark:bg-dark-card-hover rounded-2xl flex justify-between items-center border border-slate-200 dark:border-white/5">
                       <div>
                         <p className="text-[10px] font-bold text-slate-500 uppercase">Resultado (Peso 70%)</p>
-                        <p className="text-lg font-bold text-light-text dark:text-white">
+                        <p className="text-lg font-bold text-dark-text">
                           {formatCurrency(results.resultBonus)}
                         </p>
                       </div>
@@ -441,7 +440,7 @@ const GestorCalculator: React.FC = () => {
                    </div>
                 </div>
 
-                <div className="flex-1 bg-slate-50 dark:bg-dark-input rounded-3xl p-6 text-light-text dark:text-white flex flex-col justify-between relative overflow-hidden min-h-[220px] border border-slate-200 dark:border-white/5">
+                <div className="flex-1 bg-slate-50 dark:bg-dark-input rounded-2xl p-6 text-dark-text flex flex-col justify-between relative overflow-hidden min-h-[220px] border border-slate-200 dark:border-white/5">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-violet-500/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl"></div>
                   
                   <div className="flex flex-col gap-5">
@@ -458,7 +457,7 @@ const GestorCalculator: React.FC = () => {
                       
                       <div>
                         <span className="text-slate-500 text-[10px] uppercase tracking-widest font-bold block mb-1">Faturamento Final</span>
-                        <div className="text-4xl font-bold text-light-text dark:text-white leading-none">{formatCurrency(results.totalEarnings)}</div>
+                        <div className="text-4xl font-bold text-dark-text leading-none">{formatCurrency(results.totalEarnings)}</div>
                       </div>
                     </div>
 
@@ -467,7 +466,7 @@ const GestorCalculator: React.FC = () => {
                         <span>Fixo</span>
                         <span>Variável</span>
                       </div>
-                      <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden flex relative">
+                      <div className="h-2 w-full bg-black/10 dark:bg-white/10 rounded-full overflow-hidden flex relative">
                         <div 
                           className="h-full bg-violet-500 transition-all duration-500" 
                           style={{ width: `${(data.baseSalary / results.totalEarnings) * 100}%` }}
@@ -484,14 +483,14 @@ const GestorCalculator: React.FC = () => {
             </div>
 
             {/* Analysis Section */}
-            <div className="bg-light-card dark:bg-dark-card p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-white/5">
-              <h3 className="font-bold text-light-text dark:text-white mb-6 flex items-center gap-2">
+            <div className="bg-light-card dark:bg-dark-card p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-white/5">
+              <h3 className="font-bold text-dark-text mb-6 flex items-center gap-2">
                 <Activity size={20} className="text-violet-600 dark:text-violet-400" />
                 Análise de Performance
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="p-5 border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-dark-card-hover/30 rounded-2xl hover:border-violet-500/30 transition-colors">
-                  <div className="font-bold text-light-text dark:text-white mb-2 flex items-center gap-2 text-sm uppercase tracking-tight">
+                  <div className="font-bold text-dark-text mb-2 flex items-center gap-2 text-sm uppercase tracking-tight">
                     <ShieldAlert size={16} className="text-rose-500 dark:text-rose-400" />
                     Status da Entrega
                   </div>
@@ -508,7 +507,7 @@ const GestorCalculator: React.FC = () => {
                   </div>
                 </div>
                 <div className="p-5 border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-dark-card-hover/30 rounded-2xl hover:border-violet-500/30 transition-colors">
-                  <div className="font-bold text-light-text dark:text-white mb-2 flex items-center gap-2 text-sm uppercase tracking-tight">
+                  <div className="font-bold text-dark-text mb-2 flex items-center gap-2 text-sm uppercase tracking-tight">
                     <Award size={16} className="text-amber-500 dark:text-amber-400" />
                     Qualidade de Resultado
                   </div>

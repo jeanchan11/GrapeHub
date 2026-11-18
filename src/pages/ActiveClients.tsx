@@ -15,10 +15,13 @@ import {
 } from 'lucide-react';
 
 import { PageHeader } from '../components/ui/PageHeader';
+import { Abas } from '../components/ui/Abas';
+import { Modal } from '../components/ui/Modal';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
 import OptionPicker from '../components/ui/OptionPicker';
 import ClientModal from '../components/ClientModal';
 import { useAuth } from '../contexts/AuthContext';
-import LoadingSpinner from '../components/LoadingSpinner';
+import LoadingSpinner, { CarregandoBloco } from '../components/LoadingSpinner';
 
 interface Client {
   id: string;
@@ -54,7 +57,7 @@ interface FinPerson {
   grapehub_client_id: string | null;
 }
 
-const ActiveClients: React.FC = () => {
+const ActiveClients: React.FC<{ pageLabel?: string }> = ({ pageLabel }) => {
   const { userData } = useAuth();
   const isSuperAdmin = userData?.role?.toLowerCase() === 'superadmin' || userData?.role?.toLowerCase() === 'super admin';
   const [clients, setClients] = useState<Client[]>([]);
@@ -438,6 +441,11 @@ const ActiveClients: React.FC = () => {
           gestor: managers.find((m: any) => String(m.id) === churnManagerId)?.name || null,
         })
       });
+      // Histórico do cliente: a saída com tipo e motivo
+      fetch(`/api/clientes/${encodeURIComponent(churnClient.id)}/historico`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'Saída', content: `Churn registrado (${churnType})${churnReasons.length ? ` — motivo: ${churnReasons.join(', ')}` : ''}${churnComment ? `\n\n${churnComment}` : ''}`, meta: { evento: 'churn', tipo: churnType, motivos: churnReasons } }),
+              }).catch(() => {});
       // Move to Inativo
       await fetch(`/api/clients/${churnClient.id}`, {
         method: 'PATCH',
@@ -584,15 +592,15 @@ const ActiveClients: React.FC = () => {
       `}</style>
       {/* Header */}
       <PageHeader 
-        title="Clientes" 
-        titleAccent="Ativos" 
+        title={(() => { const n = (pageLabel || 'Clientes Ativos').trim(); const i = n.lastIndexOf(' '); return i > 0 ? n.slice(0, i) : ''; })()}
+        titleAccent={(() => { const n = (pageLabel || 'Clientes Ativos').trim(); const i = n.lastIndexOf(' '); return i > 0 ? n.slice(i + 1) : n; })()}
         subtitle="Gerencie sua base de clientes e parceiros vinculados."
       >
         <button 
           onClick={() => handleOpenModal()}
-          className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-purple-600/20 flex items-center gap-2"
+          className="h-10 px-4 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold rounded-xl transition-colors flex items-center gap-2"
         >
-          <Plus size={20} />
+          <Plus size={16} />
           Novo Cliente
         </button>
       </PageHeader>
@@ -652,63 +660,18 @@ const ActiveClients: React.FC = () => {
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 mb-6 bg-white dark:bg-dark-card/60 backdrop-blur-md p-1.5 rounded-2xl border border-slate-200 dark:border-white/10 w-fit shadow-sm overflow-x-auto max-w-full">
-        <button
-          onClick={() => setActiveTab('ativos')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeTab === 'ativos'
-              ? 'bg-violet-500 text-white shadow-lg shadow-violet-500/25'
-              : 'text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
-          }`}
-        >
-          <CheckCircle2 size={14} />
-          Ativos
-          <span className={`min-w-[22px] h-[22px] flex items-center justify-center rounded-full text-[10px] font-black ${
-            activeTab === 'ativos' ? 'bg-white/20 text-white' : 'bg-emerald-500/10 text-emerald-500'
-          }`}>
-            {activeClients.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('quarentena')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeTab === 'quarentena'
-              ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/25'
-              : 'text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
-          }`}
-        >
-          <ShieldAlert size={14} />
-          Retenção
-          <span className={`min-w-[22px] h-[22px] flex items-center justify-center rounded-full text-[10px] font-black ${
-            activeTab === 'quarentena' ? 'bg-white/20 text-white' : 'bg-amber-500/10 text-amber-500'
-          }`}>
-            {quarentenaClients.length}
-          </span>
-        </button>
-        <button
-          onClick={() => setActiveTab('churn')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeTab === 'churn'
-              ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25'
-              : 'text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
-          }`}
-        >
-          <UserMinus size={14} />
-          Churn
-        </button>
-        <button
-          onClick={() => setActiveTab('mapa')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeTab === 'mapa'
-              ? 'bg-violet-500 text-white shadow-lg shadow-violet-500/25'
-              : 'text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
-          }`}
-        >
-          <IconeMapa size={14} />
-          Mapa
-        </button>
+      {/* Tabs — ui/Abas (18/11/2026): a cor fica só no contador, sem fundo cheio */}
+      <div className="flex items-center gap-3 mb-6 flex-wrap">
+        <Abas
+          abas={[
+            { id: 'ativos', rotulo: 'Ativos', Icone: CheckCircle2, contador: activeClients.length },
+            { id: 'quarentena', rotulo: 'Retenção', Icone: ShieldAlert, contador: quarentenaClients.length },
+            { id: 'churn', rotulo: 'Churn', Icone: UserMinus },
+            { id: 'mapa', rotulo: 'Mapa', Icone: IconeMapa },
+          ]}
+          ativa={activeTab}
+          onChange={id => setActiveTab(id as typeof activeTab)}
+        />
 
         {isSuperAdmin && (
           <div className="ml-auto flex items-center gap-3 px-4 py-2 bg-white dark:bg-dark-card/80 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm">
@@ -751,7 +714,7 @@ const ActiveClients: React.FC = () => {
       )}
 
       {/* Table Section */}
-      <div className={`bg-white dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/10 overflow-hidden shadow-2xl transition-colors duration-300 ${activeTab === 'mapa' ? 'hidden' : ''}`}>
+      <div className={`gf-cartao overflow-hidden ${activeTab === 'mapa' ? 'hidden' : ''}`}>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -773,24 +736,13 @@ const ActiveClients: React.FC = () => {
               {isLoading ? (
                 <tr>
                   <td colSpan={9} className="px-8 py-20 text-center">
-                    <div className="flex flex-col items-center gap-3">
-                      <LoadingSpinner size="md" />
-                      <p className="text-slate-500 font-medium">Carregando clientes...</p>
-                    </div>
+                    <CarregandoBloco className="py-0" />
                   </td>
                 </tr>
               ) : filteredClients.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-8 py-20 text-center">
-                    <div className="flex flex-col items-center gap-4">
-                      <div className="w-16 h-16 bg-slate-100 dark:bg-white/5 rounded-full flex items-center justify-center text-slate-400">
-                        <Users size={32} />
-                      </div>
-                      <div>
-                        <p className="text-light-text dark:text-white font-bold text-lg">Nenhum cliente encontrado</p>
-                        <p className="text-slate-500">Tente ajustar sua busca ou adicione um novo cliente.</p>
-                      </div>
-                    </div>
+                  <td colSpan={8} className="px-8 py-8 text-center">
+                    <EstadoVazio Icone={Users} titulo="Nenhum cliente encontrado" descricao="Tente ajustar sua busca ou adicione um novo cliente." />
                   </td>
                 </tr>
               ) : (
@@ -799,7 +751,7 @@ const ActiveClients: React.FC = () => {
                     key={client.id}
                     className="group hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer"
                     onClick={() => handleOpenModal(client)}
-                    style={{ animation: 'rowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
+                    style={{ animation: 'rowFadeIn 0.3s ease both', animationDelay: `${Math.min(idx, 12) * 0.03}s` }}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -826,10 +778,10 @@ const ActiveClients: React.FC = () => {
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <span className="text-xs text-slate-300 whitespace-nowrap" title={ci?.gestor || ''}>{ci?.gestor ? ci.gestor.trim().split(/\s+/)[0] : '-'}</span>
+                            <span className="text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap" title={ci?.gestor || ''}>{ci?.gestor ? ci.gestor.trim().split(/\s+/)[0] : '-'}</span>
                           </td>
                           <td className="px-4 py-3">
-                            <span className="text-xs font-semibold text-slate-300 whitespace-nowrap">
+                            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
                               {!isNaN(ltvDays) ? `${ltvDays} dias` : '-'}
                             </span>
                           </td>
@@ -853,7 +805,7 @@ const ActiveClients: React.FC = () => {
                               <>
                                 <CreditCard size={15} className="text-emerald-500" />
                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/sub:block z-50">
-                                  <div className="bg-slate-900 dark:bg-slate-800 text-white text-[10px] rounded-xl px-3 py-2 whitespace-nowrap shadow-xl border border-white/10">
+                                  <div className="bg-slate-900 dark:bg-dark-card text-white text-[10px] rounded-xl px-3 py-2 whitespace-nowrap shadow-xl border border-white/10">
                                     <p className="font-bold text-emerald-400 mb-0.5">
                                       R$ {client.subscriptionValue?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / {client.subscriptionCycle === 'MONTHLY' ? 'mês' : client.subscriptionCycle === 'YEARLY' ? 'ano' : client.subscriptionCycle?.toLowerCase() || 'mês'}
                                     </p>
@@ -944,7 +896,7 @@ const ActiveClients: React.FC = () => {
                           setMenuPos({ top, left: rect.right - 192 });
                           setOpenMenuId(openMenuId === client.id ? null : client.id);
                         }}
-                        className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-all"
+                        className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors"
                       >
                         <MoreVertical size={16} />
                       </button>
@@ -971,23 +923,7 @@ const ActiveClients: React.FC = () => {
       />
 
       {/* Contract Upload Modal */}
-      <AnimatePresence>
-        {showUploadModal && (
-          <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => { setShowUploadModal(false); setPendingUploadFile(null); setContractUploadClientId(null); }}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.92, y: 16 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: 16 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-              className="relative bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-white/10 w-full max-w-md flex flex-col overflow-hidden z-10"
-            >
+      <Modal isOpen={showUploadModal} onClose={() => { setShowUploadModal(false); setPendingUploadFile(null); setContractUploadClientId(null); }} semCabecalho semPadding maxWidth="max-w-md">
               {/* Header */}
               <div className="flex items-center justify-between px-6 pt-6 pb-4">
                 <div className="flex items-center gap-3">
@@ -1066,10 +1002,7 @@ const ActiveClients: React.FC = () => {
                   </button>
                 </div>
               </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      </Modal>
 
       {/* Actions Dropdown Menu (portal) */}
       {openMenuId && (() => {
@@ -1079,7 +1012,7 @@ const ActiveClients: React.FC = () => {
           <>
             <div className="fixed inset-0 z-[100]" onClick={() => { setOpenMenuId(null); setConfirmDeleteId(null); }} />
             <div
-              className="fixed z-[101] w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden"
+              className="fixed z-[101] w-48 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden"
               style={{ top: `${menuPos.top}px`, left: `${menuPos.left}px` }}
             >
               <button
@@ -1163,46 +1096,20 @@ const ActiveClients: React.FC = () => {
       />
 
       {/* Image Preview Modal */}
-      <AnimatePresence>
+      <Modal isOpen={!!previewImage} onClose={() => setPreviewImage(null)} semCabecalho semPadding maxWidth="max-w-[90vw] w-fit">
         {previewImage && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setPreviewImage(null)}
-              className="fixed inset-0 bg-slate-900/20 dark:bg-black/40 darker:bg-black/60 backdrop-blur-sm"
-            />
-            <motion.img 
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              src={previewImage}
-              alt="Preview"
-              className="relative max-w-[90vw] max-h-[90vh] rounded-xl shadow-2xl"
-              referrerPolicy="no-referrer"
-            />
-          </div>
+          <img
+            src={previewImage}
+            alt="Preview"
+            className="block max-w-[90vw] max-h-[85vh] object-contain"
+            referrerPolicy="no-referrer"
+          />
         )}
-      </AnimatePresence>
+      </Modal>
 
       {/* Contract Preview Modal */}
-      <AnimatePresence>
-        {contractPreview && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setContractPreview(null)}
-              className="fixed inset-0 bg-slate-900/20 dark:bg-black/40 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 w-[95vw] h-[95vh] max-w-none flex flex-col overflow-hidden"
-            >
+      {contractPreview && (
+          <Modal isOpen onClose={() => setContractPreview(null)} semCabecalho semPadding maxWidth="max-w-none" className="h-[88vh]">
               <div className="flex items-center justify-between p-5 border-b border-slate-200 dark:border-white/5">
                 <div className="flex items-center gap-2">
                   <FileText size={18} className="text-violet-500" />
@@ -1218,7 +1125,7 @@ const ActiveClients: React.FC = () => {
                   </button>
                 </div>
               </div>
-              <div className="flex-1 overflow-hidden bg-slate-100 dark:bg-slate-950/50">
+              <div className="flex-1 overflow-hidden bg-slate-100 dark:bg-black/20">
                 {(() => {
                   const url = contractPreview.url || '';
                   const isPdf = url.startsWith('data:application/pdf') || url.toLowerCase().endsWith('.pdf');
@@ -1243,28 +1150,12 @@ const ActiveClients: React.FC = () => {
                   );
                 })()}
               </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+          </Modal>
+      )}
 
       {/* Churn Modal */}
-      <AnimatePresence>
-        {churnClient && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setChurnClient(null)}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
-            >
+      {churnClient && (
+          <Modal isOpen onClose={() => setChurnClient(null)} semCabecalho semPadding maxWidth="max-w-lg">
               {/* Header */}
               <div className="px-6 py-5 border-b border-slate-200 dark:border-white/10">
                 <div className="flex items-center justify-between">
@@ -1320,20 +1211,12 @@ const ActiveClients: React.FC = () => {
                   <div className="flex flex-wrap gap-2">
                     {CHURN_REASONS.map((reason) => {
                       const selected = churnReasons.includes(reason);
-                      const colorMap: Record<string, string> = {
-                        'Motivo Pessoal': selected ? 'bg-blue-500 text-white border-blue-500' : 'border-slate-200 dark:border-white/10 text-slate-500',
-                        'Falta de Relacionamento': selected ? 'bg-rose-500 text-white border-rose-500' : 'border-slate-200 dark:border-white/10 text-slate-500',
-                        'Inadimplência': selected ? 'bg-orange-500 text-white border-orange-500' : 'border-slate-200 dark:border-white/10 text-slate-500',
-                        'Resultado Comercial': selected ? 'bg-red-600 text-white border-red-600' : 'border-slate-200 dark:border-white/10 text-slate-500',
-                        'Motivo Financeiro': selected ? 'bg-purple-500 text-white border-purple-500' : 'border-slate-200 dark:border-white/10 text-slate-500',
-                        'CRM e IA': selected ? 'bg-cyan-500 text-white border-cyan-500' : 'border-slate-200 dark:border-white/10 text-slate-500',
-                        'Outros': selected ? 'bg-slate-600 text-white border-slate-600' : 'border-slate-200 dark:border-white/10 text-slate-500',
-                      };
+                      // 18/11/2026: um só desenho de selecionado (violeta claro), em vez de uma cor sólida por motivo.
                       return (
                         <button
                           key={reason}
                           onClick={() => toggleChurnReason(reason)}
-                          className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${colorMap[reason] || (selected ? 'bg-violet-500 text-white border-violet-500' : 'border-slate-200 dark:border-white/10 text-slate-500')}`}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${selected ? 'bg-violet-500/10 border-violet-500/40 text-violet-600 dark:text-violet-300' : 'border-slate-200 dark:border-white/10 text-slate-500 hover:border-violet-500/30'}`}
                         >
                           {reason}
                         </button>
@@ -1397,10 +1280,8 @@ const ActiveClients: React.FC = () => {
                   Confirmar Churn
                 </button>
               </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+          </Modal>
+      )}
     </div>
   );
 };

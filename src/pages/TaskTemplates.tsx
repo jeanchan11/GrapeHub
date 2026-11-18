@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Save, X, ListTodo, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, ListTodo, ChevronDown, ChevronRight, Copy } from 'lucide-react';
+import { CarregandoPagina } from '../components/LoadingSpinner';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
 import { useAuth } from '../contexts/AuthContext';
 import { Modal } from '../components/ui/Modal';
 import { designSystem } from '../design-system';
@@ -161,7 +163,7 @@ const TaskTemplates = () => {
   };
 
   if (loading) {
-    return <div className="p-8 text-center text-slate-500">Carregando modelos...</div>;
+    return <CarregandoPagina />;
   }
 
   return (
@@ -172,22 +174,21 @@ const TaskTemplates = () => {
             text="Modelos de "
             highlight="Tarefa"
             subtitle="Crie e gerencie templates de tarefas e subtarefas para aplicar em projetos."
-            className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1"
           />
         </div>
         <button
           onClick={() => handleOpenModal()}
-          className="px-6 py-3 bg-violet-500 hover:bg-violet-600 text-white rounded-xl font-bold flex items-center gap-2 transition-colors"
+          className={designSystem.button.principal}
         >
-          <Plus size={20} />
+          <Plus size={16} />
           Novo Modelo
         </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {templates.map(template => (
-          <div key={template.id} className="bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-6">
-            <h3 className="text-lg font-bold text-light-text dark:text-white mb-2">{template.name}</h3>
+          <div key={template.id} className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6">
+            <h3 className="text-lg font-bold text-dark-text mb-2">{template.name}</h3>
             <p className="text-sm text-slate-500 mb-4 h-10 line-clamp-2">{template.description}</p>
             
             <div className="flex items-center justify-between text-sm text-slate-400 mb-6">
@@ -207,7 +208,7 @@ const TaskTemplates = () => {
                 className="p-2 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 rounded-xl font-bold transition-colors flex items-center justify-center"
                 title="Duplicar"
               >
-                <Plus size={16} />
+                <Copy size={16} />
               </button>
               <button
                 onClick={() => handleDelete(template.id)}
@@ -221,17 +222,19 @@ const TaskTemplates = () => {
         ))}
         
         {templates.length === 0 && (
-          <div className="col-span-full text-center py-20 bg-white dark:bg-dark-card border border-dashed border-slate-200 dark:border-white/10 rounded-3xl">
-            <ListTodo size={48} className="mx-auto text-slate-300 mb-4" />
-            <h3 className="text-xl font-bold text-light-text dark:text-white mb-2">Nenhum modelo criado</h3>
-            <p className="text-slate-500 mb-6">Crie seu primeiro modelo de tarefas para padronizar processos.</p>
-            <button
-              onClick={() => handleOpenModal()}
-              className="px-6 py-3 bg-violet-500 hover:bg-violet-600 text-white rounded-xl font-bold inline-flex items-center gap-2 transition-colors"
-            >
-              <Plus size={20} />
-              Criar Modelo
-            </button>
+          <div className="col-span-full bg-dark-card border border-dashed border-black/10 dark:border-white/10 rounded-2xl">
+            <EstadoVazio
+              Icone={ListTodo}
+              titulo="Nenhum modelo criado"
+              descricao="Crie seu primeiro modelo de tarefas para padronizar processos."
+              className="py-20"
+              acao={
+                <button onClick={() => handleOpenModal()} className={designSystem.button.principal}>
+                  <Plus size={16} />
+                  Criar Modelo
+                </button>
+              }
+            />
           </div>
         )}
       </div>
@@ -241,6 +244,7 @@ const TaskTemplates = () => {
         onClose={() => setIsModalOpen(false)}
         title={editingTemplate ? 'Editar Modelo' : 'Novo Modelo'}
         maxWidth="max-w-3xl"
+        fecharAoClicarFora={false}
         footer={
           <>
             <button

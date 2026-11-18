@@ -36,7 +36,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { Modal } from '../components/ui/Modal';
 import { designSystem } from '../design-system';
 import CrmCommentHistory, { COMMENT_TYPES } from '../components/CrmCommentHistory';
-import LoadingSpinner from '../components/LoadingSpinner';
+import LoadingSpinner, { CarregandoPagina } from '../components/LoadingSpinner';
 import CrmChecklist from '../components/CrmChecklist';
 import ArchiveClientModal from '../components/ArchiveClientModal';
 import { FinanceiroDoCliente } from '../components/ClientModal';
@@ -259,7 +259,7 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove, co
       {/* O card tinha `overflow-hidden` e recortava este selo pela metade. Com o
           menu agora em portal, nada precisa do clipping — o selo volta inteiro. */}
       {client.isArchived && (
-        <div className="absolute -top-2 -right-2 bg-slate-800 text-white text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-lg shadow-lg z-10 pointer-events-none">
+        <div className="absolute -top-2 -right-2 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200 text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-lg shadow-sm z-10 pointer-events-none">
           Arquivado
         </div>
       )}
@@ -403,7 +403,7 @@ const DroppableColumn = ({ column, children, isOver }: { column: any, children: 
   );
 };
 
-const CrmFinanceiro = () => {
+const CrmFinanceiro = ({ pageLabel }: { pageLabel?: string } = {}) => {
   const { user } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
   const [allClients, setAllClients] = useState<Client[]>([]);
@@ -626,12 +626,14 @@ const CrmFinanceiro = () => {
   };
 
   const handleUpdateClientField = async (clientId: string, field: string, value: string) => {
+    const anoIncompleto = field === 'aviso_previo_date' && !!value && Number(String(value).slice(0, 4)) < 2000;
     // Optimistic update
     setClients(prev => prev.map(c => c.id === clientId ? { ...c, [field]: value } : c));
     if (selectedClient && selectedClient.id === clientId) {
       setSelectedClient(prev => prev ? { ...prev, [field]: value } : null);
     }
     
+    if (anoIncompleto) return; // ainda digitando o ano
     try {
       const response = await fetch(`/api/clients/${clientId}`, {
         method: 'PATCH',
@@ -654,8 +656,8 @@ const CrmFinanceiro = () => {
           body: JSON.stringify({
             client_id: clientId,
             user_id: user.email,
-            type: 'Atualização',
-            content: `📅 Aviso Prévio: Data alterada para ${dateStr}`
+            type: 'Saída',
+            content: value ? `Aviso prévio registrado: ${dateStr}` : 'Aviso prévio removido'
           })
         });
       }
@@ -748,6 +750,10 @@ const CrmFinanceiro = () => {
       });
       
       if (res.ok) {
+        fetch(`/api/clientes/${encodeURIComponent(selectedClient.id)}/historico`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'Saída', content: 'Saída concluída: checklist completo, cliente inativado', meta: { evento: 'saida_concluida' } }),
+              }).catch(() => {});
         fetchClients();
         setSelectedClient(null);
       }
@@ -805,17 +811,15 @@ const CrmFinanceiro = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[75vh] w-full">
-        <LoadingSpinner size="lg" />
-      </div>
+      <CarregandoPagina />
     );
   }
 
   return (
     <div className="p-8 w-full">
       <PageHeader 
-        title="" 
-        titleAccent="Retenção" 
+        title={(() => { const n = (pageLabel || 'Retenção').trim(); const i = n.lastIndexOf(' '); return i > 0 ? n.slice(0, i) : ''; })()}
+        titleAccent={(() => { const n = (pageLabel || 'Retenção').trim(); const i = n.lastIndexOf(' '); return i > 0 ? n.slice(i + 1) : n; })()}
         subtitle="Acompanhamento de clientes em risco e negociações ativas."
       >
         {/* Barra do topo no molde do Comercial: busca, arquivados, atualizar e "⋮" */}
@@ -865,7 +869,7 @@ const CrmFinanceiro = () => {
             {menuQuadro && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setMenuQuadro(false)} />
-                <div className="absolute right-0 top-full mt-2 z-50 min-w-[200px] bg-white dark:bg-[#1A1625] rounded-xl shadow-xl border border-gray-100 dark:border-white/10 p-2">
+                <div className="absolute right-0 top-full mt-2 z-50 min-w-[200px] bg-white dark:bg-dark-card rounded-xl shadow-xl border border-gray-100 dark:border-white/10 p-2">
                   <button
                     onClick={() => { setColModal({ mode: 'new', title: '', emoji: '📌', color: '#8b5cf6' }); setMenuQuadro(false); }}
                     className="w-full text-left flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg text-violet-600 dark:text-violet-400 font-bold text-sm"
@@ -943,7 +947,7 @@ const CrmFinanceiro = () => {
             return (
               <div
                 key={column.id}
-                className="flex flex-col flex-1 basis-0 min-h-[500px] min-w-[180px] snap-start bg-slate-50/50 dark:bg-white/[0.02] rounded-3xl border border-gray-200 dark:border-white/5 darker:border-white/5 p-2 relative"
+                className="flex flex-col flex-1 basis-0 min-h-[500px] min-w-[180px] snap-start bg-slate-50/50 dark:bg-white/[0.02] rounded-[22px] border border-gray-200 dark:border-white/5 darker:border-white/5 p-2 relative"
               >
                 {/* Cabeçalho no molde do kanban do Comercial: ícone na cor, título, "R$ • N clientes" */}
                 <div className="p-3 flex items-start justify-between mb-2 group/col">
@@ -972,7 +976,7 @@ const CrmFinanceiro = () => {
                       {colMenu === column.id && (
                         <>
                           <div className="fixed inset-0 z-40" onClick={() => setColMenu(null)} />
-                          <div className="absolute right-0 top-full mt-1 z-50 min-w-[180px] bg-white dark:bg-slate-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2">
+                          <div className="absolute right-0 top-full mt-1 z-50 min-w-[180px] bg-white dark:bg-dark-card border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2">
                             <button onClick={() => { setIsAddDropdownOpen(column.id); setColMenu(null); }}
                               className="w-full text-left flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-violet-600 dark:text-violet-400 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
                               <Plus size={15} />Adicionar cliente
@@ -1102,9 +1106,7 @@ const CrmFinanceiro = () => {
 
       {/* Modal criar/editar coluna */}
       {colModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" onClick={() => setColModal(null)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 shadow-2xl p-6">
+        <Modal isOpen onClose={() => setColModal(null)} semCabecalho maxWidth="max-w-sm">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-base font-black text-gray-900 dark:text-white">{colModal.mode === 'new' ? 'Nova coluna' : 'Editar coluna'}</h3>
               <button onClick={() => setColModal(null)} className="text-gray-400 hover:text-gray-700 dark:hover:text-white"><X size={18} /></button>
@@ -1140,8 +1142,7 @@ const CrmFinanceiro = () => {
                 {colModal.mode === 'new' ? 'Criar' : 'Salvar'}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* Central Modal Popup */}
@@ -1261,6 +1262,10 @@ const CrmFinanceiro = () => {
                               body: JSON.stringify({ status: 'Inativo', crm_status: 'arquivado' })
                             });
                             if (!updateRes.ok) throw new Error('Failed to update client status');
+                            fetch(`/api/clientes/${encodeURIComponent(selectedClient.id)}/historico`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'Saída', content: 'Cliente arquivado na Retenção e inativado', meta: { evento: 'arquivado' } }),
+              }).catch(() => {});
                             setIsArchiveModalOpen(false);
                             setSelectedClient(null);
                             fetchClients();

@@ -611,7 +611,13 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
       const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
       params.push(parseInt(limit), parseInt(offset));
       const r = await pool.query(
-        `SELECT * FROM fin_dispatch_queue ${where} ORDER BY scheduled_date ASC, created_at ASC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+        // client_id/client_name_internal: o cadastro do GrapeHub, achado pelo cliente do Asaas. A tela
+        // casava pelo NOME e errava quando o nome no Asaas é outro (8 de 13 inadimplentes em 17/11/2026).
+        `SELECT q.*, c.id AS client_id, c.name AS client_name_internal
+           FROM (SELECT * FROM fin_dispatch_queue ${where} ORDER BY scheduled_date ASC, created_at ASC LIMIT $${params.length - 1} OFFSET $${params.length}) q
+           LEFT JOIN LATERAL (SELECT grapehub_client_id FROM fin_people WHERE asaas_id = q.customer_asaas_id LIMIT 1) fp ON true
+           LEFT JOIN clients c ON c.id = fp.grapehub_client_id
+          ORDER BY q.scheduled_date ASC, q.created_at ASC`,
         params
       );
       res.json(r.rows);

@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Star, MessageSquare, Send, Hand, X, Check, Clock, ThumbsUp, Wrench } from 'lucide-react';
-import LoadingSpinner from '../../components/LoadingSpinner';
+import { CarregandoBloco } from '../../components/LoadingSpinner';
+import { Modal } from '../../components/ui/Modal';
+import { Abas } from '../../components/ui/Abas';
+import { EstadoVazio } from '../../components/ui/EstadoVazio';
 import SplitHeadline from '../../components/SplitHeadline';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from '@/src/lib/toast';
@@ -188,17 +191,17 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
     }
   };
 
-  if (loading) return <div className="flex justify-center p-8"><LoadingSpinner /></div>;
+  if (loading) return <CarregandoBloco />;
 
   const recebidos = feedbacks.filter(f => String(f.para_collaborator_id) === String(collaboratorId));
   const enviados = feedbacks.filter(f => String(f.de_collaborator_id) === String(collaboratorId));
   const displayedFeedbacks = activeSubTab === 'recebidos' ? recebidos : enviados;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <SplitHeadline text="Feedbacks & " highlight="Reconhecimentos" className="text-xl font-black text-slate-800 dark:text-white" />
+          <SplitHeadline text="Feedbacks & " highlight="Reconhecimentos" className="text-xl font-black text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
             Avaliações e elogios recebidos / enviados
           </p>
@@ -234,14 +237,14 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
               </h4>
               <div className="space-y-3">
                 {requests.map(req => (
-                  <div key={req.id} className="bg-white dark:bg-[#1A1A1A] p-3 rounded-xl border border-slate-200 dark:border-[#2A2A2A] flex items-center justify-between">
+                  <div key={req.id} className="bg-white dark:bg-dark-card p-3 rounded-xl border border-slate-200 dark:border-white/10 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs bg-amber-500/20 text-amber-600 overflow-hidden">
                         {req.solicitante_avatar ? <img src={req.solicitante_avatar} className="w-full h-full object-cover" /> : req.solicitante_nome?.charAt(0)}
                       </div>
                       <div>
-                        <p className="text-sm font-bold text-slate-800 dark:text-[#F0F0F0]">{req.solicitante_nome} pediu um feedback</p>
-                        {req.mensagem && <p className="text-xs text-slate-500 dark:text-[#888]">{req.mensagem}</p>}
+                        <p className="text-sm font-bold text-slate-800 dark:text-dark-text">{req.solicitante_nome} pediu um feedback</p>
+                        {req.mensagem && <p className="text-xs text-slate-500 dark:text-slate-400">{req.mensagem}</p>}
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -254,26 +257,17 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
             </div>
           )}
 
-          <div className="flex gap-2 border-b border-slate-200 dark:border-white/10 pb-px">
-            <button 
-              onClick={() => setActiveSubTab('recebidos')}
-              className={`px-4 py-2 font-bold text-sm border-b-2 transition-colors ${activeSubTab === 'recebidos' ? 'border-violet-500 text-violet-600 dark:text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}
-            >
-              Recebidos ({recebidos.length})
-            </button>
-            <button 
-              onClick={() => setActiveSubTab('enviados')}
-              className={`px-4 py-2 font-bold text-sm border-b-2 transition-colors ${activeSubTab === 'enviados' ? 'border-violet-500 text-violet-600 dark:text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}
-            >
-              Enviados ({enviados.length})
-            </button>
-          </div>
+          <Abas
+            abas={[
+              { id: 'recebidos', rotulo: `Recebidos (${recebidos.length})` },
+              { id: 'enviados', rotulo: `Enviados (${enviados.length})` },
+            ]}
+            ativa={activeSubTab}
+            onChange={(id) => setActiveSubTab(id as typeof activeSubTab)}
+          />
 
           {displayedFeedbacks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-slate-500 dark:text-[#888]">
-              <MessageSquare size={32} className="mb-3 opacity-30" />
-              <p className="text-sm font-medium">Nenhum feedback {activeSubTab} ainda.</p>
-            </div>
+            <EstadoVazio Icone={MessageSquare} titulo={`Nenhum feedback ${activeSubTab} ainda.`} />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
               {displayedFeedbacks.map(f => {
@@ -282,14 +276,14 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
                 const peerAvatar = isRecebido ? f.de_avatar : f.para_avatar;
 
                 return (
-                  <div key={f.id} className="bg-white dark:bg-dark-bg p-5 rounded-2xl border border-slate-200 dark:border-white/10 hover:border-violet-500/30 dark:hover:border-violet-500/40 transition-colors hover:shadow-sm">
+                  <div key={f.id} className="bg-dark-card p-5 rounded-2xl border border-black/10 dark:border-white/10 hover:border-violet-500/30 dark:hover:border-violet-500/40 transition-colors hover:shadow-sm">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-white overflow-hidden border border-slate-300 dark:border-white/10">
                           {peerAvatar ? <img src={peerAvatar} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : peerNome?.charAt(0)}
                         </div>
                         <div>
-                          <h4 className="font-bold text-slate-800 dark:text-white text-sm">{isRecebido ? `De: ${peerNome}` : `Para: ${peerNome}`}</h4>
+                          <h4 className="font-bold text-dark-text text-sm">{isRecebido ? `De: ${peerNome}` : `Para: ${peerNome}`}</h4>
                           <span className="text-xs text-slate-500 dark:text-slate-400">{new Date(f.criado_em).toLocaleDateString('pt-BR')}</span>
                         </div>
                       </div>
@@ -334,10 +328,17 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
 
       {/* Modal */}
       {modalType && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-[#0D0D0D] w-full max-w-lg rounded-3xl shadow-2xl flex flex-col border border-slate-200 dark:border-[#2A2A2A] overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-[#2A2A2A]">
-              <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+        <Modal
+          isOpen
+          onClose={() => setModalType(null)}
+          semCabecalho
+          semPadding
+          maxWidth="max-w-lg"
+          fecharAoClicarFora={false}
+          fecharComEsc={false}
+        >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/10">
+              <h2 className="text-lg font-bold text-dark-text flex items-center gap-2">
                 {modalType === 'dar' ? <Send size={18} className="text-violet-500" /> : <Hand size={18} className="text-amber-500" />}
                 {modalType === 'dar' ? 'Dar Feedback' : 'Pedir Feedback'}
               </h2>
@@ -348,8 +349,8 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
             
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
               <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-[#888] mb-1.5 uppercase">Para quem?</label>
-                <div className="w-full bg-slate-100 dark:bg-[#1A1A1A] border border-slate-200 dark:border-[#2A2A2A] rounded-xl px-4 py-2.5 text-sm text-slate-800 dark:text-white opacity-70 cursor-not-allowed">
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase">Para quem?</label>
+                <div className="w-full bg-slate-100 dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text opacity-70 cursor-not-allowed">
                   {collaborators.find(c => String(c.id) === String(collaboratorId))?.name || 'Este colaborador'}
                 </div>
               </div>
@@ -357,7 +358,7 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
               {modalType === 'dar' && (
                 <>
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 dark:text-[#888] mb-2 uppercase">Tipo de Feedback</label>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 uppercase">Tipo de Feedback</label>
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         type="button"
@@ -365,7 +366,7 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
                         className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 text-sm font-bold transition-all ${
                           formData.tipo === 'Positivo'
                             ? 'bg-emerald-500/15 border-emerald-500 text-emerald-600 dark:text-emerald-400'
-                            : 'border-slate-200 dark:border-[#2A2A2A] text-slate-500 hover:border-emerald-500/50 hover:text-emerald-600'
+                            : 'border-slate-200 dark:border-white/10 text-slate-500 hover:border-emerald-500/50 hover:text-emerald-600'
                         }`}
                       >
                         <ThumbsUp size={16} />
@@ -377,7 +378,7 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
                         className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 text-sm font-bold transition-all ${
                           formData.tipo === 'Construtivo'
                             ? 'bg-amber-500/15 border-amber-500 text-amber-600 dark:text-amber-400'
-                            : 'border-slate-200 dark:border-[#2A2A2A] text-slate-500 hover:border-amber-500/50 hover:text-amber-600'
+                            : 'border-slate-200 dark:border-white/10 text-slate-500 hover:border-amber-500/50 hover:text-amber-600'
                         }`}
                       >
                         <Wrench size={16} />
@@ -386,7 +387,7 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 dark:text-[#888] mb-1.5 uppercase">Avaliação (1 a 5)</label>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase">Avaliação (1 a 5)</label>
                     <div className="flex gap-2">
                       {[1,2,3,4,5].map(s => (
                         <button 
@@ -394,7 +395,7 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
                           onClick={() => setFormData({...formData, nota: s})}
                           className="p-1 hover:scale-110 transition-transform"
                         >
-                          <Star size={24} className={s <= formData.nota ? "fill-amber-400 text-amber-400" : "text-slate-300 dark:text-[#2A2A2A]"} />
+                          <Star size={24} className={s <= formData.nota ? "fill-amber-400 text-amber-400" : "text-slate-300 dark:text-white/10"} />
                         </button>
                       ))}
                     </div>
@@ -402,7 +403,7 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
 
                   {formData.tipo === 'Construtivo' && (
                     <div>
-                      <label className="block text-xs font-bold text-slate-500 dark:text-[#888] mb-1.5 uppercase">
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase">
                         Prazo de ajuste (Data para verificação) *
                       </label>
                       <input
@@ -410,7 +411,7 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
                         required
                         value={formData.data_ajuste}
                         onChange={e => setFormData({...formData, data_ajuste: e.target.value})}
-                        className="w-full bg-slate-50 dark:bg-[#1A1A1A] border border-slate-200 dark:border-[#2A2A2A] rounded-xl px-4 py-2.5 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500"
+                        className="w-full bg-slate-50 dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500"
                       />
                     </div>
                   )}
@@ -418,7 +419,7 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
               )}
 
               <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-[#888] mb-1.5 uppercase">
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase">
                   {modalType === 'dar' ? 'Mensagem de Feedback' : 'Motivo / Mensagem (Opcional)'}
                 </label>
                 <textarea 
@@ -426,7 +427,7 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
                   value={formData.texto} 
                   onChange={e => setFormData({...formData, texto: e.target.value})}
                   rows={4}
-                  className="w-full bg-slate-50 dark:bg-[#1A1A1A] border border-slate-200 dark:border-[#2A2A2A] rounded-xl px-4 py-2.5 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500"
+                  className="w-full bg-slate-50 dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500"
                   placeholder={modalType === 'dar' ? 'Escreva um feedback construtivo...' : 'Gostaria de um feedback sobre o projeto X...'}
                 />
               </div>
@@ -440,8 +441,7 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

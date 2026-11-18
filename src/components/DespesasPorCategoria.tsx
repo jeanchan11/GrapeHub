@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { PieChart, Pie, Cell } from 'recharts';
-import { ChevronLeft, ChevronRight, X, Loader2, Info } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Loader2, Info, AlertTriangle } from 'lucide-react';
+import { Modal } from './ui/Modal';
+import { CarregandoBloco } from './LoadingSpinner';
+import { EstadoVazio } from './ui/EstadoVazio';
+import './graficos.css';
 
 /**
  * Rosca das Despesas Operacionais (grupo 02 do plano) no Dashboard do DRE.
@@ -96,7 +100,7 @@ const DespesasPorCategoria: React.FC<{
   const ate = mesesPeriodo[mesesPeriodo.length - 1];
 
   return (
-    <div className={`bg-dark-card border border-white/10 rounded-2xl ${grande ? 'p-7 min-h-[calc(100vh-300px)]' : 'p-5'}`}>
+    <div className={`gf-cartao ${grande ? 'p-7 min-h-[calc(100vh-300px)]' : 'p-5'}`}>
       <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
         <div className="min-w-0">
           <div className={`flex items-center gap-1.5 ${grande ? 'text-lg' : 'text-sm'} font-bold text-dark-text`}>
@@ -105,7 +109,7 @@ const DespesasPorCategoria: React.FC<{
                 <button onClick={() => setAberto(null)} className="flex items-center gap-1 text-slate-400 hover:text-violet-400 transition-colors">
                   <ChevronLeft size={15} /> {nomeRaiz}
                 </button>
-                <ChevronRight size={13} className="text-slate-600" />
+                <ChevronRight size={13} className="text-slate-400 dark:text-slate-600" />
                 <span className="truncate">{foco?.description}</span>
               </>
             ) : <span>{nomeRaiz} por categoria</span>}
@@ -116,11 +120,11 @@ const DespesasPorCategoria: React.FC<{
         </div>
 
         {/* Período: ano inteiro ou um mês */}
-        <div className="flex items-center gap-1 flex-wrap bg-black/20 border border-white/5 rounded-xl p-0.5">
+        <div className="flex items-center gap-1 flex-wrap bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/5 rounded-xl p-0.5">
           {(['ano', ...meses] as string[]).map(m => (
             <button key={m} onClick={() => setPeriodo(m)}
-              className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${
-                periodo === m ? 'bg-violet-500 text-white' : historicos.includes(m) ? 'text-slate-500 hover:text-white' : 'text-amber-400/80 hover:text-amber-300'}`}>
+              className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-colors ${
+                periodo === m ? 'bg-white dark:bg-white/10 text-dark-text shadow-sm' : historicos.includes(m) ? 'text-slate-500 hover:text-dark-text' : 'text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300'}`}>
               {m === 'ano' ? 'Ano' : MESES[Number(m.slice(5, 7)) - 1]}
             </button>
           ))}
@@ -179,7 +183,7 @@ const DespesasPorCategoria: React.FC<{
                   <p className={`${grande ? 'text-[26px] mt-1' : 'text-[20px]'} font-black tabular-nums leading-tight text-dark-text`}>{brl0(total)}</p>
                   {grande && (
                     <div className="mt-2 space-y-0.5 text-[11px] text-slate-500 tabular-nums">
-                      {receita > 0 && <p><span className="font-bold text-slate-300">{pct(total, receita)}</span> do faturamento</p>}
+                      {receita > 0 && <p><span className="font-bold text-slate-700 dark:text-slate-300">{pct(total, receita)}</span> do faturamento</p>}
                       {variacao !== null && (
                         <p>
                           <span className={`font-bold ${variacao > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
@@ -201,7 +205,7 @@ const DespesasPorCategoria: React.FC<{
             {fatias.map((f, i) => (
               <button key={f.structure} onClick={() => clicar(f)}
                 onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}
-                className={`w-full flex items-center gap-3 px-3 ${grande ? 'py-3.5' : 'py-2'} rounded-xl text-left transition-colors ${hover === i ? 'bg-white/5' : 'hover:bg-white/[0.03]'}`}>
+                className={`w-full flex items-center gap-3 px-3 ${grande ? 'py-3.5' : 'py-2'} rounded-xl text-left transition-colors ${hover === i ? 'bg-black/[0.04] dark:bg-white/5' : 'hover:bg-black/[0.03] dark:hover:bg-white/[0.03]'}`}>
                 <span className={`${grande ? 'w-4 h-4' : 'w-3 h-3'} rounded-[4px] shrink-0`} style={{ background: f.cor }} />
                 <span className={`${grande ? 'text-[12px] w-[72px]' : 'text-[10px] w-[62px]'} font-mono text-slate-500 shrink-0`}>{f.structure}</span>
                 <span className={`flex-1 min-w-0 ${grande ? 'text-[16px]' : 'text-[13px]'} font-semibold text-dark-text truncate`} title={f.nome}>{f.nome}</span>
@@ -209,10 +213,10 @@ const DespesasPorCategoria: React.FC<{
                 <span className={`${grande ? 'text-[13px] w-14' : 'text-[11px] w-12'} font-bold tabular-nums text-slate-500 text-right shrink-0`}>
                   {((f.valor / total) * 100).toFixed(0)}%
                 </span>
-                {!aberto && f.temFilhos ? <ChevronRight size={14} className="text-slate-600 shrink-0" /> : <span className="w-[14px] shrink-0" />}
+                {!aberto && f.temFilhos ? <ChevronRight size={14} className="text-slate-400 dark:text-slate-600 shrink-0" /> : <span className="w-[14px] shrink-0" />}
               </button>
             ))}
-            <div className={`flex items-center justify-between px-3 pt-3 mt-1 border-t border-white/5 ${grande ? 'text-[16px]' : 'text-[12px]'} font-bold`}>
+            <div className={`flex items-center justify-between px-3 pt-3 mt-1 border-t border-black/5 dark:border-white/5 ${grande ? 'text-[16px]' : 'text-[12px]'} font-bold`}>
               <span className="text-slate-400">Total</span>
               <span className={`tabular-nums text-rose-400 ${grande ? 'pr-[82px]' : 'pr-[74px]'}`}>{brl(total)}</span>
             </div>
@@ -236,9 +240,9 @@ const DespesasPorCategoria: React.FC<{
 
 // ── Popup: lançamentos da categoria ─────────────────────────────────────────
 const CONTA: Record<string, { rotulo: string; cls: string }> = {
-  asaas: { rotulo: 'Asaas', cls: 'bg-violet-500/15 text-violet-400' },
-  sicredi: { rotulo: 'Cartão Sicredi', cls: 'bg-blue-500/15 text-blue-400' },
-  asaas_cartao: { rotulo: 'Cartão Asaas', cls: 'bg-amber-500/15 text-amber-400' },
+  asaas: { rotulo: 'Asaas', cls: 'bg-violet-500/15 text-violet-600 dark:text-violet-400' },
+  sicredi: { rotulo: 'Cartão Sicredi', cls: 'bg-blue-500/15 text-blue-600 dark:text-blue-400' },
+  asaas_cartao: { rotulo: 'Cartão Asaas', cls: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
 };
 
 export const PopupLancamentos: React.FC<{
@@ -255,21 +259,16 @@ export const PopupLancamentos: React.FC<{
       .catch(() => setErro('Não foi possível carregar os lançamentos.'));
   }, [structure, de, ate]);
 
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onFechar(); };
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  }, [onFechar]);
+  // Esc e clique fora: o Modal padrão (ui/Modal) já fecha pelos dois.
 
   const itens = (dados?.itens || []).filter(i =>
     !busca.trim() || String(i.descricao || '').toLowerCase().includes(busca.trim().toLowerCase()));
   const difere = dados && Math.abs(dados.total - valorDre) > 0.01;
   const periodoTxt = de === ate ? nomeMes(de) : `${nomeMes(de)} a ${nomeMes(ate)}`;
 
-  return ReactDOM.createPortal(
-    <div className="fixed inset-0 z-[9990] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onFechar}>
-      <div className="w-full max-w-3xl max-h-[85vh] flex flex-col bg-dark-bg border border-white/10 rounded-3xl overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="px-6 pt-5 pb-4 border-b border-white/10 flex items-start justify-between gap-4">
+  return (
+    <Modal isOpen onClose={onFechar} semCabecalho semPadding maxWidth="max-w-3xl" className="max-h-[85vh]">
+        <div className="px-6 pt-5 pb-4 border-b border-black/10 dark:border-white/10 flex items-start justify-between gap-4 shrink-0">
           <div className="min-w-0">
             <p className="text-[10px] font-mono text-slate-500">{structure}</p>
             <h3 className="text-lg font-black text-dark-text truncate">{nome}</h3>
@@ -280,14 +279,14 @@ export const PopupLancamentos: React.FC<{
           <div className="flex items-start gap-4 shrink-0">
             <div className="text-right">
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">No DFC</p>
-              <p className="text-lg font-black text-rose-400 tabular-nums">{brl(Math.abs(valorDre))}</p>
+              <p className="text-lg font-black text-rose-500 dark:text-rose-400 tabular-nums">{brl(Math.abs(valorDre))}</p>
             </div>
-            <button onClick={onFechar} className="text-slate-400 hover:text-dark-text mt-1"><X size={18} /></button>
+            <button onClick={onFechar} aria-label="Fechar" className="p-2 -mt-1 rounded-lg text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors"><X size={18} /></button>
           </div>
         </div>
 
         {dados && dados.meses_historicos.length > 0 && (
-          <div className="mx-6 mt-4 flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300">
+          <div className="mx-6 mt-4 flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-700 dark:text-amber-300 shrink-0">
             <Info size={13} className="shrink-0 mt-0.5" />
             <span>
               {dados.meses_historicos.map(nomeMes).join(', ')} {dados.meses_historicos.length === 1 ? 'vem' : 'vêm'} do histórico importado (Marvee):
@@ -298,22 +297,22 @@ export const PopupLancamentos: React.FC<{
         )}
 
         {dados && dados.itens.length > 6 && (
-          <div className="px-6 pt-4">
+          <div className="px-6 pt-4 shrink-0">
             <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar lançamento…"
-              className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-xs text-dark-text outline-none focus:border-violet-500/50" />
+              className="w-full bg-black/5 dark:bg-black/20 border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-xs text-dark-text outline-none focus:border-violet-500/50" />
           </div>
         )}
 
-        <div className="overflow-y-auto flex-1 px-3 py-3">
-          {erro ? <p className="py-12 text-center text-sm text-rose-400">{erro}</p>
-            : !dados ? <div className="py-12 flex justify-center"><Loader2 size={22} className="animate-spin text-violet-500" /></div>
-            : itens.length === 0 ? <p className="py-12 text-center text-sm text-slate-500">Nenhum lançamento no GrapeHub para este período.</p>
+        <div className="overflow-y-auto flex-1 min-h-0 px-3 py-3">
+          {erro ? <EstadoVazio Icone={AlertTriangle} titulo={erro} />
+            : !dados ? <CarregandoBloco />
+            : itens.length === 0 ? <EstadoVazio titulo="Nenhum lançamento no GrapeHub para este período." />
             : itens.map(i => {
               const conta = CONTA[i.account] || CONTA.asaas;
               const data = String(i.transaction_date || '').slice(0, 10).split('-').reverse().join('/');
               const entrada = i.type === 1;
               return (
-                <div key={i.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.03]">
+                <div key={i.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-black/[0.03] dark:hover:bg-white/[0.03]">
                   <div className="flex-1 min-w-0">
                     <p className="text-[13px] font-medium text-dark-text truncate" title={i.descricao_original}>{i.descricao || '—'}</p>
                     <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-500">
@@ -323,7 +322,7 @@ export const PopupLancamentos: React.FC<{
                       {i.structure !== structure && <span className="truncate">· {i.categoria}</span>}
                     </div>
                   </div>
-                  <span className={`text-[13px] font-bold tabular-nums shrink-0 ${entrada ? 'text-emerald-400' : 'text-rose-400'}`}
+                  <span className={`text-[13px] font-bold tabular-nums shrink-0 ${entrada ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}
                     title={entrada ? 'Entrada nesta conta de despesa (estorno) — abate do total' : undefined}>
                     {entrada ? '+' : '−'}{brl(i.value)}
                   </span>
@@ -331,9 +330,7 @@ export const PopupLancamentos: React.FC<{
               );
             })}
         </div>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 };
 

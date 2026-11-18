@@ -6,7 +6,7 @@ import {
   ArrowRight, Calendar, CheckSquare, FileText, Paperclip, Trophy, Star, Eye, EyeOff, Settings, PhoneCall, Loader2, Mic, MicOff,
   CheckCircle2, Circle, Video, Tag, Instagram, Briefcase, Award, Copy, Target,
   Handshake, RefreshCw, XCircle, ClipboardList, Upload, Folder, Download, File, Bot, Zap,
-  Volume1, Volume2, VolumeX, GripVertical
+  Volume1, Volume2, VolumeX, GripVertical, MessageCircle, Inbox, Pencil
 } from 'lucide-react';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -34,15 +34,16 @@ import {
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { motion, AnimatePresence, useMotionValue, useTransform, animate as motionAnimate } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValue, useTransform, animate as motionAnimate } from 'motion/react';
 import { Modal } from '../components/ui/Modal';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
+import { Abas } from '../components/ui/Abas';
+import { CarregandoBloco } from '../components/LoadingSpinner';
 import { PageHeader } from '../components/ui/PageHeader';
 import { NovaAtividadeModal } from './Atividades';
 import { designSystem } from '../design-system';
 import { useAuth } from '../contexts/AuthContext';
 import confetti from 'canvas-confetti';
-import { AIChat } from '../components/AIChat/AIChat';
-import fredImg from '../assets/fred.png';
 import MetasPopup from '../components/MetasPopup';
 import ContratoTab from '../components/ContratoTab';
 import PropostaTab from '../components/PropostaTab';
@@ -343,6 +344,8 @@ interface LeadDetailModalProps {
   onReopen: (leadId: string) => void;
   sequences: any[];
   onApplySequence: (leadId: string, sequence: any) => void;
+  /** Outro popup da página aberto por cima do card: Esc fecha só ele. */
+  bloquearEsc?: boolean;
 }
 
 const SortableColumn = ({ column, children, setEditColumnData, setIsEditColumnModalOpen, setColumnToDelete, columnLeadsLength, totalValue }: any) => {
@@ -363,7 +366,7 @@ const SortableColumn = ({ column, children, setEditColumnData, setIsEditColumnMo
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="flex flex-col flex-1 min-h-[500px] min-w-[200px] snap-start bg-slate-50/50 dark:bg-white/[0.02] rounded-3xl border border-gray-200 dark:border-white/5 p-2 relative">
+    <div ref={setNodeRef} style={style} className="flex flex-col flex-1 min-h-[500px] min-w-[200px] snap-start bg-slate-50/50 dark:bg-white/[0.02] rounded-2xl border border-gray-200 dark:border-white/5 p-2 relative">
       <div className="p-3 flex items-start justify-between mb-2 cursor-grab active:cursor-grabbing" {...attributes} {...listeners}>
         <div className="flex items-start gap-2 pt-1 pl-1 w-full overflow-hidden">
           <div className={`w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 ${column.color === 'orange' ? 'bg-orange-500' :
@@ -389,7 +392,7 @@ const SortableColumn = ({ column, children, setEditColumnData, setIsEditColumnMo
             align="end"
             triggerClassName="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors"
             triggerContent={<MoreHorizontal size={16} />}
-            panelClassName="min-w-[160px] bg-white dark:bg-slate-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2 z-[1100]"
+            panelClassName="min-w-[160px] bg-white dark:bg-dark-card border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2 z-[1100]"
           >
                 <button
                   type="button" role="menuitem"
@@ -498,7 +501,7 @@ const SortableCard = (props: SortableCardProps) => {
           }`}
       >
         {isWon && (
-          <div className="absolute -top-2 -right-2 z-20 bg-emerald-500 text-white p-1.5 rounded-full shadow-lg border-2 border-white dark:border-dark-card animate-pulse">
+          <div className="absolute -top-2 -right-2 z-20 bg-emerald-500 text-white p-1.5 rounded-full shadow-lg border-2 border-white dark:border-dark-card ">
             <Trophy size={10} />
           </div>
         )}
@@ -548,7 +551,7 @@ const SortableCard = (props: SortableCardProps) => {
         <div className="flex items-center justify-between mt-2 mb-2">
           {responsavel ? (
             <div className="flex items-center gap-1.5 min-w-0">
-              <div className="w-4 h-4 rounded-full bg-gray-200 dark:bg-slate-700 flex items-center justify-center text-[8px] font-bold text-gray-600 dark:text-white overflow-hidden shrink-0" title={responsavel.name}>
+              <div className="w-4 h-4 rounded-full bg-gray-200 dark:bg-white/10 flex items-center justify-center text-[8px] font-bold text-gray-600 dark:text-white overflow-hidden shrink-0" title={responsavel.name}>
                 {responsavel.picture ? <img src={responsavel.picture} alt={responsavel.name} className="w-full h-full object-cover" /> : getInitials(responsavel.name)}
               </div>
               <span className="text-[10px] text-gray-500 dark:text-slate-400 font-medium line-clamp-1">{responsavel.name}</span>
@@ -582,7 +585,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   onMove, onDelete, onWin, onLose, onReopen, onMoveToKanban,
   onAddTask, onUpdateTask, onDeleteTask, onApplyTemplate, onManageTemplates,
   onRefreshTasks, currentKanbanId, onUpdateLeadField,
-  tags, onRefreshTags, currentUserEmail, currentUserName, currentUserAvatar, lossReasons, sequences, onApplySequence
+  tags, onRefreshTags, currentUserEmail, currentUserName, currentUserAvatar, lossReasons, sequences, onApplySequence, bloquearEsc
 }) => {
   const [activeTab, setActiveTab] = useState<'atividades' | 'histórico' | 'notas' | 'reuniões' | 'arquivos' | 'checklist' | 'contrato' | 'proposta'>('atividades');
   const [showMoveMenu, setShowMoveMenu] = useState(false);
@@ -1038,29 +1041,21 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   const currentColumn = columns.find(c => c.id === lead.coluna);
   const tabs = ['Atividades', 'Histórico', 'Notas', 'Reuniões', 'Checklist', 'Contrato', 'Proposta'];
 
+  // Esc fecha o card, mas não quando há um popup interno aberto (esse fecha primeiro)
+  const popupInternoAberto = !!(isAddingTask || taskToEdit || isPickingSequence || isSelectingTemplate
+    || showChecklistTemplateModal || taskDetailPopup || showMeetingModal || selectedImage);
+
   return (
     <>
-      <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
-        {/* Backdrop — blur is static, only opacity animates */}
-        <motion.div
-          className="fixed inset-0 bg-black/60"
-          onClick={onClose}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-        />
-        <div className="fixed inset-0 backdrop-blur-sm pointer-events-none" />
-
-        {/* Modal */}
-        <motion.div
-          className="relative w-full max-w-7xl h-[90vh] modal-container overflow-hidden flex flex-col shadow-2xl"
-          style={{ willChange: 'transform, opacity' }}
-          initial={{ opacity: 0, scale: 0.96, y: 12 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.96, y: 12 }}
-          transition={{ type: 'spring', damping: 28, stiffness: 350, mass: 0.8 }}
-        >
+      <Modal
+        isOpen
+        onClose={onClose}
+        semCabecalho
+        semPadding
+        maxWidth="max-w-7xl"
+        className="h-[90vh] !my-0"
+        fecharComEsc={!popupInternoAberto && !bloquearEsc}
+      >
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b modal-divider shrink-0">
             <div className="flex items-center gap-6">
@@ -1081,7 +1076,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               {/* Ganhar */}
               <button
                 onClick={() => { onWin(lead.id); onClose(); }}
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-emerald-500/20"
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-bold transition-colors"
               >
                 <TrendingUp size={15} />
                 Ganhar
@@ -1091,17 +1086,17 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               <div className="relative" ref={lossDropdownRef}>
                 <button
                   onClick={() => { setShowLossDropdown(v => !v); setShowMoreMenu(false); setShowMoveMenu(false); }}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-red-500/20"
+                  className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-bold transition-colors"
                 >
                   <TrendingDown size={15} />
                   Perda
                   <ChevronDown size={13} className={`transition-transform ${showLossDropdown ? 'rotate-180' : ''}`} />
                 </button>
                 {showLossDropdown && (
-                  <div className="absolute left-0 top-full mt-2 w-56 modal-container rounded-xl py-2 z-50 shadow-2xl border border-white/10">
+                  <div className="absolute left-0 top-full mt-2 w-56 modal-container rounded-xl py-2 z-50 shadow-2xl border border-black/10 dark:border-white/10">
                     <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">Motivo da perda</p>
                     {lossReasons.length === 0 ? (
-                      <p className="px-3 py-2 text-xs text-gray-400">Nenhum motivo cadastrado.<br />Configure em ⚙️ Configurações.</p>
+                      <p className="px-3 py-2 text-xs text-gray-400">Nenhum motivo cadastrado.<br />Configure em Configurações do CRM.</p>
                     ) : (
                       lossReasons.map(r => (
                         <button
@@ -1114,10 +1109,10 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                         </button>
                       ))
                     )}
-                    <div className="border-t border-white/10 mt-1 pt-1">
+                    <div className="border-t border-black/10 dark:border-white/10 mt-1 pt-1">
                       <button
                         onClick={() => { setShowLossDropdown(false); onLose(lead.id); onClose(); }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left text-gray-400 hover:bg-white/5 transition-colors"
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left text-gray-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                       >
                         <X size={12} />
                         Perda sem motivo
@@ -1154,7 +1149,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                             initial={{ opacity: 0, x: 10, scale: 0.95 }}
                             animate={{ opacity: 1, x: 0, scale: 1 }}
                             exit={{ opacity: 0, x: 10, scale: 0.95 }}
-                            className="absolute right-[calc(100%+8px)] top-0 w-56 bg-white/80 dark:bg-[#161420]/90 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl py-2 z-50 shadow-2xl"
+                            className="absolute right-[calc(100%+8px)] top-0 w-56 bg-white/80 dark:bg-dark-card/90 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl py-2 z-50 shadow-2xl"
                           >
                             <div className="px-4 py-2 border-b border-gray-100 dark:border-white/5 mb-1">
                               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-slate-500">Mover para coluna</span>
@@ -1199,7 +1194,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                             initial={{ opacity: 0, x: 10, scale: 0.95 }}
                             animate={{ opacity: 1, x: 0, scale: 1 }}
                             exit={{ opacity: 0, x: 10, scale: 0.95 }}
-                            className="absolute right-[calc(100%+8px)] top-0 w-60 bg-white/80 dark:bg-[#161420]/90 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl py-2 z-50 shadow-2xl"
+                            className="absolute right-[calc(100%+8px)] top-0 w-60 bg-white/80 dark:bg-dark-card/90 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl py-2 z-50 shadow-2xl"
                           >
                             <div className="px-4 py-2 border-b border-gray-100 dark:border-white/5 mb-1">
                               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-slate-500">Mover para Kanban</span>
@@ -1212,12 +1207,12 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                   className={`w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-200 hover:bg-gray-100 dark:hover:bg-white/5 ${kb.id === currentKanbanId ? 'text-violet-500 font-bold bg-violet-500/5' : 'text-gray-700 dark:text-slate-300'
                                     }`}
                                 >
-                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-[10px] uppercase shadow-inner ${kb.cor === 'blue' ? 'bg-blue-500 shadow-blue-500/50' :
-                                      kb.cor === 'green' ? 'bg-emerald-500 shadow-emerald-500/50' :
-                                        kb.cor === 'pink' ? 'bg-pink-500 shadow-pink-500/50' :
-                                          kb.cor === 'orange' ? 'bg-orange-500 shadow-orange-500/50' :
-                                            kb.cor === 'yellow' ? 'bg-yellow-500 shadow-yellow-500/50' :
-                                              kb.cor === 'indigo' ? 'bg-indigo-500 shadow-indigo-500/50' : 'bg-violet-500 shadow-violet-500/50'
+                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-[10px] uppercase ${kb.cor === 'blue' ? 'bg-blue-500' :
+                                      kb.cor === 'green' ? 'bg-emerald-500' :
+                                        kb.cor === 'pink' ? 'bg-pink-500' :
+                                          kb.cor === 'orange' ? 'bg-orange-500' :
+                                            kb.cor === 'yellow' ? 'bg-yellow-500' :
+                                              kb.cor === 'indigo' ? 'bg-indigo-500' : 'bg-violet-500'
                                     }`}>
                                     {kb.nome.charAt(0)}
                                   </div>
@@ -1295,7 +1290,8 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               {/* Fechar */}
               <button
                 onClick={onClose}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+                aria-label="Fechar"
+                className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
               >
                 <X size={20} />
               </button>
@@ -1303,20 +1299,12 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
           </div>
 
           {/* Tabs */}
-          <div className="flex items-center gap-1 px-6 border-b modal-divider shrink-0">
-            {tabs.map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab.toLowerCase() as any)}
-                className={`px-4 py-3 text-sm font-semibold transition-all border-b-2 ${activeTab === tab.toLowerCase()
-                    ? 'modal-tab-active'
-                    : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
+          <Abas<string>
+            abas={tabs.map(tab => ({ id: tab.toLowerCase(), rotulo: tab }))}
+            ativa={activeTab}
+            onChange={(id) => setActiveTab(id as any)}
+            className="px-6 pt-1 shrink-0"
+          />
 
           {/* Body: two columns */}
           <div className="flex flex-1 overflow-hidden">
@@ -1411,31 +1399,30 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                     )}
 
                                     {/* Timeline Dot */}
-                                    <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center ${dotColor}`} />
+                                    <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-dark-card shadow-sm z-10 flex items-center justify-center ${dotColor}`} />
 
                                     <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
                                       <div className="flex items-start gap-3">
-                                        <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
-                                          <Phone size={18} style={{ color: '#7c3aed' }} />
+                                        <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center bg-violet-500/10">
+                                          <Phone size={18} className="text-violet-600 dark:text-violet-400" />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                           <div className="flex items-center gap-2 flex-wrap mb-1">
                                             <span className="font-semibold text-[13px] text-gray-800 dark:text-slate-100">Ligação</span>
-                                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                                              style={{ background: success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: success ? '#059669' : '#dc2626' }}>
-                                              {success ? '✓' : '✕'} {getCallTypeLabel(call)}
+                                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium inline-flex items-center gap-1 ${success ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
+                                              {success ? <Check size={10} /> : <X size={10} />} {getCallTypeLabel(call)}
                                             </span>
                                           </div>
-                                          <p className="text-[11px]" style={{ color: '#9ca3af' }}>ORIGEM: GrapeHub CRM</p>
+                                          <p className="text-[11px] text-slate-400">ORIGEM: GrapeHub CRM</p>
 
                                           {call.duration > 0 && (
                                             <div className="mt-2 text-[11px] text-gray-400 dark:text-slate-500">
-                                              ⏱ Duração: <strong className="text-gray-600 dark:text-slate-400">{formatCallDuration(call.duration)}</strong>
+                                              Duração: <strong className="text-gray-600 dark:text-slate-400">{formatCallDuration(call.duration)}</strong>
                                             </div>
                                           )}
 
                                           {call.record_url && (
-                                            <div className="mt-2.5 rounded-lg p-1.5 flex items-center gap-2 max-w-[350px]" style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}>
+                                            <div className="mt-2.5 rounded-lg p-1.5 flex items-center gap-2 max-w-[350px] bg-black/[0.03] dark:bg-white/[0.03] border border-black/[0.06] dark:border-white/10">
                                               <audio controls src={call.record_url} className="w-full h-7" style={{ minWidth: 0, flex: 1 }} preload="none" />
                                               <a href={call.record_url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 p-1 rounded hover:bg-purple-50 transition-colors" title="Abrir gravação">
                                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
@@ -1445,7 +1432,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
                                           <div className="flex items-center gap-1.5 mt-2.5">
                                             <Clock size={11} className="text-gray-400" />
-                                            <span className="text-[11px]" style={{ color: '#9ca3af' }}>
+                                            <span className="text-[11px] text-slate-400">
                                               {formatRelativeTime(call.started_at)}
                                               {(call.first_name || call.last_name) && <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{[call.first_name, call.last_name].filter(Boolean).join(' ')}</strong></>}
                                             </span>
@@ -1467,7 +1454,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                     )}
 
                                     {/* Timeline Dot */}
-                                    <div className="absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center bg-violet-400" />
+                                    <div className="absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-dark-card shadow-sm z-10 flex items-center justify-center bg-violet-400" />
 
                                     <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm">
                                       <div className="flex items-start gap-3">
@@ -1511,7 +1498,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                     {index !== unifiedItems.length - 1 && (
                                       <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
                                     )}
-                                    <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full ${dotBg} border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center`}>
+                                    <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full ${dotBg} border-4 border-white dark:border-dark-card shadow-sm z-10 flex items-center justify-center`}>
                                       {isDeletion ? <Trash2 size={8} className="text-white" /> : <Plus size={8} className="text-white" />}
                                     </div>
 
@@ -1549,7 +1536,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
                                           <div className={`flex items-center gap-1.5 mt-3 pt-3 border-t ${dividerColor}`}>
                                             <Clock size={11} className="text-gray-400" />
-                                            <span className="text-[11px]" style={{ color: '#9ca3af' }}>
+                                            <span className="text-[11px] text-slate-400">
                                               {formatRelativeTime(group.created_at)}
                                             </span>
                                             {group.user_name && (() => {
@@ -1668,7 +1655,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                       {index !== unifiedItems.length - 1 && (
                                         <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
                                       )}
-                                      <div className={`absolute left-0 top-[28px] w-[16px] h-[16px] rounded-full bg-violet-500 border-4 border-white dark:border-[#1A1625] shadow-sm z-10`} />
+                                      <div className={`absolute left-0 top-[28px] w-[16px] h-[16px] rounded-full bg-violet-500 border-4 border-white dark:border-dark-card shadow-sm z-10`} />
 
                                       <div className="w-full max-w-[420px]">
                                         <div className="p-5 rounded-2xl border border-indigo-50 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm hover:shadow-md transition-all relative group w-full">
@@ -1706,7 +1693,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
                                           {(matchMeeting.office_location || matchMeeting.reunion_link || matchMeeting.reunion_niche || matchMeeting.monthly_closings || matchMeeting.closing_goal || true) && (
                                             <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5 space-y-3">
-                                              <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest" style={{ color: '#6b7280' }}>Detalhes:</h5>
+                                              <h5 className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Detalhes:</h5>
                                               <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
                                                 <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Local</span><span className="font-semibold text-gray-700 dark:text-slate-300">{matchMeeting.office_location || '-'}</span></div>
                                                 <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Link</span>{matchMeeting.reunion_link ? <a href={matchMeeting.reunion_link.startsWith('http') ? matchMeeting.reunion_link : `https://${matchMeeting.reunion_link}`} target="_blank" rel="noreferrer" className="text-violet-500 hover:text-violet-600 font-semibold hover:underline truncate inline-block max-w-[120px]">{matchMeeting.reunion_link}</a> : <span className="font-semibold text-gray-700 dark:text-slate-300">-</span>}</div>
@@ -1719,7 +1706,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
                                           {matchMeeting.notes && (
                                             <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
-                                              <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest mb-3" style={{ color: '#6b7280' }}>Informações da Reunião:</h5>
+                                              <h5 className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">Informações da Reunião:</h5>
                                               <ul className="space-y-3">
                                                 {matchMeeting.notes.split('\n').filter((l: string) => l.trim().length > 0).map((line: string, i: number) => {
                                                   const isCheck = line.trim().startsWith('-');
@@ -1749,7 +1736,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                       <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
                                     )}
                                     {/* Dot */}
-                                    <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full ${meta.bg} border-4 border-white dark:border-[#1A1625] shadow-sm z-10`} />
+                                    <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full ${meta.bg} border-4 border-white dark:border-dark-card shadow-sm z-10`} />
 
                                     {(() => {
                                       let matchingTask = null;
@@ -1760,7 +1747,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                       if (matchingTask) {
                                         return (
                                           <div
-                                            className={`group flex items-center gap-4 px-5 py-3.5 bg-white dark:bg-slate-800/60 border rounded-xl transition-all duration-200 ${matchingTask.completed
+                                            className={`group flex items-center gap-4 px-5 py-3.5 bg-white dark:bg-dark-card border rounded-xl transition-all duration-200 ${matchingTask.completed
                                                 ? 'border-slate-100 dark:border-white/5 opacity-55'
                                                 : 'border-slate-200/70 dark:border-white/10 hover:border-violet-300/60 dark:hover:border-violet-500/30'
                                               }`}
@@ -1831,17 +1818,13 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                       return (
                                         <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
                                       <div className="flex items-start gap-3">
-                                        <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: isWhatsappTrigger ? 'rgba(16,185,129,0.1)' : isAutomationAction ? 'rgba(139,92,246,0.12)' : 'rgba(124,58,237,0.12)' }}>
-                                          {React.cloneElement(taskIcon as React.ReactElement, { size: 18, style: { color: isWhatsappTrigger ? '#10b981' : '#8b5cf6' } })}
+                                        <div className={`flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center ${isWhatsappTrigger ? 'bg-emerald-500/10 text-emerald-500' : 'bg-violet-500/10 text-violet-500'}`}>
+                                          {React.cloneElement(taskIcon as React.ReactElement<any>, { size: 18 })}
                                         </div>
 
                                         <div className="flex-1 min-w-0">
                                           <div className="flex items-center gap-2 flex-wrap mb-1">
-                                            <span className="px-2 py-0.5 rounded font-black text-[10px] uppercase tracking-wider"
-                                              style={{
-                                                background: action.includes('Concluída') ? 'rgba(16,185,129,0.1)' : 'rgba(124,58,237,0.1)',
-                                                color: action.includes('Concluída') ? '#059669' : '#7c3aed'
-                                              }}
+                                            <span className={`px-2 py-0.5 rounded font-black text-[10px] uppercase tracking-wider ${action.includes('Concluída') ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-violet-500/10 text-violet-600 dark:text-violet-400'}`}
                                             >
                                               {action.replace('Tarefa ', '').trim()}
                                             </span>
@@ -1852,7 +1835,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                             )}
                                           </div>
 
-                                          <p className="text-[11px]" style={{ color: '#9ca3af' }}>
+                                          <p className="text-[11px] text-slate-400">
                                             ORIGEM: {effectiveTaskType || 'Atividade'}
                                           </p>
 
@@ -1860,8 +1843,8 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
                                           {item.action_type === 'note_created' && (
                                             <div
-                                              className="mt-3 text-sm text-gray-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap prose prose-sm dark:prose-invert max-w-none prose-img:cursor-zoom-in hover:prose-img:opacity-90 prose-img:transition-opacity prose-img:rounded-xl border border-gray-100 dark:border-white/5 shadow-sm"
-                                              style={{ wordBreak: 'break-word', padding: '14px', background: 'rgba(0,0,0,0.015)', borderRadius: '12px' }}
+                                              className="mt-3 text-sm text-gray-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap prose prose-sm dark:prose-invert max-w-none prose-img:cursor-zoom-in hover:prose-img:opacity-90 prose-img:transition-opacity prose-img:rounded-xl border border-gray-100 dark:border-white/5 shadow-sm bg-black/[0.015] dark:bg-white/[0.03]"
+                                              style={{ wordBreak: 'break-word', padding: '14px', borderRadius: '12px' }}
                                               onClick={handleNoteClick}
                                               dangerouslySetInnerHTML={{ __html: item.description?.replace(/style="[^"]*color:[^"]*"/g, '') || '' }}
                                             />
@@ -1871,7 +1854,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                               className="mt-3 text-[13px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 shadow-sm flex items-center gap-2"
                                               style={{ wordBreak: 'break-word', padding: '12px 14px', borderRadius: '12px' }}
                                             >
-                                              <span className="flex-1">{item.description || 'Gatilho de WhatsApp acionado ✅'}</span>
+                                              <span className="flex-1">{item.description || 'Gatilho de WhatsApp acionado'}</span>
                                             </div>
                                           )}
                                           {isAutomationAction && item.description && (
@@ -1885,7 +1868,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
                                           <div className="flex items-center gap-1.5 mt-2.5">
                                             <Clock size={11} className="text-gray-400" />
-                                            <span className="text-[11px]" style={{ color: '#9ca3af' }}>
+                                            <span className="text-[11px] text-slate-400">
                                               {formatRelativeTime(item.created_at)}
                                             </span>
                                             {item.user_name && (() => {
@@ -1926,28 +1909,28 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                   )}
 
                                   {/* Dot */}
-                                  <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center ${isWonMove ? 'bg-emerald-500 scale-125' : 'bg-violet-500'
+                                  <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-dark-card shadow-sm z-10 flex items-center justify-center ${isWonMove ? 'bg-emerald-500 scale-125' : 'bg-violet-500'
                                     }`}>
                                     {isWonMove && <Trophy size={6} className="text-white" />}
                                   </div>
 
                                   <div className={`rounded-2xl p-4 shadow-sm border transition-all duration-300 ${isWonMove
-                                      ? 'bg-emerald-500/10 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.1)]'
+                                      ? 'bg-emerald-500/10 border-emerald-500/30'
                                       : 'bg-white/50 dark:bg-white/5 border-gray-100 dark:border-white/10'
                                     }`}>
                                     <div className="flex flex-wrap items-center gap-2 mb-3">
                                       {isWonMove && (
-                                        <span className="px-2.5 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider shadow-lg shadow-emerald-500/20">
-                                          CONQUISTA! 🏆
+                                        <span className="px-2.5 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1">
+                                          <Trophy size={11} /> CONQUISTA!
                                         </span>
                                       )}
                                       <span className="px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-xs font-bold text-gray-700 dark:text-slate-300">
                                         {columns.find(c => c.id === item.from_coluna)?.title || 'Sem Coluna'}
                                       </span>
                                       <ArrowRight size={14} className="text-gray-400" />
-                                      <span className={`px-2.5 py-1 rounded-lg text-xs font-bold shadow-lg ${isWonMove
-                                          ? 'bg-emerald-500 text-white shadow-emerald-500/30'
-                                          : 'bg-violet-500 text-white shadow-violet-500/20'
+                                      <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${isWonMove
+                                          ? 'bg-emerald-500 text-white'
+                                          : 'bg-violet-500 text-white'
                                         }`}>
                                         {toColumnTitle}
                                       </span>
@@ -2003,7 +1986,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                         </button>
                         <button
                           onClick={() => { setTaskToEdit(null); setIsAddingTask(true); }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-500 text-white rounded-lg text-xs font-bold shadow-md shadow-violet-500/20 hover:bg-violet-600 transition-all"
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-500 text-white rounded-lg text-xs font-bold hover:bg-violet-600 transition-colors"
                         >
                           <Plus size={14} /> Adicionar
                         </button>
@@ -2028,22 +2011,14 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       </AnimatePresence>
 
                       {/* Sequence Picker Modal */}
-                      <AnimatePresence>
-                        {isPickingSequence && (
-                          <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
-                            <div className="absolute inset-0" onClick={() => setIsPickingSequence(false)} />
-                            <motion.div
-                              initial={{ opacity: 0, scale: 0.95 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.95 }}
-                              className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-2xl p-6 shadow-xl w-full max-w-lg relative z-10"
-                            >
+                      <Modal isOpen={isPickingSequence} onClose={() => setIsPickingSequence(false)} semCabecalho semPadding maxWidth="max-w-lg">
+                            <div className="p-6">
                               <div className="flex items-center justify-between mb-5">
                                 <div>
-                                  <h4 className="text-base font-bold text-gray-900 dark:text-white">Aplicar Sequência</h4>
+                                  <h4 className="text-base font-bold text-dark-text">Aplicar Sequência</h4>
                                   <p className="text-xs text-gray-500 dark:text-slate-500 mt-0.5">Selecione uma cadência para criar as atividades automaticamente.</p>
                                 </div>
-                                <button onClick={() => setIsPickingSequence(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors"><X size={18} /></button>
+                                <button onClick={() => setIsPickingSequence(false)} aria-label="Fechar" className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors"><X size={18} /></button>
                               </div>
                               {sequences.length === 0 ? (
                                 <div className="py-10 text-center">
@@ -2084,25 +2059,15 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                   })}
                                 </div>
                               )}
-                            </motion.div>
-                          </div>
-                        )}
-                      </AnimatePresence>
+                            </div>
+                      </Modal>
 
                       {/* Template Selector Modal (mantido para acesso interno se necessário) */}
-                      <AnimatePresence>
-                        {isSelectingTemplate && (
-                          <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
-                            <div className="absolute inset-0" onClick={() => setIsSelectingTemplate(false)} />
-                            <motion.div
-                              initial={{ opacity: 0, scale: 0.95 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={{ opacity: 0, scale: 0.95 }}
-                              className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-2xl p-6 shadow-xl w-full max-w-lg relative z-10"
-                            >
+                      <Modal isOpen={isSelectingTemplate} onClose={() => setIsSelectingTemplate(false)} semCabecalho semPadding maxWidth="max-w-lg">
+                            <div className="p-6">
                               <div className="flex items-center justify-between mb-6">
-                                <h4 className="text-lg font-bold">Selecione um modelo:</h4>
-                                <button onClick={() => setIsSelectingTemplate(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors"><X size={20} /></button>
+                                <h4 className="text-lg font-bold text-dark-text">Selecione um modelo:</h4>
+                                <button onClick={() => setIsSelectingTemplate(false)} aria-label="Fechar" className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors"><X size={20} /></button>
                               </div>
                               <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
                                 {templates.map(tmp => (
@@ -2121,10 +2086,8 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                   </button>
                                 ))}
                               </div>
-                            </motion.div>
-                          </div>
-                        )}
-                      </AnimatePresence>
+                            </div>
+                      </Modal>
 
                       {/* Task List */}
                       {tasks.length === 0 && !isAddingTask && !taskToEdit && !isSelectingTemplate ? (
@@ -2142,9 +2105,9 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                           }).map(task => (
                             <div
                               key={task.id}
-                              className={`group flex items-center gap-4 px-5 py-3.5 bg-white dark:bg-slate-800/60 border rounded-xl transition-all duration-200 ${task.completed
+                              className={`group flex items-center gap-4 px-5 py-3.5 bg-white dark:bg-dark-card border rounded-xl transition-all duration-200 ${task.completed
                                   ? 'border-slate-100 dark:border-white/5 opacity-55'
-                                  : 'border-slate-200/70 dark:border-white/10 hover:border-violet-300/60 dark:hover:border-violet-500/30 hover:shadow-md hover:shadow-violet-500/5'
+                                  : 'border-slate-200/70 dark:border-white/10 hover:border-violet-300/60 dark:hover:border-violet-500/30'
                                 }`}
                             >
                               {/* Checkbox */}
@@ -2232,7 +2195,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                   </>
                 )}
                 {activeTab === 'notas' && (
-                  <div className="space-y-6 flex-1 flex flex-col overflow-y-auto relative bg-[#F8F9FA] dark:bg-[#15121E]">
+                  <div className="space-y-6 flex-1 flex flex-col overflow-y-auto relative bg-slate-50 dark:bg-dark-card">
                     <div className="flex flex-col py-4 px-6 shrink-0 bg-white dark:bg-white/5 border-b border-gray-100 dark:border-white/10 shadow-sm z-20 sticky top-0">
                       <h3 className="font-bold text-gray-700 dark:text-white uppercase text-[11px] tracking-wider mb-3">Editor de Notas Rico</h3>
                       <div className="w-full bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl overflow-hidden shadow-inner flex flex-col">
@@ -2256,7 +2219,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                             <button
                               onClick={handleCreateNote}
                               disabled={notesLoading}
-                              className="px-4 py-1.5 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white rounded-lg text-xs font-bold transition-all shadow-sm shadow-violet-500/20 disabled:opacity-50"
+                              className="px-4 py-1.5 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50"
                             >
                               {notesLoading ? <Loader2 size={14} className="animate-spin" /> : 'Salvar Nota'}
                             </button>
@@ -2277,10 +2240,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
                     <div className="relative flex-1 p-6 z-10 w-full max-w-4xl mx-auto pb-16">
                       {notesLoading && notes.length === 0 ? (
-                        <div className="flex flex-col justify-center items-center mt-12 text-gray-400">
-                          <Loader2 size={32} className="animate-spin text-violet-500 mb-2" />
-                          <span className="text-sm">Carregando anotações...</span>
-                        </div>
+                        <CarregandoBloco />
                       ) : notes.length === 0 && files.length === 0 ? (
                         <div className="flex flex-col items-center justify-center mt-12 text-gray-400">
                           <MessageSquare size={32} className="mb-2 opacity-50" />
@@ -2303,7 +2263,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
                               return (
                                 <div key={item.itemType + '-' + (item.id || idx)} className={`flex items-start w-full relative ${isLeft ? 'justify-start' : 'justify-end'}`}>
-                                  <div className="absolute left-1/2 top-[34px] -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-[3px] border-white dark:border-[#15121E] bg-violet-50 dark:bg-violet-500/20 flex items-center justify-center z-10 shadow-sm">
+                                  <div className="absolute left-1/2 top-[34px] -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-[3px] border-white dark:border-dark-card bg-violet-50 dark:bg-violet-500/20 flex items-center justify-center z-10 shadow-sm">
                                     {item.itemType === 'file' ? <Paperclip size={14} className="text-violet-500" /> : <FileText size={14} className="text-violet-500" />}
                                   </div>
 
@@ -2370,7 +2330,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                   </div>
                 )}
                 {activeTab === 'reuniões' && (
-                  <div className="space-y-6 flex-1 flex flex-col overflow-y-auto relative bg-[#F8F9FA] dark:bg-[#15121E]">
+                  <div className="space-y-6 flex-1 flex flex-col overflow-y-auto relative bg-slate-50 dark:bg-dark-card">
                     <div className="flex items-center justify-between py-4 px-6 shrink-0 bg-white dark:bg-white/5 border-b border-gray-100 dark:border-white/10 shadow-sm z-20 sticky top-0">
                       <h3 className="font-bold text-gray-700 dark:text-white uppercase text-[11px] tracking-wider">Histórico de Reuniões</h3>
                       <button
@@ -2386,17 +2346,14 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                           }));
                           setShowMeetingModal(true);
                         }}
-                        className="px-4 py-2 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-violet-500/20 flex items-center gap-2">
+                        className="px-4 py-2 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white rounded-xl text-sm font-bold transition-all flex items-center gap-2">
                         <Plus size={15} /> Adicionar Reunião
                       </button>
                     </div>
 
                     <div className="relative flex-1 p-6 z-10 w-full max-w-4xl mx-auto pb-16">
                       {meetingsLoading ? (
-                        <div className="flex flex-col justify-center items-center mt-12 text-gray-400">
-                          <Loader2 size={32} className="animate-spin text-violet-500 mb-2" />
-                          <span className="text-sm">Carregando reuniões...</span>
-                        </div>
+                        <CarregandoBloco />
                       ) : meetings.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16 text-gray-400 dark:text-slate-500">
                           <Users size={36} className="mb-3 opacity-30" />
@@ -2419,7 +2376,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
                               return (
                                 <div key={m.id || idx} className={`flex items-start w-full relative ${isLeft ? 'justify-start' : 'justify-end'}`}>
-                                  <div className="absolute left-1/2 top-[34px] -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-[3px] border-white dark:border-[#15121E] bg-violet-50 dark:bg-violet-500/20 flex items-center justify-center z-10 shadow-sm">
+                                  <div className="absolute left-1/2 top-[34px] -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-[3px] border-white dark:border-dark-card bg-violet-50 dark:bg-violet-500/20 flex items-center justify-center z-10 shadow-sm">
                                     <Check size={14} className="text-violet-500" />
                                   </div>
 
@@ -2462,7 +2419,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
                                       {(m.office_location || m.reunion_link || m.reunion_niche || m.monthly_closings || m.closing_goal || true) && (
                                         <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5 space-y-3">
-                                          <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest" style={{ color: '#6b7280' }}>Detalhes:</h5>
+                                          <h5 className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Detalhes:</h5>
                                           <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
                                             <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Local</span><span className="font-semibold text-gray-700 dark:text-slate-300">{m.office_location || '-'}</span></div>
                                             <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Link</span>{m.reunion_link ? <a href={m.reunion_link.startsWith('http') ? m.reunion_link : `https://${m.reunion_link}`} target="_blank" rel="noreferrer" className="text-violet-500 hover:text-violet-600 font-semibold hover:underline truncate inline-block max-w-[120px]">{m.reunion_link}</a> : <span className="font-semibold text-gray-700 dark:text-slate-300">-</span>}</div>
@@ -2475,7 +2432,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
                                       {(notesLines.length > 0) && (
                                         <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
-                                          <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest mb-3" style={{ color: '#6b7280' }}>Informações da Reunião:</h5>
+                                          <h5 className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">Informações da Reunião:</h5>
                                           <ul className="space-y-3">
                                             {notesLines.map((line: string, i: number) => {
                                               const isCheck = line.trim().startsWith('-');
@@ -2644,13 +2601,12 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
             </div>
 
             {/* Template Editor Modal */}
-            {showChecklistTemplateModal && (
-              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={(e) => { if (e.target === e.currentTarget) setShowChecklistTemplateModal(false); }}>
-                <div className="bg-white dark:bg-[#1a1a2e] rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            {/* Formulário: clique fora não fecha (perderia a edição) */}
+            <Modal isOpen={showChecklistTemplateModal} onClose={() => setShowChecklistTemplateModal(false)} semCabecalho semPadding maxWidth="max-w-md" fecharAoClicarFora={false}>
                   {/* Header */}
-                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-white/10">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-black/10 dark:border-white/10">
                     <div>
-                      <h3 className="text-base font-bold text-gray-900 dark:text-white">Padrão de Tarefas</h3>
+                      <h3 className="text-base font-bold text-dark-text">Padrão de Tarefas</h3>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Defina os itens padrão do checklist para novos leads</p>
                     </div>
                     <button onClick={() => setShowChecklistTemplateModal(false)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
@@ -2778,22 +2734,19 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                     <button
                       onClick={handleSaveTemplate}
                       disabled={templateLoading}
-                      className="px-4 py-2 rounded-lg text-sm font-medium bg-violet-500 text-white hover:bg-violet-600 disabled:opacity-50 transition-colors flex items-center gap-2"
+                      className="px-4 py-2 rounded-xl text-sm font-semibold bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors flex items-center gap-2"
                     >
                       {templateLoading && <Loader2 size={14} className="animate-spin" />}
                       Salvar Padrão
                     </button>
                   </div>
-                </div>
-              </div>
-            )}
+            </Modal>
 
             {/* Task Detail Popup */}
             {taskDetailPopup && (
-              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={(e) => { if (e.target === e.currentTarget) setTaskDetailPopup(null); }}>
-                <div className="bg-white dark:bg-[#1a1a2e] rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              <Modal isOpen onClose={() => setTaskDetailPopup(null)} semCabecalho semPadding maxWidth="max-w-sm">
                   {/* Header */}
-                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-white/10">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-black/10 dark:border-white/10">
                     <div className="flex items-center gap-2.5">
                       <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
                         taskDetailPopup.completed ? 'bg-emerald-500/10' : 'bg-violet-500/10'
@@ -2804,7 +2757,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                         }
                       </div>
                       <div>
-                        <h3 className="text-sm font-bold text-gray-900 dark:text-white">Detalhes da Tarefa</h3>
+                        <h3 className="text-sm font-bold text-dark-text">Detalhes da Tarefa</h3>
                         <p className="text-[10px] text-gray-400 mt-0.5">
                           {taskDetailPopup.completed ? 'Concluída' : 'Pendente'}
                           {taskDetailPopup.completed_by && ` por ${taskDetailPopup.completed_by}`}
@@ -2865,7 +2818,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 ${
                         taskDetailPopup.completed
                           ? 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/15'
-                          : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20'
+                          : 'bg-emerald-500 hover:bg-emerald-600 text-white'
                       }`}
                     >
                       {taskDetailPopup.completed ? (
@@ -2875,8 +2828,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       )}
                     </button>
                   </div>
-                </div>
-              </div>
+              </Modal>
             )}
 
             {/* Right: lead info */}
@@ -3006,7 +2958,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 )}
 
                 {showTagMenu && sectionsOpen.tags && (
-                  <div className="absolute top-10 right-0 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
+                  <div className="absolute top-10 right-0 w-64 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
                     <div className="p-3 border-b border-slate-100 dark:border-white/5">
                       <div className="relative">
                         <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
@@ -3015,7 +2967,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                           value={tagSearch}
                           onChange={e => setTagSearch(e.target.value)}
                           placeholder="Buscar etiqueta..."
-                          className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-lg text-sm text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-amber-500/40"
+                          className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg text-sm text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-amber-500/40"
                         />
                       </div>
                     </div>
@@ -3337,19 +3289,18 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               </div>
             </div>
           </div>
-        </motion.div>
+      </Modal>
         {/* Meeting Modal */}
-        {showMeetingModal && (
-          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowMeetingModal(false)} />
-            <div className="bg-white dark:bg-[#1A1625] rounded-3xl w-full max-w-lg p-6 shadow-2xl relative z-10 animate-in fade-in zoom-in-95 duration-200">
+        {/* Formulário: clique fora não fecha (perderia o que foi digitado) */}
+        <Modal isOpen={showMeetingModal} onClose={() => setShowMeetingModal(false)} semCabecalho semPadding maxWidth="max-w-lg" fecharAoClicarFora={false}>
+            <div className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h3 className="text-lg font-bold text-gray-800 dark:text-white">Adicionar Reunião</h3>
+                  <h3 className="text-lg font-bold text-dark-text">Adicionar Reunião</h3>
                   <p className="text-[11px] font-medium text-gray-500 dark:text-slate-400 mt-1 uppercase tracking-wider">Registre na timeline do lead</p>
                 </div>
-                <button onClick={() => setShowMeetingModal(false)} className="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/5 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">
-                  <X size={16} className="text-gray-500" />
+                <button onClick={() => setShowMeetingModal(false)} aria-label="Fechar" className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                  <X size={18} />
                 </button>
               </div>
 
@@ -3443,15 +3394,15 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 <button
                   onClick={handleCreateMeeting}
                   disabled={!meetingForm.title || !meetingForm.meeting_date || meetingsLoading}
-                  className="w-full py-3.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold mt-2 transition-all active:scale-[0.98] shadow-xl shadow-violet-500/20 disabled:opacity-50 disabled:active:scale-100 flex justify-center items-center gap-2">
+                  className="w-full py-3.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold mt-2 transition-all active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100 flex justify-center items-center gap-2">
                   {meetingsLoading ? <Loader2 size={18} className="animate-spin" /> : 'Salvar Reunião'}
                 </button>
               </div>
             </div>
-          </div>
-        )}      {/* Image Viewer Popup */}
-        {selectedImage && (
-          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm transition-all" onClick={() => setSelectedImage(null)}>
+        </Modal>
+        {/* Image Viewer Popup */}
+        {/* Visualizador: sem caixa — só a imagem sobre o fundo escurecido */}
+        <Modal isOpen={!!selectedImage} onClose={() => setSelectedImage(null)} semCabecalho semPadding maxWidth="max-w-[90vw]" className="!bg-transparent !border-0 !shadow-none !overflow-visible !w-auto">
             <div className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center">
               <button
                 onClick={() => setSelectedImage(null)}
@@ -3459,16 +3410,15 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               >
                 <X size={24} />
               </button>
-              <img
-                src={selectedImage}
-                alt="Visualização"
-                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
-                onClick={(e) => e.stopPropagation()}
-              />
+              {selectedImage && (
+                <img
+                  src={selectedImage}
+                  alt="Visualização"
+                  className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+                />
+              )}
             </div>
-          </div>
-        )}
-      </div>
+        </Modal>
     </>
   );
 };
@@ -3479,20 +3429,9 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-all" onClick={onClose} />
-      <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-xl flex flex-col max-h-[80vh]">
-        <div className="p-6 border-b border-gray-100 dark:border-white/5 flex items-center justify-between shrink-0">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Gerenciar Kanbans</h2>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 text-gray-500 transition-colors">
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="p-6 overflow-y-auto flex-1 space-y-4">
+    <Modal isOpen={!!isOpen} onClose={onClose} title="Gerenciar Kanbans" maxWidth="max-w-2xl" className="max-h-[80vh]">
+        <div className="space-y-4">
           {kanbans.map((kanban: any) => {
             const kanbanColumns = columns.filter((c: any) => c.kanban_id === kanban.id).length;
             const kanbanLeads = leads.filter((l: any) => l.kanban_id === kanban.id).length;
@@ -3500,7 +3439,7 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
             const iconBg = kanban.cor ? `bg-${kanban.cor}-500` : 'bg-gray-500';
 
             return (
-              <div key={kanban.id} className="border border-gray-100 dark:border-white/10 rounded-xl p-4 flex items-center justify-between bg-white dark:bg-slate-800/50">
+              <div key={kanban.id} className="border border-black/10 dark:border-white/10 rounded-xl p-4 flex items-center justify-between bg-white dark:bg-white/[0.03]">
                 <div className="flex items-center gap-4">
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-lg ${iconBg}`}>
                     {kanban.nome?.charAt(0).toUpperCase()}
@@ -3524,11 +3463,12 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
                             setEditingId(null);
                           }}
                           autoFocus
-                          className="bg-transparent border-b border-violet-500 outline-none text-base font-bold text-gray-900 dark:text-white pb-0.5 px-1 w-48"
+                          data-segura-esc
+                          className="bg-transparent border-b border-violet-500 outline-none text-base font-bold text-dark-text pb-0.5 px-1 w-48"
                         />
                       ) : (
-                        <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                          {kanban.nome} {kanban.nome.toLowerCase().includes('comercial') && '🔥'}
+                        <h3 className="text-base font-bold text-dark-text flex items-center gap-2">
+                          {kanban.nome}
                         </h3>
                       )}
 
@@ -3546,7 +3486,7 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
                   align="end"
                   triggerClassName="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
                   triggerContent={<MoreHorizontal size={18} />}
-                  panelClassName="min-w-[180px] bg-white dark:bg-slate-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2 z-[1100]"
+                  panelClassName="min-w-[180px] bg-white dark:bg-dark-card border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2 z-[1100]"
                 >
                       <button type="button" role="menuitem" className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 outline-none transition-colors opacity-50 cursor-not-allowed">
                         <Copy size={15} />
@@ -3584,9 +3524,7 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
             );
           })}
         </div>
-      </div>
-
-    </div>
+    </Modal>
   );
 };
 // ============================================================
@@ -3601,7 +3539,7 @@ const getMetaColor = (pct: number) => {
   if (pct >= 100) return '#10b981';
   if (pct >= 60) return '#f59e0b';
   if (pct >= 30) return '#8b5cf6';
-  return '#ef4444';
+  return '#f43f5e';
 };
 
 interface HeaderMetaItem {
@@ -3665,7 +3603,7 @@ const MiniCircleAnimated: React.FC<{ pct: number; color: string }> = ({ pct, col
 
   React.useEffect(() => {
     const clamped = Math.min(pct, 100);
-    const controls = motionAnimate(progress, clamped, { duration: 2.5, ease: [0.16, 1, 0.3, 1] });
+    const controls = motionAnimate(progress, clamped, { duration: 0.8, ease: [0.16, 1, 0.3, 1] });
     const unsub = progress.on('change', (v) => setDisplayPct(Math.round(v)));
     return () => { controls.stop(); unsub(); };
   }, [pct]);
@@ -3718,7 +3656,7 @@ const HeaderMetaWidget: React.FC<{
 
   const renderPanel = (idx: number, activeMetaId: string | null) => (
     <div
-      className="absolute left-0 top-full mt-1.5 bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[240px] shadow-2xl z-[200]"
+      className="absolute left-0 top-full mt-1.5 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[240px] shadow-2xl z-[200]"
       role="menu"
     >
       <div className="px-2 py-1.5 mb-1">
@@ -3870,7 +3808,7 @@ const PlainMenu: React.FC<{
     return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key); };
   }, [open]);
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative" data-segura-esc={open ? '' : undefined}>
       <button type="button" className={triggerClassName} title={triggerTitle} onClick={() => setOpen(o => !o)}>
         {triggerContent}
       </button>
@@ -3890,7 +3828,6 @@ const PlainMenu: React.FC<{
 
 const CrmComercial = () => {
   const { user, userData } = useAuth();
-  const [showAI, setShowAI] = useState(false);
   const [showMetasPopup, setShowMetasPopup] = useState(false);
   const [headerMetas, setHeaderMetas] = useState<HeaderMetaItem[]>([]);
   const [headerMetaSlots, setHeaderMetaSlots] = useState<(string | null)[]>(() => {
@@ -3973,6 +3910,8 @@ const CrmComercial = () => {
 
 
   const [leads, setLeads] = useState<Lead[]>([]);
+  // Só aparência: o quadro mostra o carregamento até a 1ª resposta (antes aparecia vazio)
+  const [carregandoQuadro, setCarregandoQuadro] = useState(true);
   const [users, setUsers] = useState<User[]>([]);
   const availableUsers = useMemo(() => {
     const activePage = localStorage.getItem('activePage') || 'crm-comercial';
@@ -4184,10 +4123,15 @@ const CrmComercial = () => {
           setActiveKanbanId(String(data[0].id));
         } else if (found) {
           setActiveKanbanId(String((found as any).id));
+        } else {
+          setCarregandoQuadro(false);
         }
+      } else {
+        setCarregandoQuadro(false);
       }
     } catch (err) {
       console.error('Error fetching kanbans:', err);
+      setCarregandoQuadro(false);
     }
   };
 
@@ -4228,6 +4172,8 @@ const CrmComercial = () => {
       }
     } catch (err) {
       console.error('Error fetching data:', err);
+    } finally {
+      setCarregandoQuadro(false);
     }
   };
 
@@ -4385,7 +4331,8 @@ const CrmComercial = () => {
       for (const step of sequence.steps) {
         diasAcumulados += step.day_offset ?? 0;
         const due = addDays(baseDate, diasAcumulados, sequence.skip_weekends ?? true);
-        const dueStr = due.toISOString().split('T')[0];
+        // Data LOCAL: toISOString() é UTC e, depois das 21h, adiantava todas as datas em um dia
+        const dueStr = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}`;
         await fetch(`/api/crm-comercial/leads/${leadId}/tasks`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5174,13 +5121,13 @@ const CrmComercial = () => {
                 </button>
           </PlainMenu>
 
-          {/* 4 — Dropdown "Mais" com Fred, Ramal, Novo Lead */}
+          {/* 4 — Dropdown "Mais" */}
           <PlainMenu
             align="end"
             triggerTitle="Mais opções"
             triggerClassName="flex items-center justify-center w-[38px] h-[38px] bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-gray-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-all"
             triggerContent={<MoreHorizontal size={18} />}
-            panelClassName="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[220px] shadow-2xl z-[200]"
+            panelClassName="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[220px] shadow-2xl z-[200]"
           >
                 {/* Novo Lead */}
                 <button
@@ -5204,22 +5151,6 @@ const CrmComercial = () => {
                     <Target size={15} />
                   </div>
                   <span className="text-xs font-bold text-gray-800 dark:text-white">Metas</span>
-                </button>
-
-                {/* Consultar Fred IA */}
-                <button
-                  type="button" role="menuitem"
-                  onClick={() => setShowAI(o => !o)}
-                  className="w-full text-left flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-violet-500/10 dark:hover:bg-violet-500/15 transition-colors"
-                >
-                  <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-violet-500/10 overflow-hidden">
-                    <img src={fredImg} alt="Fred" style={{ width: 18, height: 18, objectFit: 'contain' }} />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-gray-800 dark:text-white">Consultar Fred</span>
-                    <span className="text-[10px] text-slate-400">Especialista financeiro IA</span>
-                  </div>
-                  {showAI && <Check size={14} className="text-violet-500 ml-auto" />}
                 </button>
 
                 <div className="h-px bg-gray-200 dark:bg-white/10 my-1.5" />
@@ -5263,7 +5194,7 @@ const CrmComercial = () => {
               <circle cx="12" cy="19" r="1"></circle>
             </svg>
           }
-          panelClassName="min-w-[200px] bg-white dark:bg-[#1A1625] rounded-xl shadow-xl border border-gray-100 dark:border-white/10 p-2 z-[100]"
+          panelClassName="min-w-[200px] bg-white dark:bg-dark-card rounded-xl shadow-xl border border-gray-100 dark:border-white/10 p-2 z-[100]"
         >
               <button
                 type="button" role="menuitem"
@@ -5295,6 +5226,7 @@ const CrmComercial = () => {
 
 
 
+      {carregandoQuadro ? <CarregandoBloco className="flex-1" /> : (
       <DndContext
         sensors={sensors}
         collisionDetection={collisionDetectionStrategy}
@@ -5315,7 +5247,7 @@ const CrmComercial = () => {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{
                   duration: 0.4,
-                  delay: colIdx * 0.07,
+                  delay: Math.min(colIdx, 8) * 0.04,
                   ease: [0.32, 0.72, 0, 1],
                 }}
                 style={{ display: 'flex', flex: 1, minWidth: 200 }}
@@ -5356,7 +5288,7 @@ const CrmComercial = () => {
                               animate={{ opacity: 1, y: 0, scale: 1 }}
                               transition={{
                                 duration: 0.35,
-                                delay: colIdx * 0.07 + cardIdx * 0.05,
+                                delay: Math.min(colIdx, 8) * 0.04 + Math.min(cardIdx, 8) * 0.04,
                                 ease: [0.32, 0.72, 0, 1],
                               }}
                             >
@@ -5439,6 +5371,7 @@ const CrmComercial = () => {
           ) : null}
         </DragOverlay>
       </DndContext>
+      )}
 
       {/* Lead Detail Modal */}
       <AnimatePresence>
@@ -5479,29 +5412,32 @@ const CrmComercial = () => {
           currentUserName={user?.name || user?.displayName}
           currentUserAvatar={user?.photoURL}
           onUpdateLeadField={handleUpdateLeadField}
+          bloquearEsc={isManageTemplatesOpen}
         />
       )}
       </AnimatePresence>
 
       {/* Template Management Modal */}
-      <AnimatePresence>
-        {isManageTemplatesOpen && (
-          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white dark:bg-[#1A1625] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
-            >
+      {/* Antes não fechava clicando fora: mantido. Esc só na lista (no editor perderia o que foi digitado). */}
+      <Modal
+        isOpen={isManageTemplatesOpen}
+        onClose={() => { setIsManageTemplatesOpen(false); setTemplateEditor({ mode: 'list', template: null, form: { name: '', description: '', items: [] } }); }}
+        semCabecalho
+        semPadding
+        maxWidth="max-w-2xl"
+        className="max-h-[85vh]"
+        fecharAoClicarFora={false}
+        fecharComEsc={templateEditor.mode === 'list'}
+      >
               {/* Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-white/10">
+              <div className="flex items-center justify-between p-6 border-b border-black/10 dark:border-white/10 shrink-0">
                 <div className="flex items-center gap-3">
                   {templateEditor.mode !== 'list' && (
                     <button onClick={() => setTemplateEditor(p => ({ ...p, mode: 'list' }))} className="text-gray-400 hover:text-gray-700 dark:hover:text-white">
                       <ChevronLeft size={20} />
                     </button>
                   )}
-                  <h2 className="text-lg font-black">
+                  <h2 className="text-lg font-bold text-dark-text">
                     {templateEditor.mode === 'list' ? 'Modelos de Tarefas Recorrentes' :
                       templateEditor.mode === 'create' ? 'Novo Modelo' : 'Editar Modelo'}
                   </h2>
@@ -5517,12 +5453,12 @@ const CrmComercial = () => {
                   <div className="space-y-4">
                     <button
                       onClick={() => setTemplateEditor({ mode: 'create', template: null, form: { name: '', description: '', items: [] } })}
-                      className="w-full py-3 px-4 bg-violet-500 hover:bg-violet-600 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 transition-all"
+                      className="w-full py-3 px-4 bg-violet-600 hover:bg-violet-700 text-white font-semibold text-sm rounded-xl flex items-center justify-center gap-2 transition-colors"
                     >
                       <Plus size={16} /> Novo Modelo
                     </button>
                     {templates.length === 0 ? (
-                      <p className="text-center text-gray-400 py-8 text-sm">Nenhum modelo cadastrado</p>
+                      <EstadoVazio Icone={ClipboardList} titulo="Nenhum modelo cadastrado" />
                     ) : (
                       templates.map(tmp => (
                         <div key={tmp.id} className="border border-gray-100 dark:border-white/10 rounded-xl p-4">
@@ -5537,7 +5473,7 @@ const CrmComercial = () => {
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => setTemplateEditor({ mode: 'edit', template: tmp, form: { name: tmp.name, description: tmp.description || '', items: (tmp.items || []).map(i => ({ ...i })) } })}
-                                className="p-2 text-gray-400 hover:text-blue-500 transition-colors"
+                                className="p-2 text-gray-400 hover:text-violet-500 transition-colors"
                               >
                                 <Edit2 size={15} />
                               </button>
@@ -5676,7 +5612,7 @@ const CrmComercial = () => {
                           }
                           setTemplateEditor({ mode: 'list', template: null, form: { name: '', description: '', items: [] } });
                         }}
-                        className="flex-1 py-2.5 bg-violet-500 hover:bg-violet-600 text-white text-sm font-bold rounded-xl transition-all"
+                        className="flex-1 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold rounded-xl transition-colors"
                       >
                         {templateEditor.mode === 'create' ? 'Criar Modelo' : 'Salvar Alterações'}
                       </button>
@@ -5684,15 +5620,13 @@ const CrmComercial = () => {
                   </div>
                 )}
               </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      </Modal>
 
       {/* New Lead Modal */}
       <Modal
         isOpen={isNewLeadModalOpen}
         onClose={() => setIsNewLeadModalOpen(false)}
+        fecharAoClicarFora={false}
         title="Novo Lead"
         maxWidth="max-w-md"
         footer={
@@ -5912,7 +5846,7 @@ const CrmComercial = () => {
                 <button
                   key={color.id}
                   onClick={() => setNewColumnData(prev => ({ ...prev, color: color.id }))}
-                  className={`w-8 h-8 rounded-full ${color.class} flex items-center justify-center transition-transform hover:scale-110 ${newColumnData.color === color.id ? 'ring-2 ring-white ring-offset-2 ring-offset-[#0A0A0A]' : ''}`}
+                  className={`w-8 h-8 rounded-full ${color.class} flex items-center justify-center transition-transform hover:scale-110 ${newColumnData.color === color.id ? 'ring-2 ring-violet-500 ring-offset-2 ring-offset-dark-card' : ''}`}
                 >
                   {newColumnData.color === color.id && <Check size={14} className="text-white" />}
                 </button>
@@ -5988,7 +5922,7 @@ const CrmComercial = () => {
                   <button
                     key={color.id}
                     onClick={() => setEditColumnData(prev => prev ? ({ ...prev, color: color.id }) : null)}
-                    className={`w-8 h-8 rounded-full ${color.class} flex items-center justify-center transition-transform hover:scale-110 ${editColumnData.color === color.id ? 'ring-2 ring-white ring-offset-2 ring-offset-[#0A0A0A]' : ''}`}
+                    className={`w-8 h-8 rounded-full ${color.class} flex items-center justify-center transition-transform hover:scale-110 ${editColumnData.color === color.id ? 'ring-2 ring-violet-500 ring-offset-2 ring-offset-dark-card' : ''}`}
                   >
                     {editColumnData.color === color.id && <Check size={14} className="text-white" />}
                   </button>
@@ -6171,53 +6105,26 @@ const CrmComercial = () => {
 
 
       {/* ━━━━━━ CONFIGURAÇÕES DO CRM ━━━━━━ */}
-      <AnimatePresence>
-        {isTelefonySettingsOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setIsTelefonySettingsOpen(false)}
-            className="fixed inset-0 z-[99999] flex items-center justify-center"
-            style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              onClick={e => e.stopPropagation()}
-              className="w-full rounded-xl overflow-hidden flex flex-col bg-white dark:bg-[#13111a] border border-gray-200 dark:border-[#2d2b3d]"
-              style={{ maxWidth: 560, maxHeight: '90vh' }}
-            >
-              {/* Modal Header */}
-              <div className="flex items-center justify-between px-6 py-4 shrink-0 border-b border-gray-200 dark:border-[#2d2b3d]">
-                <h2 className="font-bold text-gray-900 dark:text-white text-lg flex items-center gap-2">
-                  <Settings size={18} className="text-violet-500" /> Configurações do CRM
-                </h2>
-                <button onClick={() => setIsTelefonySettingsOpen(false)} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
-                  <X size={18} />
-                </button>
-              </div>
-
+      {/* Antes já fechava clicando fora: mantido (cada bloco tem o próprio botão de salvar) */}
+      <Modal
+        isOpen={isTelefonySettingsOpen}
+        onClose={() => setIsTelefonySettingsOpen(false)}
+        title="Configurações do CRM"
+        icon={<Settings size={18} />}
+        maxWidth="max-w-[560px]"
+        className="max-h-[90vh]"
+        semPadding
+      >
               {/* Tabs */}
-              <div className="flex items-center gap-1 px-4 pt-3 shrink-0 border-b border-gray-200 dark:border-[#2d2b3d]">
-                {([
-                  { key: 'webhook', label: 'Webhook' },
-                  { key: 'motivos-perda', label: 'Motivos de Perda' },
-                ] as const).map(tab => (
-                  <button
-                    key={tab.key}
-                    onClick={() => setSettingsTab(tab.key)}
-                    className={`px-4 py-2.5 text-sm font-semibold transition-all border-b-2 -mb-px ${settingsTab === tab.key
-                        ? 'border-violet-600 text-violet-600 dark:border-violet-500 dark:text-violet-400'
-                        : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-                      }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+              <Abas<typeof settingsTab>
+                abas={[
+                  { id: 'webhook' as const, rotulo: 'Webhook' },
+                  { id: 'motivos-perda' as const, rotulo: 'Motivos de Perda' },
+                ]}
+                ativa={settingsTab === 'sequencias' ? 'webhook' : settingsTab}
+                onChange={setSettingsTab}
+                className="px-4 pt-3 shrink-0"
+              />
 
               {/* Tab Content */}
               <div className="overflow-y-auto flex-1 p-6 space-y-6">
@@ -6226,8 +6133,8 @@ const CrmComercial = () => {
                 {settingsTab === 'webhook' && (
                   <div className="space-y-6">
                     <div>
-                      <h3 className="text-xs font-bold uppercase tracking-widest mb-1 text-gray-500 dark:text-[#6b7280]">Integrações via Webhook</h3>
-                      <p className="text-xs text-gray-500 dark:text-[#4b5563]">Configure eventos para conectar o CRM a outras plataformas.</p>
+                      <h3 className="text-xs font-bold uppercase tracking-widest mb-1 text-gray-500 dark:text-slate-400">Integrações via Webhook</h3>
+                      <p className="text-xs text-gray-500 dark:text-slate-500">Configure eventos para conectar o CRM a outras plataformas.</p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -6235,15 +6142,15 @@ const CrmComercial = () => {
                       <div className="rounded-2xl p-5 border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 flex flex-col hover:border-emerald-500/50 transition-colors cursor-pointer group shadow-sm">
                         <div className="flex items-center gap-3 mb-4">
                           <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-500">
-                            <span className="text-xl">💬</span>
+                            <MessageCircle size={20} />
                           </div>
                           <div>
                             <p className="font-bold text-gray-900 dark:text-white text-sm">Grupo WhatsApp</p>
-                            <p className="text-xs mt-0.5 text-gray-500 dark:text-[#9ca3af]">Avisos de negócios ganhos.</p>
+                            <p className="text-xs mt-0.5 text-gray-500 dark:text-slate-400">Avisos de negócios ganhos.</p>
                           </div>
                         </div>
                         {showWebhookConfig === 'whatsapp' ? (
-                          <div className="mt-2 space-y-3 animate-in fade-in slide-in-from-top-2">
+                          <div className="mt-2 space-y-3">
                             <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">URL do Webhook (POST)</label>
                             <input
                               type="url"
@@ -6274,32 +6181,32 @@ const CrmComercial = () => {
                               onClick={() => setShowWebhookConfig('whatsapp')}
                               className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 hover:bg-emerald-500 hover:text-white hover:border-emerald-500"
                             >
-                              {crmWebhookSettings.whatsapp_webhook_url ? '✨ Editar Integração' : 'Configurar Integração'}
+                              {crmWebhookSettings.whatsapp_webhook_url ? <span className="inline-flex items-center gap-1.5"><Check size={14} className="text-emerald-500" /> Editar Integração</span> : 'Configurar Integração'}
                             </button>
                           </div>
                         )}
                       </div>
 
                       {/* Notificação Formulário */}
-                      <div className="rounded-2xl p-5 border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 flex flex-col hover:border-blue-500/50 transition-colors cursor-pointer group shadow-sm">
+                      <div className="rounded-2xl p-5 border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 flex flex-col hover:border-violet-500/50 transition-colors cursor-pointer group shadow-sm">
                         <div className="flex items-center gap-3 mb-4">
-                          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500">
-                            <span className="text-xl">📝</span>
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-violet-100 dark:bg-violet-500/10 text-violet-600 dark:text-violet-500">
+                            <FileText size={20} />
                           </div>
                           <div>
                             <p className="font-bold text-gray-900 dark:text-white text-sm">Notificação Formulário</p>
-                            <p className="text-xs mt-0.5 text-gray-500 dark:text-[#9ca3af]">Receber leads externos.</p>
+                            <p className="text-xs mt-0.5 text-gray-500 dark:text-slate-400">Receber leads externos.</p>
                           </div>
                         </div>
                         {showWebhookConfig === 'form' ? (
-                          <div className="mt-2 space-y-3 animate-in fade-in slide-in-from-top-2">
+                          <div className="mt-2 space-y-3">
                             <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">URL do Webhook (POST)</label>
                             <input
                               type="url"
                               value={crmWebhookSettings.form_webhook_url}
                               onChange={e => setCrmWebhookSettings({ ...crmWebhookSettings, form_webhook_url: e.target.value })}
                               placeholder="https://seu-webhook.com/..."
-                              className="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-blue-500 outline-none"
+                              className="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-violet-500 outline-none"
                             />
                             <div className="flex gap-2">
                               <button
@@ -6311,7 +6218,7 @@ const CrmComercial = () => {
                               <button
                                 onClick={handleSaveWebhookSettings}
                                 disabled={savingWebhookSettings}
-                                className="flex-[2] py-2 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50"
+                                className="flex-[2] py-2 rounded-lg text-xs font-semibold bg-violet-600 hover:bg-violet-700 text-white transition-colors disabled:opacity-50"
                               >
                                 {savingWebhookSettings ? 'Salvando...' : 'Salvar URL'}
                               </button>
@@ -6321,9 +6228,9 @@ const CrmComercial = () => {
                           <div className="mt-auto">
                             <button
                               onClick={() => setShowWebhookConfig('form')}
-                              className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 hover:bg-blue-500 hover:text-white hover:border-blue-500"
+                              className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 hover:bg-violet-500 hover:text-white hover:border-violet-500"
                             >
-                              {crmWebhookSettings.form_webhook_url ? '✨ Editar Integração' : 'Configurar Integração'}
+                              {crmWebhookSettings.form_webhook_url ? <span className="inline-flex items-center gap-1.5"><Check size={14} className="text-emerald-500" /> Editar Integração</span> : 'Configurar Integração'}
                             </button>
                           </div>
                         )}
@@ -6333,15 +6240,15 @@ const CrmComercial = () => {
                       <div className="rounded-2xl p-5 border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 flex flex-col hover:border-violet-500/50 transition-colors cursor-pointer group shadow-sm md:col-span-2">
                         <div className="flex items-center gap-3 mb-4">
                           <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-violet-100 dark:bg-violet-500/10 text-violet-600 dark:text-violet-500">
-                            <span className="text-xl">📥</span>
+                            <Inbox size={20} />
                           </div>
                           <div>
                             <p className="font-bold text-gray-900 dark:text-white text-sm">Receber Leads (Inbound)</p>
-                            <p className="text-xs mt-0.5 text-gray-500 dark:text-[#9ca3af]">Crie leads automaticamente injetando dados via JSON POST no CRM.</p>
+                            <p className="text-xs mt-0.5 text-gray-500 dark:text-slate-400">Crie leads automaticamente injetando dados via JSON POST no CRM.</p>
                           </div>
                         </div>
                         {showWebhookConfig === 'inbound' ? (
-                          <div className="mt-2 space-y-4 animate-in fade-in slide-in-from-top-2">
+                          <div className="mt-2 space-y-4">
                             <div className="p-3 bg-gray-50 dark:bg-black/30 rounded-lg border border-gray-200 dark:border-white/5">
                               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Sua URL Exclusiva (POST JSON)</label>
                               <div className="flex items-center gap-2">
@@ -6447,7 +6354,7 @@ const CrmComercial = () => {
                               onClick={() => setShowWebhookConfig('inbound')}
                               className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 hover:bg-violet-500 hover:text-white hover:border-violet-500"
                             >
-                              {crmWebhookSettings.inbound_kanban_id && crmWebhookSettings.inbound_coluna ? '✨ Editar Roteamento (Ativo)' : 'Configurar Roteamento'}
+                              {crmWebhookSettings.inbound_kanban_id && crmWebhookSettings.inbound_coluna ? <span className="inline-flex items-center gap-1.5"><Check size={14} className="text-emerald-500" /> Editar Roteamento (Ativo)</span> : 'Configurar Roteamento'}
                             </button>
                           </div>
                         )}
@@ -6460,13 +6367,13 @@ const CrmComercial = () => {
                 {settingsTab === 'motivos-perda' && (
                   <div className="space-y-5">
                     <div>
-                      <h3 className="text-xs font-bold uppercase tracking-widest mb-1 text-gray-500 dark:text-[#6b7280]">Motivos de Perda</h3>
-                      <p className="text-xs text-gray-500 dark:text-[#4b5563]">Cadastre os motivos pelos quais os negócios são perdidos.</p>
+                      <h3 className="text-xs font-bold uppercase tracking-widest mb-1 text-gray-500 dark:text-slate-400">Motivos de Perda</h3>
+                      <p className="text-xs text-gray-500 dark:text-slate-500">Cadastre os motivos pelos quais os negócios são perdidos.</p>
                     </div>
 
                     {/* Add Form */}
-                    <div className="rounded-xl p-4 space-y-3 bg-gray-50 border border-gray-200 dark:bg-white/5 dark:border-[#2d2b3d]">
-                      <p className="text-xs font-semibold text-gray-500 dark:text-[#9ca3af]">Novo Motivo</p>
+                    <div className="rounded-xl p-4 space-y-3 bg-gray-50 border border-gray-200 dark:bg-white/5 dark:border-white/10">
+                      <p className="text-xs font-semibold text-gray-500 dark:text-slate-400">Novo Motivo</p>
                       <div className="flex gap-2 items-center">
                         <input
                           type="text"
@@ -6474,15 +6381,14 @@ const CrmComercial = () => {
                           onChange={e => setNewLossReason(f => ({ ...f, name: e.target.value }))}
                           onKeyDown={e => e.key === 'Enter' && handleCreateLossReason()}
                           placeholder="Ex: Preço alto, Concorrência..."
-                          className="flex-1 rounded-lg px-3.5 py-2.5 text-sm outline-none transition-all text-gray-900 dark:text-white bg-white dark:bg-[#0d0b14] border border-gray-200 dark:border-[#2d2b3d] focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
+                          className="flex-1 rounded-lg px-3.5 py-2.5 text-sm outline-none transition-all text-gray-900 dark:text-white bg-white dark:bg-dark-bg border border-gray-200 dark:border-white/10 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
                         />
                         <button
                           onClick={handleCreateLossReason}
                           disabled={savingLossReason || !newLossReason.name.trim()}
-                          className="px-4 py-2.5 rounded-lg text-sm font-bold text-white transition-all disabled:opacity-40 flex items-center gap-1.5"
-                          style={{ background: '#7c3aed' }}
+                          className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-violet-600 hover:bg-violet-700 transition-colors disabled:opacity-40 flex items-center gap-1.5"
                         >
-                          {savingLossReason ? <Loader2 size={13} className="animate-spin" /> : '+'}
+                          {savingLossReason ? <Loader2 size={13} className="animate-spin" /> : <Plus size={14} />}
                           Adicionar
                         </button>
                       </div>
@@ -6491,40 +6397,37 @@ const CrmComercial = () => {
                         value={newLossReason.description}
                         onChange={e => setNewLossReason(f => ({ ...f, description: e.target.value }))}
                         placeholder="Descrição (opcional)"
-                        className="w-full rounded-lg px-3.5 py-2 text-sm outline-none transition-all text-gray-600 dark:text-gray-400 bg-white dark:bg-[#0d0b14] border border-gray-200 dark:border-[#2d2b3d] focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
+                        className="w-full rounded-lg px-3.5 py-2 text-sm outline-none transition-all text-gray-600 dark:text-gray-400 bg-white dark:bg-dark-bg border border-gray-200 dark:border-white/10 focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
                       />
                     </div>
 
                     {/* List */}
                     {lossReasons.length === 0 ? (
-                      <div className="flex flex-col items-center py-10 gap-2 text-center">
-                        <span className="text-3xl">📋</span>
-                        <p className="text-sm" style={{ color: '#6b7280' }}>Nenhum motivo cadastrado ainda.</p>
-                      </div>
+                      <EstadoVazio Icone={ClipboardList} titulo="Nenhum motivo cadastrado ainda." className="py-10" />
                     ) : (
                       <div className="space-y-2">
                         {lossReasons.map(reason => (
-                          <div key={reason.id} className="rounded-xl px-4 py-3 flex items-center gap-3 group bg-white dark:bg-white/5 border border-gray-200 dark:border-[#2d2b3d]">
+                          <div key={reason.id} className="rounded-xl px-4 py-3 flex items-center gap-3 group bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10">
                             {editingLossReason === reason.id ? (
                               <div className="flex-1 flex items-center gap-2">
                                 <input type="text" value={editLossReasonForm.name} onChange={e => setEditLossReasonForm(f => ({ ...f, name: e.target.value }))}
-                                  className="flex-1 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-white outline-none" style={{ background: 'transparent', border: '1px solid #7c3aed' }}
+                                  className="flex-1 rounded-lg px-3 py-1.5 text-sm text-dark-text outline-none bg-transparent border border-violet-600"
                                   onKeyDown={e => e.key === 'Enter' && handleUpdateLossReason(reason.id)} />
-                                <button onClick={() => handleUpdateLossReason(reason.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: '#7c3aed' }}>Salvar</button>
+                                <button onClick={() => handleUpdateLossReason(reason.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-violet-600 hover:bg-violet-700 transition-colors">Salvar</button>
                                 <button onClick={() => setEditingLossReason(null)} className="px-3 py-1.5 rounded-lg text-xs text-gray-500">Cancelar</button>
                               </div>
                             ) : (
                               <>
-                                <span className="w-3 h-3 rounded-full shrink-0" style={{ background: '#ef4444' }} />
+                                <span className="w-3 h-3 rounded-full shrink-0 bg-rose-500" />
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{reason.name}</p>
                                   {reason.description && <p className="text-xs truncate text-gray-500 dark:text-gray-400">{reason.description}</p>}
                                 </div>
                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <button onClick={() => { setEditingLossReason(reason.id); setEditLossReasonForm({ name: reason.name, description: reason.description || '', color: reason.color }); }}
-                                    className="p-1.5 rounded-lg text-xs transition-all hover:bg-white/5" style={{ color: '#9ca3af' }} title="Editar">✏️</button>
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors" title="Editar"><Pencil size={14} /></button>
                                   <button onClick={() => handleDeleteLossReason(reason.id)}
-                                    className="p-1.5 rounded-lg text-xs transition-all hover:bg-red-500/10" style={{ color: '#ef4444' }} title="Excluir">🗑</button>
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors" title="Excluir"><Trash2 size={14} /></button>
                                 </div>
                               </>
                             )}
@@ -6536,10 +6439,7 @@ const CrmComercial = () => {
                 )}
 
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </Modal>
       <GerenciarKanbansModal
         isOpen={isManageKanbansOpen}
         onClose={() => setIsManageKanbansOpen(false)}
@@ -6572,7 +6472,7 @@ const CrmComercial = () => {
               className="flex flex-col items-center gap-6 p-4"
             >
               <h2 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400 drop-shadow-[0_2px_10px_rgba(139,92,246,0.8)] filter text-center py-2 relative z-20">
-                NEGÓCIO GANHO! 🔥
+                NEGÓCIO GANHO!
               </h2>
               <div className="relative flex flex-col items-center">
                 <div className="absolute inset-0 bg-violet-600 blur-[100px] opacity-40 rounded-full scale-150"></div>
@@ -6595,14 +6495,6 @@ const CrmComercial = () => {
           </motion.div>
         )}
       </AnimatePresence>
-      {/* AIChat — modo inline, sem botão flutuante, controlado pelo header */}
-      <AIChat
-        activePage="crm-comercial"
-        userName={userData?.nome || userData?.name || user?.displayName || user?.email || undefined}
-        floatingButton={false}
-        externalOpen={showAI}
-        onExternalToggle={() => setShowAI(o => !o)}
-      />
       <MetasPopup isOpen={showMetasPopup} onClose={() => { setShowMetasPopup(false); fetchHeaderMetas(); }} />
     </div>
   );

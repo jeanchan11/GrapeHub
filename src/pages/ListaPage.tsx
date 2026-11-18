@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import SplitHeadline from '../components/SplitHeadline';
 import ListaTaskDetailModal from '../components/ListaTaskDetailModal';
+import { Modal } from '../components/ui/Modal';
+import { Abas } from '../components/ui/Abas';
+import { CarregandoBloco } from '../components/LoadingSpinner';
+import { CartaoKpi } from '../components/graficos';
 import RichTextEditor from '../components/RichTextEditor';
 import { confirmDialog } from '@/src/lib/confirm';
 import { Plus, Tag, Loader2, X, Trash2, Settings, Check, Layers, Pencil, TrendingUp, Search, ChevronDown, ChevronRight, Calendar, Users, MoreHorizontal, Circle, CheckCircle2, GripVertical, Edit2, AlertTriangle } from 'lucide-react';
@@ -103,8 +107,8 @@ const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onC
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-sm bg-dark-bg rounded-3xl border border-black/10 dark:border-white/10 shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-sm">
+      <div className="p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-black text-dark-text">Gerenciar <span className="text-violet-500">Tags</span></h2>
           <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 transition-all"><X size={16} /></button>
@@ -185,7 +189,7 @@ const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onC
           </div>
         )}
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -444,13 +448,9 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
   const proximas = pendentes.filter(t => { const d = diaDe(t as any); return !!d && d >= hoje; })
     .sort((a, b) => (diaDe(a as any) || '').localeCompare(diaDe(b as any) || '')).slice(0, 6);
 
-  const card = 'rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-white/[0.02]';
+  const card = 'rounded-2xl border border-black/10 dark:border-white/5 bg-dark-card';
   const Kpi = ({ rotulo, valor, sub, alerta }: { rotulo: string; valor: number; sub: string; alerta?: boolean }) => (
-    <div className={`px-5 py-4 rounded-2xl border ${alerta ? 'bg-rose-500/[0.06] border-rose-500/20' : 'bg-white dark:bg-white/[0.02] border-slate-200 dark:border-white/5'}`}>
-      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{rotulo}</p>
-      <p className={`text-2xl font-bold mt-1 ${alerta ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>{valor}</p>
-      <p className={`text-[11px] mt-0.5 ${alerta ? 'text-rose-400' : 'text-slate-500'}`}>{sub}</p>
-    </div>
+    <CartaoKpi titulo={rotulo} valor={valor} apoio={sub} alerta={alerta} />
   );
   const Nota = ({ titulo, cor, html, setHtml, original, setDirty, salvando, sujo }: any) => (
     <div className={`${card} p-5`}>
@@ -459,7 +459,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{titulo}</p>
         <span className="ml-auto text-[10px] font-semibold">
           {salvando ? <span className="text-violet-500 inline-flex items-center gap-1"><Loader2 size={10} className="animate-spin" /> Salvando…</span>
-            : sujo ? <span className="text-slate-500">Editado</span> : html ? <span className="text-emerald-500">✓ Salvo</span> : null}
+            : sujo ? <span className="text-slate-500">Editado</span> : html ? <span className="text-emerald-500 inline-flex items-center gap-1"><Check size={10} /> Salvo</span> : null}
         </span>
       </div>
       <RichTextEditor content={html} minHeight="140px" onChange={(h: string) => { setHtml(h); setDirty(h !== original); }} />
@@ -493,7 +493,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
           <button onClick={() => setTagsModal(true)} className="h-10 px-3 rounded-xl text-xs font-semibold text-slate-500 hover:text-violet-500 hover:bg-violet-500/10 flex items-center gap-1.5">
             <Tag size={14} /> Tags
           </button>
-          <button onClick={() => setNovaEm({})} className="h-10 px-4 rounded-xl text-sm font-bold text-white bg-violet-600 hover:bg-violet-500 shadow-lg shadow-violet-600/20 flex items-center gap-2">
+          <button onClick={() => setNovaEm({})} className="h-10 px-4 rounded-xl text-sm font-bold text-white bg-violet-600 hover:bg-violet-700 transition-colors flex items-center gap-2">
             <Plus size={16} /> Nova postagem
           </button>
         </div>
@@ -501,20 +501,18 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
 
       {/* ── Abas ── */}
       <div className="px-8 mb-6">
-        <div className="flex items-center gap-1 p-1 w-fit rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/5">
-          {([['overview', 'Visão geral', TrendingUp], ['tarefas', 'Quadro', Layers]] as const).map(([id, rotulo, I]) => (
-            <button key={id} onClick={() => setAba(id)}
-              className={`h-9 px-4 rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors ${aba === id ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}>
-              <I size={14} /> {rotulo}
-            </button>
-          ))}
-        </div>
+        <Abas
+          abas={[
+            { id: 'overview' as const, rotulo: 'Visão geral', Icone: TrendingUp },
+            { id: 'tarefas' as const, rotulo: 'Quadro', Icone: Layers },
+          ]}
+          ativa={aba}
+          onChange={id => setAba(id as 'overview' | 'tarefas')}
+        />
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-32">
-          <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-        </div>
+        <CarregandoBloco className="py-32" />
       ) : aba === 'overview' ? (
         <div className="px-8 pb-12 space-y-5">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -542,7 +540,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
                         <div className="flex items-center gap-2 text-xs">
                           <span className="w-2 h-2 rounded-full shrink-0" style={{ background: e.color }} />
                           <span className="font-semibold text-slate-700 dark:text-slate-200 truncate">{nomeEtapa(e)}</span>
-                          <span className="ml-auto font-bold text-slate-900 dark:text-white">{n}</span>
+                          <span className="ml-auto font-bold text-dark-text">{n}</span>
                         </div>
                         <div className="mt-1 ml-4 h-1 rounded-full bg-slate-100 dark:bg-white/5 overflow-hidden">
                           <div className="h-full rounded-full" style={{ width: `${pct}%`, background: e.color }} />
@@ -563,7 +561,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
                       return (
                         <button key={t.id} onClick={() => setSelectedTask(t)} className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-left hover:bg-slate-50 dark:hover:bg-white/[0.03]">
                           <div className="w-9 shrink-0 text-center">
-                            <p className="text-[13px] font-bold leading-none text-slate-900 dark:text-white">{d.slice(8, 10)}</p>
+                            <p className="text-[13px] font-bold leading-none text-dark-text">{d.slice(8, 10)}</p>
                             <p className="text-[9px] font-bold text-slate-400 uppercase">{['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][Number(d.slice(5, 7)) - 1]}</p>
                           </div>
                           <div className="min-w-0 flex-1">
@@ -589,10 +587,10 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
         <div className="pb-12">
           {/* Barra do quadro */}
           <div className="px-8 mb-4 flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-0.5 h-10 p-1 rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10">
+            <div className="flex items-center gap-0.5 h-10 p-1 rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-black/10 dark:border-white/10">
               {[{ id: 'todos', rotulo: 'Todos', cor: '' }, ...PERFIS.map(p => ({ id: p.id, rotulo: p.id, cor: p.cor })), { id: 'sem', rotulo: 'Sem perfil', cor: '#94a3b8' }].map(o => (
                 <button key={o.id} onClick={() => setPerfilFiltro(o.id)}
-                  className={`h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${perfilFiltro === o.id ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}>
+                  className={`h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${perfilFiltro === o.id ? 'bg-white dark:bg-white/10 text-dark-text shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}>
                   {o.cor && <span className="w-1.5 h-1.5 rounded-full" style={{ background: o.cor }} />}{o.rotulo}
                 </button>
               ))}
@@ -600,10 +598,10 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
             <div className="relative flex-1 min-w-[200px] max-w-[360px]">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar postagem…"
-                className="w-full h-10 pl-9 pr-3 rounded-xl text-sm bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white placeholder:text-slate-500 outline-none focus:border-violet-500/50" />
+                className="w-full h-10 pl-9 pr-3 rounded-xl text-sm bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 text-dark-text placeholder:text-slate-500 outline-none focus:border-violet-500/50" />
             </div>
             <button onClick={() => setShowCompleted(!showCompleted)}
-              className={`h-10 px-3 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-colors ${showCompleted ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : 'text-slate-500 border-slate-200 dark:border-white/10 hover:text-slate-800 dark:hover:text-white'}`}>
+              className={`h-10 px-3 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-colors ${showCompleted ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : 'text-slate-500 border-black/10 dark:border-white/10 hover:text-slate-800 dark:hover:text-white'}`}>
               <Check size={14} /> {showCompleted ? 'Todas as postadas' : 'Mostrar todas as postadas'}
             </button>
             <button onClick={() => setEtapasModal(true)} className="h-10 px-3 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 flex items-center gap-1.5 ml-auto">
@@ -679,11 +677,11 @@ function EtapasModal({ etapas, contagem, onRenomear, onCor, onApagar, onCriar, o
     if (ok) onApagar(e.id);
   };
   return (
-    <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onFechar}>
-      <div className="w-full max-w-[480px] bg-white dark:bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl" onClick={ev => ev.stopPropagation()}>
+    <Modal isOpen onClose={onFechar} semCabecalho semPadding maxWidth="max-w-[480px]">
+      <div>
         <div className="flex items-center justify-between px-6 py-4 border-b border-black/5 dark:border-white/5">
           <div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">Etapas</h3>
+            <h3 className="text-base font-bold text-dark-text">Etapas</h3>
             <p className="text-[11px] text-slate-500">As colunas do quadro, da esquerda para a direita.</p>
           </div>
           <button onClick={onFechar} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5"><X size={16} /></button>
@@ -693,7 +691,7 @@ function EtapasModal({ etapas, contagem, onRenomear, onCor, onApagar, onCriar, o
             <div key={e.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.03]">
               <div className="relative group/cor">
                 <button className="w-4 h-4 rounded-full border border-black/10" style={{ background: e.color }} title="Cor" />
-                <div className="absolute left-0 top-6 z-10 hidden group-hover/cor:flex gap-1 p-1.5 rounded-lg bg-white dark:bg-dark-card border border-black/10 dark:border-white/10 shadow-xl">
+                <div className="absolute left-0 top-6 z-10 hidden group-hover/cor:flex gap-1 p-1.5 rounded-lg bg-dark-card border border-black/10 dark:border-white/10 shadow-xl">
                   {CORES_ETAPA.map(c => <button key={c} onClick={() => onCor(e.id, c)} className="w-4 h-4 rounded-full" style={{ background: c }} />)}
                 </div>
               </div>
@@ -706,10 +704,10 @@ function EtapasModal({ etapas, contagem, onRenomear, onCor, onApagar, onCriar, o
         </div>
         <div className="flex items-center gap-2 px-6 py-4 border-t border-black/5 dark:border-white/5">
           <input value={novaLabel} onChange={ev => onCriar(ev.target.value)} onKeyDown={ev => ev.key === 'Enter' && onConfirmarCriar()} placeholder="Nova etapa…"
-            className="flex-1 px-3 py-2 rounded-lg text-sm modal-input focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
-          <button onClick={onConfirmarCriar} className="h-9 px-3 rounded-lg text-xs font-bold text-white bg-violet-600 hover:bg-violet-500 flex items-center gap-1"><Plus size={13} /> Criar</button>
+            className="flex-1 px-3 py-2 rounded-lg text-sm modal-input focus:outline-none focus:ring-2 focus:ring-violet-500/50" />
+          <button onClick={onConfirmarCriar} className="h-9 px-3 rounded-lg text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 transition-colors flex items-center gap-1"><Plus size={13} /> Criar</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

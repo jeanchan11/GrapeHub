@@ -10,7 +10,7 @@
 export const designSystem = {
 
   typography: {
-    pageTitle: 'text-3xl font-bold tracking-tight',
+    pageTitle: 'text-2xl font-black tracking-tight',
     sectionTitle: 'text-lg font-semibold text-gray-900 dark:text-white',
     cardTitle: 'text-base font-semibold text-gray-900 dark:text-white',
     label: 'text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400',
@@ -21,9 +21,10 @@ export const designSystem = {
 
   pageTitle: {
     wrapper: 'mb-6',
-    title: 'text-3xl font-black tracking-tight text-gray-900 dark:text-white',
-    titleAccent: 'text-purple-500',
-    subtitle: 'text-sm text-gray-500 dark:text-gray-400 mt-1',
+    // Mesmo tamanho do SplitHeadline padrão (18/11/2026): todas as páginas com o título em 2xl
+    title: 'text-2xl font-black tracking-tight text-dark-text',
+    titleAccent: 'text-violet-500',
+    subtitle: 'text-sm text-slate-500 dark:text-slate-400 mt-1',
   },
 
   modal: {
@@ -43,12 +44,16 @@ export const designSystem = {
   button: {
     primary: 'modal-btn-primary',
     secondary: 'modal-btn-cancel',
-    danger: 'bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition-colors',
+    danger: 'bg-rose-500 hover:bg-rose-600 text-white px-4 h-10 rounded-xl text-sm font-semibold transition-colors',
+    /** Botão principal fora de modal (18/11/2026): violeta, cantos xl, altura 40. */
+    principal: 'inline-flex items-center justify-center gap-2 h-10 px-4 whitespace-nowrap shrink-0 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold transition-colors disabled:opacity-50',
+    /** Botão secundário: borda sutil, fundo do tema. */
+    secundario: 'inline-flex items-center justify-center gap-2 h-10 px-4 whitespace-nowrap shrink-0 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:text-dark-text hover:border-violet-500/40 transition-colors disabled:opacity-50',
   },
 
   card: {
-    base: 'bg-white dark:bg-[#1a1a1a] darker:bg-[#0d0d0d] border border-gray-100 dark:border-neutral-800 darker:border-neutral-900 rounded-xl shadow-sm',
-    header: 'p-4 border-b border-gray-100 dark:border-neutral-800 darker:border-neutral-900',
+    base: 'bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-sm',
+    header: 'p-4 border-b border-black/5 dark:border-white/5',
     body: 'p-4',
   },
 
@@ -56,13 +61,13 @@ export const designSystem = {
     purple: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded-full text-xs font-medium',
     green: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full text-xs font-medium',
     red: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-2 py-0.5 rounded-full text-xs font-medium',
-    gray: 'bg-gray-100 dark:bg-neutral-800 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded-full text-xs font-medium',
+    gray: 'bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-full text-xs font-medium',
   },
 
   table: {
-    wrapper: 'w-full border border-gray-100 dark:border-neutral-800 darker:border-neutral-900 rounded-xl overflow-hidden',
-    header: 'bg-gray-50 dark:bg-neutral-900 darker:bg-black text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 px-4 py-3',
-    row: 'border-t border-gray-100 dark:border-neutral-800 darker:border-neutral-900 hover:bg-gray-50 dark:hover:bg-neutral-900 darker:hover:bg-black transition-colors',
+    wrapper: 'w-full border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden',
+    header: 'bg-slate-50 dark:bg-white/[0.03] text-[11px] font-medium text-slate-500 dark:text-slate-400 px-4 py-3',
+    row: 'border-t border-black/5 dark:border-white/5 hover:bg-violet-500/5 transition-colors',
     cell: 'px-4 py-3 text-sm text-gray-700 dark:text-gray-300',
   },
 }

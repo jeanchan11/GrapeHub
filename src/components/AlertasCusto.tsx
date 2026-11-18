@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { TrendingUp, ChevronDown } from 'lucide-react';
 import { calcularAlertasCusto, PCT_MINIMO, DIFERENCA_MINIMA, AlertaCusto } from '../lib/alertasCusto';
 import { PopupLancamentos } from './DespesasPorCategoria';
+import ThemedDropdown from './ui/ThemedDropdown';
 
 /**
  * Painel "Custos subindo" da aba Despesas do DFC. Mês de referência = o último
@@ -24,10 +25,10 @@ const AlertasCusto: React.FC<{ rows: DreRow[]; meses: string[]; grupos: string[]
   const totalSubida = alertas.reduce((s, a) => s + a.diferenca, 0);
 
   return (
-    <div className={`bg-dark-card border rounded-2xl ${alertas.length ? 'border-rose-500/30' : 'border-white/10'}`}>
+    <div className={`bg-dark-card border rounded-2xl ${alertas.length ? 'border-rose-500/30' : 'border-black/10 dark:border-white/10'}`}>
       <div className="flex items-center justify-between gap-3 flex-wrap px-5 py-4">
         <button onClick={() => setAberto(a => !a)} className="flex items-center gap-2.5 text-left min-w-0">
-          <span className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${alertas.length ? 'bg-rose-500/15 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+          <span className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${alertas.length ? 'bg-rose-500/15 text-rose-500 dark:text-rose-400' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'}`}>
             <TrendingUp size={16} />
           </span>
           <span className="min-w-0">
@@ -43,10 +44,8 @@ const AlertasCusto: React.FC<{ rows: DreRow[]; meses: string[]; grupos: string[]
           </span>
           {alertas.length > 0 && <ChevronDown size={15} className={`text-slate-500 shrink-0 transition-transform ${aberto ? 'rotate-180' : ''}`} />}
         </button>
-        <select value={mesRef} onChange={e => setMesRef(e.target.value)}
-          className="bg-black/20 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs font-bold text-dark-text outline-none">
-          {meses.slice(1).reverse().map(m => <option key={m} value={m}>{nomeMes(m)}</option>)}
-        </select>
+        <ThemedDropdown value={mesRef} onChange={setMesRef} align="right" className="w-[110px]"
+          options={meses.slice(1).reverse().map(m => ({ value: m, label: nomeMes(m) }))} />
       </div>
 
       {aberto && alertas.length > 0 && (
@@ -56,16 +55,16 @@ const AlertasCusto: React.FC<{ rows: DreRow[]; meses: string[]; grupos: string[]
           </div>
           {alertas.map(a => (
             <button key={a.structure} onClick={() => setPopup(a)}
-              className="w-full grid grid-cols-[1fr_110px_110px_130px] gap-2 items-center px-3 py-2.5 rounded-xl text-left hover:bg-white/[0.04] transition-colors">
+              className="w-full grid grid-cols-[1fr_110px_110px_130px] gap-2 items-center px-3 py-2.5 rounded-xl text-left hover:bg-black/[0.03] dark:hover:bg-white/[0.04] transition-colors">
               <span className="min-w-0">
                 <span className="block text-[13px] font-semibold text-dark-text truncate">{a.nome}</span>
                 <span className="block text-[10px] text-slate-500 truncate"><span className="font-mono">{a.structure}</span> · {a.grupo}</span>
               </span>
               <span className="text-right text-[12px] tabular-nums text-slate-400">{a.pct === null ? '—' : brl(a.media)}</span>
-              <span className="text-right text-[13px] tabular-nums font-bold text-rose-400">{brl(a.atual)}</span>
+              <span className="text-right text-[13px] tabular-nums font-bold text-rose-500 dark:text-rose-400">{brl(a.atual)}</span>
               <span className="text-right tabular-nums">
-                <span className="block text-[13px] font-bold text-rose-400">+{brl(a.diferenca)}</span>
-                <span className="block text-[10px] font-bold text-rose-300/80">{a.pct === null ? 'custo novo' : `+${a.pct.toFixed(0)}%`}</span>
+                <span className="block text-[13px] font-bold text-rose-500 dark:text-rose-400">+{brl(a.diferenca)}</span>
+                <span className="block text-[10px] font-bold text-rose-500/80 dark:text-rose-300/80">{a.pct === null ? 'custo novo' : `+${a.pct.toFixed(0)}%`}</span>
               </span>
             </button>
           ))}

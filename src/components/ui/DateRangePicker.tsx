@@ -20,12 +20,10 @@ interface Props {
 }
 
 /**
- * Date range picker (presets + calendário). Cores inline por tema (`dark`),
+ * Date range picker (presets + calendário). Cores pelos tokens do tema (--dark-card/--dark-text),
  * menu portalado pro body — funciona no app (modal/abas) e no portal do cliente.
  */
 const DateRangePicker: React.FC<Props> = ({ range, onChange, dark, align = 'right', placeholder = 'Selecionar período' }) => {
-  // Se `dark` não for informado, segue o tema do app (classe .light no <html>)
-  const isDark = dark ?? (typeof document !== 'undefined' ? !document.documentElement.classList.contains('light') : true);
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState('');
   const [selecting, setSelecting] = useState('');
@@ -36,9 +34,16 @@ const DateRangePicker: React.FC<Props> = ({ range, onChange, dark, align = 'righ
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth() + 1);
 
-  const c = isDark
-    ? { btn: '#14082e', panel: '#1c0e3a', border: 'rgba(255,255,255,0.12)', text: '#e8e6f2', muted: '#94a3b8', hover: 'rgba(255,255,255,0.08)' }
-    : { btn: '#f8fafc', panel: '#ffffff', border: 'rgba(226,232,240,1)', text: '#1e293b', muted: '#64748b', hover: '#f1f5f9' };
+  // Tokens do tema (index.html): seguem claro / escuro / escuro profundo sozinhos.
+  // A prop `dark` continua aceita (API), mas as cores vêm do <html>, como no ThemedDropdown.
+  const c = {
+    btn: 'rgb(var(--dark-card))',
+    panel: 'rgb(var(--dark-card))',
+    border: 'rgb(var(--dark-text) / 0.1)',
+    text: 'rgb(var(--dark-text))',
+    muted: '#94a3b8',
+    hover: 'rgb(var(--dark-text) / 0.06)',
+  };
   const VIOLET = '#7c3aed';
 
   useEffect(() => {
@@ -120,7 +125,7 @@ const DateRangePicker: React.FC<Props> = ({ range, onChange, dark, align = 'righ
       </button>
 
       {open && pos && createPortal(
-        <div ref={menuRef} data-picker-menu className="fixed z-[100000] rounded-2xl p-4" style={{ top: pos.top, left: pos.left, width: 320, background: c.panel, border: `1px solid ${c.border}`, boxShadow: '0 16px 40px -8px rgba(0,0,0,0.5)' }}>
+        <div ref={menuRef} data-picker-menu className="fixed z-[100000] rounded-2xl p-4" style={{ top: pos.top, left: pos.left, width: 320, background: c.panel, border: `1px solid ${c.border}`, boxShadow: '0 16px 40px -8px rgba(0,0,0,0.25)' }}>
           <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: c.muted }}>{selecting ? 'Clique na data final' : 'Selecionar Período'}</p>
 
           <div className="flex flex-wrap gap-1 mb-3 pb-3" style={{ borderBottom: `1px solid ${c.border}` }}>
@@ -154,7 +159,7 @@ const DateRangePicker: React.FC<Props> = ({ range, onChange, dark, align = 'righ
                   className={`relative h-8 w-full text-xs font-semibold ${st ? 'rounded-l-full' : ''} ${en ? 'rounded-r-full' : ''} ${!st && !en ? 'rounded-full' : ''}`}
                   style={{ background: rng ? 'rgba(124,58,237,0.15)' : 'transparent', color: (st || en) ? '#fff' : c.text }}>
                   <span className="absolute inset-0.5 flex items-center justify-center rounded-full text-xs"
-                    style={{ background: (st || en) ? VIOLET : 'transparent', boxShadow: (st || en) ? '0 2px 8px rgba(124,58,237,0.4)' : undefined, border: (isToday && !st && !en) ? '1px solid rgba(124,58,237,0.6)' : undefined }}>
+                    style={{ background: (st || en) ? VIOLET : 'transparent', border: (isToday && !st && !en) ? '1px solid rgba(124,58,237,0.6)' : undefined }}>
                     {parseInt(iso.slice(8))}
                   </span>
                 </button>

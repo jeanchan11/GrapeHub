@@ -106,6 +106,8 @@
         /* Claro (padrão) */
         .modal-overlay {
             background: rgba(15, 23, 42, 0.35);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
         }
         .modal-container {
             background: #FFFFFF;
@@ -141,7 +143,7 @@
             background: rgba(0, 0, 0, 0.60);
         }
         html.dark .modal-container {
-            background: #1E1B2E;
+            background: rgb(var(--dark-card)); /* token do tema (antes #1E1B2E fixo) */
             border: 1px solid rgba(167, 139, 250, 0.12);
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.50);
             border-radius: 22px;
@@ -171,10 +173,10 @@
 
         /* Escuro Profundo (preto) */
         html.darker .modal-overlay {
-            background: rgba(13, 11, 20, 0.90);
+            background: rgba(13, 11, 20, 0.70);
         }
         html.darker .modal-container {
-            background: #1A1726;
+            background: rgb(var(--dark-card));
             border: 1px solid #2A2640;
             box-shadow: 0 8px 40px rgba(13, 11, 20, 0.90);
             border-radius: 22px;
@@ -681,8 +683,8 @@
         window.FIREBASE_STORAGE_BUCKET = "gen-lang-client-0097262182.firebasestorage.app";
         window.FIREBASE_FIRESTORE_DATABASE_ID = "(default)";
     </script>
-  <script type="module" crossorigin src="/assets/index-DnyUIvfm.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-DYMKLH9G.css">
+  <script type="module" crossorigin src="/assets/index-CVfaX5b-.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-CvZKw5J_.css">
 </head>
 <body>
     <div id="root"></div>

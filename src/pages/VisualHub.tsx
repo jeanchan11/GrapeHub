@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import SplitHeadline from '../components/SplitHeadline';
 import { createPortal } from 'react-dom';
 import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Paperclip, Upload, MessageCircle, Clock, Image as ImageIcon, Download, Eye, Edit2, Palette, Flag, Ban, Layers, FileVideo, Globe, PlaySquare, FileSignature, MonitorPlay, ShoppingBag } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { confirmDialog } from '@/src/lib/confirm';
+import { toast } from '@/src/lib/toast';
+import { Modal } from '../components/ui/Modal';
+import { CarregandoBloco } from '../components/LoadingSpinner';
 import {
   DndContext,
   closestCorners,
@@ -380,11 +383,11 @@ const ColumnConfigModal = ({ config, onSave, onClose }: { config: ColumnConfig; 
 
   const tabs: (keyof ColumnConfig)[] = ['entregavel', 'hospedagem', 'squad'];
 
-  return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-white/10 rounded-2xl shadow-2xl w-full max-w-md flex flex-col" onClick={e => e.stopPropagation()}>
+  return (
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-md">
+      <div className="flex flex-col flex-1 min-h-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/5">
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-black/5 dark:border-white/5">
           <div>
             <h2 className="text-base font-bold text-dark-text flex items-center gap-2">
               <Settings size={18} className="text-violet-500" />
@@ -392,7 +395,7 @@ const ColumnConfigModal = ({ config, onSave, onClose }: { config: ColumnConfig; 
             </h2>
             <p className="text-[10px] text-slate-500 mt-0.5">Defina as opções e cores dos dropdowns das colunas</p>
           </div>
-          <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+          <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -409,11 +412,11 @@ const ColumnConfigModal = ({ config, onSave, onClose }: { config: ColumnConfig; 
                 className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all ${
                   isActive
                     ? `${c.bg} ${c.text} border ${c.border}`
-                    : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+                    : 'text-slate-500 hover:text-slate-300 hover:bg-black/[0.03] dark:hover:bg-white/5'
                 }`}
               >
                 {COLUMN_LABELS[tab]}
-                <span className={`ml-1.5 px-1 py-0 rounded text-[9px] ${isActive ? 'bg-white/10' : 'bg-white/5'}`}>
+                <span className={`ml-1.5 px-1 py-0 rounded text-[9px] ${isActive ? 'bg-black/5 dark:bg-white/10' : 'bg-black/[0.03] dark:bg-white/5'}`}>
                   {draft[tab].length}
                 </span>
               </button>
@@ -453,7 +456,7 @@ const ColumnConfigModal = ({ config, onSave, onClose }: { config: ColumnConfig; 
                     </div>
                     {/* Inline color picker */}
                     {isEditing && (
-                      <div className="flex items-center gap-1.5 px-3 py-2 mt-0.5 bg-white/[0.03] rounded-xl border border-white/5">
+                      <div className="flex items-center gap-1.5 px-3 py-2 mt-0.5 bg-black/[0.03] dark:bg-white/[0.03] rounded-xl border border-black/5 dark:border-white/5">
                         {COLOR_PALETTE.map(c => (
                           <button
                             key={c.id}
@@ -476,7 +479,7 @@ const ColumnConfigModal = ({ config, onSave, onClose }: { config: ColumnConfig; 
         </div>
 
         {/* Add new option */}
-        <div className="px-6 py-3 border-t border-white/5">
+        <div className="px-6 py-3 border-t border-black/5 dark:border-white/5">
           <div className="flex items-center gap-2">
             {/* Color preview for new option */}
             <button
@@ -485,7 +488,7 @@ const ColumnConfigModal = ({ config, onSave, onClose }: { config: ColumnConfig; 
                 const next = COLOR_PALETTE[(curIdx + 1) % COLOR_PALETTE.length];
                 setNewColor(next.hex);
               }}
-              className="w-6 h-6 rounded-full shrink-0 border-2 border-white/20 transition-transform hover:scale-110"
+              className="w-6 h-6 rounded-full shrink-0 border-2 border-black/10 dark:border-white/20 transition-transform hover:scale-110"
               style={{ backgroundColor: newColor }}
               title="Clique para trocar a cor"
             />
@@ -496,7 +499,7 @@ const ColumnConfigModal = ({ config, onSave, onClose }: { config: ColumnConfig; 
               onChange={e => setNewOption(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && addOption()}
               placeholder={`Nova opção para ${COLUMN_LABELS[activeTab]}...`}
-              className="flex-1 bg-white/5 border border-white/10 focus:border-violet-500/50 rounded-xl px-3 py-2 text-xs text-dark-text placeholder-slate-600 focus:outline-none transition-all"
+              className="flex-1 bg-black/[0.03] dark:bg-white/5 border border-black/10 dark:border-white/10 focus:border-violet-500/50 rounded-xl px-3 py-2 text-xs text-dark-text placeholder-slate-600 focus:outline-none transition-all"
             />
             <button
               onClick={addOption}
@@ -510,8 +513,8 @@ const ColumnConfigModal = ({ config, onSave, onClose }: { config: ColumnConfig; 
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-white/5">
-          <button onClick={onClose} className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white transition-colors">
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-black/5 dark:border-white/5">
+          <button onClick={onClose} className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-dark-text transition-colors">
             Cancelar
           </button>
           <button
@@ -523,8 +526,7 @@ const ColumnConfigModal = ({ config, onSave, onClose }: { config: ColumnConfig; 
           </button>
         </div>
       </div>
-    </div>,
-    document.body
+    </Modal>
   );
 };
 
@@ -560,7 +562,7 @@ const Avatar = ({ url, name, size = 6 }: { url?: string; name?: string; size?: n
   const initials = (name || '??').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
   const sz = `w-${size} h-${size}`;
   if (url && !error) {
-    return <img src={url} alt={name || ''} onError={() => setError(true)} className={`${sz} rounded-full object-cover border border-white/10`} />;
+    return <img src={url} alt={name || ''} onError={() => setError(true)} className={`${sz} rounded-full object-cover border border-black/10 dark:border-white/10`} />;
   }
   return (
     <div className={`${sz} rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-[9px] font-bold text-violet-300`}>
@@ -669,11 +671,11 @@ function SingleDatePicker({ value, onChange, placeholder = '—', align = 'right
         )}
       </p>
       <div className="flex items-center justify-between mb-3">
-        <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+        <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors">
           <ChevronDown size={13} className="text-slate-400 rotate-90" />
         </button>
         <span className="text-sm font-bold text-dark-text">{MESES_FULL[viewMonth - 1]} {viewYear}</span>
-        <button onClick={() => stepMonth(1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+        <button onClick={() => stepMonth(1)} className="w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors">
           <ChevronDown size={13} className="text-slate-400 -rotate-90" />
         </button>
       </div>
@@ -689,7 +691,7 @@ function SingleDatePicker({ value, onChange, placeholder = '—', align = 'right
             <button key={iso}
               onClick={() => { onChange(iso); setOpen(false); }}
               className={`relative h-8 w-full text-xs font-semibold transition-all rounded-full
-                ${isSelected ? 'text-white' : 'text-dark-text hover:text-violet-600 hover:bg-white/5'}`}
+                ${isSelected ? 'text-white' : 'text-dark-text hover:text-violet-600 hover:bg-black/[0.03] dark:hover:bg-white/5'}`}
             >
               <span className={`absolute inset-0.5 flex items-center justify-center rounded-full text-xs
                 ${isSelected ? 'bg-violet-600 shadow-md shadow-violet-500/30' : ''}
@@ -804,11 +806,11 @@ const TaskFilesCell = ({ taskId }: { taskId: number }) => {
           {files.slice(0, 3).map(f => (
             <div key={f.id} className="group/thumb relative cursor-pointer" onClick={() => setPreviewFile(f)}>
               {isImg(f) ? (
-                <div className="w-7 h-7 rounded-lg overflow-hidden border border-white/10 hover:border-violet-500/60 transition-colors bg-black/20">
+                <div className="w-7 h-7 rounded-lg overflow-hidden border border-black/10 dark:border-white/10 hover:border-violet-500/60 transition-colors bg-black/20">
                   <img src={f.url} alt={f.name} className="w-full h-full object-cover" />
                 </div>
               ) : (
-                <div className={`w-7 h-7 rounded-lg border border-white/10 hover:border-violet-500/60 transition-colors flex items-center justify-center ${isPdf(f) ? 'bg-rose-500/15 text-rose-400' : 'bg-violet-500/15 text-violet-400'}`}>
+                <div className={`w-7 h-7 rounded-lg border border-black/10 dark:border-white/10 hover:border-violet-500/60 transition-colors flex items-center justify-center ${isPdf(f) ? 'bg-rose-500/15 text-rose-400' : 'bg-violet-500/15 text-violet-400'}`}>
                   <FileText size={12} />
                 </div>
               )}
@@ -841,22 +843,18 @@ const TaskFilesCell = ({ taskId }: { taskId: number }) => {
       </div>
 
       {/* Fullscreen preview */}
-      {previewFile && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-xl" onClick={() => setPreviewFile(null)}>
-          <div
-            className="bg-[#0d0d14] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-            style={{ width: '92vw', height: '92vh' }}
-            onClick={e => e.stopPropagation()}
-          >
+      {previewFile && (
+        <Modal isOpen onClose={() => setPreviewFile(null)} semCabecalho semPadding maxWidth="max-w-[92vw]">
+          <div className="flex flex-col overflow-hidden flex-1 min-h-0" style={{ width: '100%', height: '86vh' }}>
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/5 shrink-0">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-black/5 dark:border-white/5 shrink-0">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
                   isImg(previewFile) ? 'bg-violet-500/15 text-violet-400' : isPdf(previewFile) ? 'bg-rose-500/15 text-rose-400' : 'bg-violet-500/15 text-violet-400'
                 }`}>
                   <FileText size={14} />
                 </div>
-                <span className="text-sm font-bold text-white truncate">{previewFile.name}</span>
+                <span className="text-sm font-bold text-dark-text truncate">{previewFile.name}</span>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {/* Navigate arrows */}
@@ -864,14 +862,14 @@ const TaskFilesCell = ({ taskId }: { taskId: number }) => {
                   <>
                     <button
                       onClick={e => { e.stopPropagation(); const idx = files.findIndex(f => f.id === previewFile.id); setPreviewFile(files[(idx - 1 + files.length) % files.length]); }}
-                      className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                      className="p-1.5 text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
                     </button>
                     <span className="text-[10px] text-slate-600">{files.findIndex(f => f.id === previewFile.id) + 1} / {files.length}</span>
                     <button
                       onClick={e => { e.stopPropagation(); const idx = files.findIndex(f => f.id === previewFile.id); setPreviewFile(files[(idx + 1) % files.length]); }}
-                      className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                      className="p-1.5 text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
                     </button>
@@ -885,7 +883,7 @@ const TaskFilesCell = ({ taskId }: { taskId: number }) => {
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   Baixar
                 </a>
-                <button onClick={() => setPreviewFile(null)} className="p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+                <button onClick={() => setPreviewFile(null)} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors">
                   <X size={18} />
                 </button>
               </div>
@@ -909,8 +907,7 @@ const TaskFilesCell = ({ taskId }: { taskId: number }) => {
               )}
             </div>
           </div>
-        </div>,
-        document.body
+        </Modal>
       )}
     </>
   );
@@ -953,7 +950,7 @@ const OptionPicker = ({ value, options, placeholder, onChange, emptyLabel, compa
           onClick={() => setOpen(v => !v)}
           title={value || placeholder}
           className={`group/tag max-w-full inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all cursor-pointer ${
-            cs ? 'hover:brightness-125' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'
+            cs ? 'hover:brightness-125' : 'text-slate-500 hover:bg-black/[0.03] dark:hover:bg-white/5 hover:text-slate-300'
           }`}
           style={cs ? { background: cs.bg, color: cs.text } : undefined}
         >
@@ -972,7 +969,7 @@ const OptionPicker = ({ value, options, placeholder, onChange, emptyLabel, compa
       ) : (
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1.5 rounded-lg transition-all cursor-pointer px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider border hover:bg-white/5"
+        className="flex items-center gap-1.5 rounded-lg transition-all cursor-pointer px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider border hover:bg-black/[0.03] dark:hover:bg-white/5"
         style={cs ? {
           background: cs.bg,
           color: cs.text,
@@ -989,11 +986,11 @@ const OptionPicker = ({ value, options, placeholder, onChange, emptyLabel, compa
       )}
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 bg-dark-card border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[160px] animate-in fade-in slide-in-from-top-1 duration-150">
+        <div className="absolute top-full left-0 mt-1 z-50 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[160px] animate-in fade-in slide-in-from-top-1 duration-150">
           {emptyLabel !== undefined && (
             <button
               onClick={() => { onChange(null); setOpen(false); }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-500 hover:bg-white/5 transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-500 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors"
             >
               <span className="flex-1 text-left font-medium">{emptyLabel || '—'}</span>
               {!value && <Check size={14} className="text-slate-400 shrink-0" />}
@@ -1003,7 +1000,7 @@ const OptionPicker = ({ value, options, placeholder, onChange, emptyLabel, compa
             <button
               key={opt.label}
               onClick={() => { onChange(opt.label); setOpen(false); }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-dark-text hover:bg-white/5 transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-dark-text hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors"
             >
               {opt.color && (
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: opt.color }} />
@@ -1058,7 +1055,7 @@ const PriorityPicker = ({ value, onChange, compact = false }: {
         <button
           onClick={() => setOpen(v => !v)}
           className={`group/tag inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all cursor-pointer ${
-            cfg ? 'hover:brightness-125' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'
+            cfg ? 'hover:brightness-125' : 'text-slate-500 hover:bg-black/[0.03] dark:hover:bg-white/5 hover:text-slate-300'
           }`}
           style={cfg ? { background: cfg.bg, color: cfg.color } : undefined}
         >
@@ -1074,7 +1071,7 @@ const PriorityPicker = ({ value, onChange, compact = false }: {
       ) : (
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1.5 rounded-lg transition-all cursor-pointer px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider border hover:bg-white/5"
+        className="flex items-center gap-1.5 rounded-lg transition-all cursor-pointer px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider border hover:bg-black/[0.03] dark:hover:bg-white/5"
         style={cfg ? {
           background: cfg.bg,
           color: cfg.color,
@@ -1091,23 +1088,23 @@ const PriorityPicker = ({ value, onChange, compact = false }: {
       )}
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 bg-dark-card border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[160px] animate-in fade-in slide-in-from-top-1 duration-150">
+        <div className="absolute top-full left-0 mt-1 z-50 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[160px] animate-in fade-in slide-in-from-top-1 duration-150">
           <div className="px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Prioridade</div>
           {PRIORITY_OPTIONS.map(opt => (
             <button
               key={opt.value}
               onClick={() => { onChange(opt.value); setOpen(false); }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-dark-text hover:bg-white/5 transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-dark-text hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors"
             >
               <PriorityFlag color={opt.color} size={14} />
               <span className="flex-1 text-left font-medium">{opt.label}</span>
               {value === opt.value && <Check size={14} className="text-slate-400 shrink-0" />}
             </button>
           ))}
-          <div className="border-t border-white/5 mt-1 pt-1">
+          <div className="border-t border-black/5 dark:border-white/5 mt-1 pt-1">
             <button
               onClick={() => { onChange(null); setOpen(false); }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-500 hover:bg-white/5 transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-500 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors"
             >
               <Ban size={14} className="text-slate-600" />
               <span className="flex-1 text-left font-medium">Limpar</span>
@@ -1190,11 +1187,11 @@ const SortableSubtaskRow = ({
             style={{ position: 'fixed', top: subtaskRespPos.top, left: subtaskRespPos.left, zIndex: 9999, width: 192 }}
             className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto"
           >
-            <div className="px-2 py-1.5 border-b border-white/5 mb-1">
+            <div className="px-2 py-1.5 border-b border-black/5 dark:border-white/5 mb-1">
               <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
             </div>
             {cachedUsers.map((u: any) => (
-              <button key={u.id} onClick={() => handleSubtaskResponsible(sub.id, u.id, u.name, u.picture)} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
+              <button key={u.id} onClick={() => handleSubtaskResponsible(sub.id, u.id, u.name, u.picture)} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-black/[0.03] dark:hover:bg-white/5 rounded-lg text-left transition-colors">
                 <Avatar name={u.name} url={u.picture} size={5} />
                 <span className="text-xs text-dark-text truncate">{u.name}</span>
               </button>
@@ -1676,9 +1673,9 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
                 data-task-resp-portal
                 onClick={e => e.stopPropagation()}
                 style={{ position: 'fixed', top: taskRespPos.top, left: taskRespPos.left, zIndex: 9999, width: 210 }}
-                className="bg-dark-card border border-white/10 rounded-xl shadow-2xl p-1 max-h-56 overflow-y-auto"
+                className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-56 overflow-y-auto"
               >
-                <div className="px-2 py-1.5 border-b border-white/5 mb-1">
+                <div className="px-2 py-1.5 border-b border-black/5 dark:border-white/5 mb-1">
                   <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Responsáveis</span>
                 </div>
                 {cachedUsers.map(u => {
@@ -1687,7 +1684,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
                     <button
                       key={u.id}
                       onClick={(e) => { e.stopPropagation(); handleTaskResponsible(u.id, u.name, u.picture); }}
-                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors ${isSelected ? 'bg-violet-500/10' : 'hover:bg-white/5'}`}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors ${isSelected ? 'bg-violet-500/10' : 'hover:bg-black/[0.03] dark:hover:bg-white/5'}`}
                     >
                       <Avatar name={u.name} url={u.picture} size={5} />
                       <span className="text-xs text-dark-text truncate flex-1">{u.name}</span>
@@ -1817,7 +1814,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
             >{task.client_name}</span>
           )}
           {task.subtask_count > 0 && (
-            <span className="text-[10px] text-slate-500 font-mono bg-white/5 px-1.5 py-0.5 rounded">
+            <span className="text-[10px] text-slate-500 font-mono bg-black/[0.03] dark:bg-white/5 px-1.5 py-0.5 rounded">
               ↳ {task.subtask_count}
             </span>
           )}
@@ -1831,7 +1828,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
         <div className="relative shrink-0" ref={menuRef}>
           <button
             onClick={() => setShowMenu(v => !v)}
-            className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-white/10"
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-black/5 dark:hover:bg-white/10"
           >
             <MoreHorizontal size={14} />
           </button>
@@ -2023,7 +2020,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask, o
           value={editLabel}
           onChange={e => setEditLabel(e.target.value)}
           onBlur={handleSaveLabel}
-          onKeyDown={e => { if (e.key === 'Enter') handleSaveLabel(); if (e.key === 'Escape') { setEditLabel(group.label); setEditing(false); } }}
+          data-segura-esc onKeyDown={e => { if (e.key === 'Enter') handleSaveLabel(); if (e.key === 'Escape') { setEditLabel(group.label); setEditing(false); } }}
           onClick={e => e.stopPropagation()}
           className="bg-transparent border-b border-current text-current font-black uppercase tracking-widest outline-none w-40 text-inherit"
           style={{ fontSize: 'inherit' }}
@@ -2043,17 +2040,17 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask, o
     <div ref={menuRef} className="relative" onClick={e => e.stopPropagation()}>
       <button
         onClick={(e) => { e.stopPropagation(); setShowGroupMenu(v => !v); }}
-        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 hover:text-slate-300 hover:bg-white/5 transition-colors opacity-0 group-hover/header:opacity-100"
+        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 hover:text-slate-300 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors opacity-0 group-hover/header:opacity-100"
       >
         <MoreHorizontal size={14} />
       </button>
       {showGroupMenu && (
-        <div className="absolute top-8 left-0 z-50 w-56 bg-dark-card border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+        <div className="absolute top-8 left-0 z-50 w-56 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden">
           <div className="py-1">
             {/* Rename */}
             <button
               onClick={() => { setShowGroupMenu(false); setEditLabel(group.label); setEditing(true); }}
-              className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-white/5 transition-colors"
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors"
             >
               <Edit2 size={13} className="text-slate-500" />
               Renomear etapa
@@ -2063,7 +2060,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask, o
             <div className="relative">
               <button
                 onClick={() => { setShowColorPicker(v => !v); setShowEmojiPicker(false); }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-white/5 transition-colors"
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors"
               >
                 <Palette size={13} className="text-slate-500" />
                 Alterar cor
@@ -2089,7 +2086,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask, o
             <div className="relative">
               <button
                 onClick={() => { setShowEmojiPicker(v => !v); setShowColorPicker(false); }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-white/5 transition-colors"
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors"
               >
                 <span className="text-[13px] w-[13px] text-center">{group.emoji}</span>
                 Alterar emoji
@@ -2101,7 +2098,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask, o
                       <button
                         key={em}
                         onClick={() => { onUpdateGroup?.(group.id, { emoji: em }); setShowEmojiPicker(false); }}
-                        className={`w-6 h-6 rounded-lg flex items-center justify-center text-sm transition-transform hover:scale-125 hover:bg-white/10 ${em === group.emoji ? 'bg-white/15 ring-1 ring-white/20' : ''}`}
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center text-sm transition-transform hover:scale-125 hover:bg-black/5 dark:hover:bg-white/10 ${em === group.emoji ? 'bg-black/[0.07] dark:bg-white/15 ring-1 ring-white/20' : ''}`}
                       >
                         {em}
                       </button>
@@ -2111,7 +2108,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask, o
               )}
             </div>
 
-            <div className="border-t border-white/5 my-1" />
+            <div className="border-t border-black/5 dark:border-white/5 my-1" />
 
             {/* Delete */}
             <button
@@ -2136,7 +2133,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask, o
   if (group.tasks.length === 0 && !expanded) {
     return (
       <DroppableListGroup id={`group-${group.id}`} className="mb-1">
-        <div className="w-full flex items-center gap-2.5 px-4 py-2 rounded-xl hover:bg-white/[0.03] transition-colors group/header">
+        <div className="w-full flex items-center gap-2.5 px-4 py-2 rounded-xl hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors group/header">
           <div
             className="cursor-grab active:cursor-grabbing text-slate-700 hover:text-slate-400 opacity-0 group-hover/header:opacity-100 transition-opacity shrink-0"
             {...dragHandleProps?.attributes}
@@ -2191,7 +2188,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask, o
                     <motion.div
                       initial={{ opacity: 0, y: -18, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{ duration: 0.35, delay: idx * 0.06, ease: [0.32, 0.72, 0, 1] }}
+                      transition={{ duration: 0.25, delay: Math.min(idx, 8) * 0.04, ease: [0.32, 0.72, 0, 1] }}
                     >
                       <TaskRow 
                         task={task} 
@@ -2245,14 +2242,14 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-md">
+      <div className="p-6">
         <h3 className="text-sm font-bold text-dark-text mb-4">Adicionar Cliente ao VisualHub</h3>
         <div className="space-y-3">
           <input
             value={clientName} onChange={e => setClientName(e.target.value)}
             placeholder="Nome do cliente *"
-            className="w-full bg-dark-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50"
+            className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50"
           />
           <OptionPicker
             value={squad || null}
@@ -2265,17 +2262,17 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
             <div>
               <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1 block">Data Inicial</label>
               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
+                className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
             </div>
             <div>
               <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1 block">Vencimento</label>
               <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
-                className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
+                className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
             </div>
           </div>
         </div>
         <div className="flex gap-3 mt-5">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm text-slate-400 hover:bg-white/5 transition-colors">Cancelar</button>
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-black/10 dark:border-white/10 text-sm text-slate-400 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors">Cancelar</button>
           <button onClick={handleSave} disabled={saving || !clientName.trim()}
             className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-sm font-bold text-white transition-colors flex items-center justify-center gap-2">
             {saving ? <Loader2 size={14} className="animate-spin" /> : null}
@@ -2283,7 +2280,7 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -2343,8 +2340,8 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-lg" className="max-h-[85vh]" fecharComEsc={!selectedItem}>
+      <div className="flex flex-col flex-1 min-h-0">
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-black/5 dark:border-white/5">
           <div>
@@ -2354,7 +2351,7 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
             </h2>
             <p className="text-[10px] text-slate-500 mt-0.5">Subtarefas criadas automaticamente para cada novo cliente</p>
           </div>
-          <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+          <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -2363,7 +2360,7 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {loading ? (
             <div className="flex justify-center py-8">
-              <div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+              <Loader2 size={20} className="animate-spin text-violet-500" />
             </div>
           ) : items.length === 0 ? (
             <p className="text-center text-slate-600 text-sm py-8">Nenhuma subtarefa no modelo ainda.</p>
@@ -2433,17 +2430,17 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
         const itemIdx = items.findIndex(i => i.id === selectedItem.id);
         if (itemIdx === -1) return null;
         return (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setSelectedItem(null)}>
-            <div className="bg-dark-card border border-white/10 rounded-2xl shadow-2xl w-full max-w-7xl h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <Modal isOpen onClose={() => setSelectedItem(null)} semCabecalho semPadding maxWidth="max-w-7xl" className="h-[92vh]">
+            <div className="flex flex-col flex-1 min-h-0">
               {/* Header */}
-              <div className="flex items-center justify-between px-6 py-5 border-b border-white/5">
+              <div className="flex items-center justify-between px-6 py-5 border-b border-black/5 dark:border-white/5">
                 <div>
                   <h2 className="text-lg font-bold text-dark-text">{selectedItem.title}</h2>
                   <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-widest">
                     Modelo de subtarefa — o conteúdo aqui será copiado para cada novo cliente
                   </p>
                 </div>
-                <button onClick={() => setSelectedItem(null)} className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-xl transition-colors">
+                <button onClick={() => setSelectedItem(null)} className="p-2 text-slate-500 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-xl transition-colors">
                   <X size={18} />
                 </button>
               </div>
@@ -2481,17 +2478,17 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-4 border-t border-white/5 flex items-center justify-end gap-3">
+              <div className="px-6 py-4 border-t border-black/5 dark:border-white/5 flex items-center justify-end gap-3">
                 <button onClick={() => setSelectedItem(null)}
                   className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-sm font-bold text-white transition-colors">
                   Fechar
                 </button>
               </div>
             </div>
-          </div>
+          </Modal>
         );
       })()}
-    </div>
+    </Modal>
   );
 };// ── Task Detail Modal ─────────────────────────────────────
 
@@ -2560,7 +2557,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
       onUpdate();
     } catch (e: any) {
       setEditNameValue(task.client_name);
-      alert(`Não foi possível renomear a tarefa: ${e.message}`);
+      toast.error(`Não foi possível renomear a tarefa: ${e.message}`);
     }
   };
 
@@ -2744,15 +2741,11 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
   const hospedagemColor = findOptionColor(columnConfig.hospedagem, task.hospedagem);
   const squadColor = findOptionColor(columnConfig.squad, task.squad);
 
-  return createPortal(
-    <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="bg-dark-card border border-white/10 rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden"
-        style={{ height: '90vh', maxHeight: '90vh' }}
-        onClick={e => e.stopPropagation()}
-      >
+  return (
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-5xl" fecharComEsc={!previewFile && !commentPreviewImg}>
+      <div className="flex flex-col overflow-hidden flex-1 min-h-0" style={{ height: '90vh', maxHeight: '90vh' }}>
         {/* ─── Top Header ─── */}
-        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/5 shrink-0">
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-black/5 dark:border-white/5 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <div
               className="w-3 h-3 rounded-full shrink-0"
@@ -2764,6 +2757,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                   value={editNameValue}
                   onChange={e => setEditNameValue(e.target.value)}
                   onBlur={handleSaveName}
+                  data-segura-esc
                   onKeyDown={e => {
                     if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
                     if (e.key === 'Escape') { setEditNameValue(task.client_name); setEditingName(false); }
@@ -2813,7 +2807,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
               <Check size={13} />
               Concluir
             </button>
-            <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-white/10 rounded-lg transition-colors">
+            <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors">
               <X size={16} />
             </button>
           </div>
@@ -2823,10 +2817,10 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
         <div className="flex flex-1 min-h-0">
 
           {/* ─── LEFT PANEL: Tabs ─── */}
-          <div className="flex-1 border-r border-white/5 flex flex-col min-h-0">
+          <div className="flex-1 border-r border-black/5 dark:border-white/5 flex flex-col min-h-0">
 
             {/* Tab bar */}
-            <div className="flex items-center gap-1 px-5 pt-4 pb-0 border-b border-white/5 shrink-0">
+            <div className="flex items-center gap-1 px-5 pt-4 pb-0 border-b border-black/5 dark:border-white/5 shrink-0">
               <button
                 onClick={() => setLeftTab('geral')}
                 className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-t-lg transition-all border-b-2 -mb-px ${
@@ -3034,7 +3028,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                       onChange={e => setDescription(e.target.value)}
                       placeholder="Adicione uma descrição ou escreva com IA..."
                       rows={4}
-                      className="w-full bg-dark-bg border border-white/10 rounded-xl px-4 py-3 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors resize-none"
+                      className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors resize-none"
                     />
                     <div className="flex gap-2">
                       <button onClick={saveDescription} disabled={savingDesc}
@@ -3043,7 +3037,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                         Salvar
                       </button>
                       <button onClick={() => { setEditingDesc(false); setDescription(task.meeting_info || ''); }}
-                        className="px-3 py-1.5 text-xs text-slate-400 hover:text-white font-bold transition-colors">
+                        className="px-3 py-1.5 text-xs text-slate-400 hover:text-dark-text font-bold transition-colors">
                         Cancelar
                       </button>
                     </div>
@@ -3051,7 +3045,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                 ) : (
                   <div
                     onClick={() => setEditingDesc(true)}
-                    className="cursor-pointer bg-dark-bg border border-white/5 rounded-xl px-4 py-3 min-h-[60px] hover:border-white/10 transition-colors"
+                    className="cursor-pointer bg-dark-bg border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 min-h-[60px] hover:border-black/10 dark:hover:border-white/10 transition-colors"
                   >
                     {description ? (
                       <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">{description}</p>
@@ -3068,7 +3062,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                   <div className="flex items-center gap-2">
                     <Paperclip size={14} className="text-slate-500" />
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Anexos</span>
-                    <span className="text-[9px] bg-white/5 text-slate-500 px-1.5 py-0.5 rounded font-bold">{files.length}</span>
+                    <span className="text-[9px] bg-black/[0.03] dark:bg-white/5 text-slate-500 px-1.5 py-0.5 rounded font-bold">{files.length}</span>
                   </div>
                   <button
                     onClick={() => fileInputRef.current?.click()}
@@ -3093,7 +3087,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                   className={`border-2 border-dashed rounded-xl transition-all ${
                     isDragOver
                       ? 'border-violet-500/50 bg-violet-500/5'
-                      : 'border-white/5 hover:border-white/10'
+                      : 'border-black/5 dark:border-white/5 hover:border-black/10 dark:hover:border-white/10'
                   }`}
                   onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
                   onDragLeave={() => setIsDragOver(false)}
@@ -3104,14 +3098,14 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                 >
                   {loadingFiles ? (
                     <div className="flex justify-center py-8">
-                      <div className="w-5 h-5 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+                      <Loader2 size={18} className="animate-spin text-violet-500" />
                     </div>
                   ) : files.length === 0 && !uploading ? (
                     <div
                       className="flex flex-col items-center justify-center py-8 cursor-pointer"
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center mb-2">
+                      <div className="w-10 h-10 rounded-full bg-black/[0.03] dark:bg-white/5 flex items-center justify-center mb-2">
                         <Upload size={18} className="text-slate-600" />
                       </div>
                       <p className="text-xs text-slate-500 font-medium">Solte os arquivos aqui para <span className="text-violet-400 underline">upload</span></p>
@@ -3124,12 +3118,12 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                         {files.map(f => (
                           <div
                             key={f.id}
-                            className="group flex items-center gap-2.5 bg-white/[0.03] border border-white/5 hover:border-white/10 rounded-xl px-3 py-2.5 cursor-pointer transition-all"
+                            className="group flex items-center gap-2.5 bg-black/[0.03] dark:bg-white/[0.03] border border-black/5 dark:border-white/5 hover:border-black/10 dark:hover:border-white/10 rounded-xl px-3 py-2.5 cursor-pointer transition-all"
                             onClick={() => setPreviewFile(f)}
                           >
                             {/* Thumbnail or icon */}
                             {isImg(f) ? (
-                              <div className="w-10 h-10 rounded-lg overflow-hidden border border-white/10 shrink-0 bg-black/20">
+                              <div className="w-10 h-10 rounded-lg overflow-hidden border border-black/10 dark:border-white/10 shrink-0 bg-black/20">
                                 <img src={f.url} alt={f.name} className="w-full h-full object-cover" />
                               </div>
                             ) : (
@@ -3190,7 +3184,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                       {/* Add more button */}
                       <button
                         onClick={() => fileInputRef.current?.click()}
-                        className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] text-slate-500 hover:text-violet-400 font-semibold rounded-lg hover:bg-white/[0.03] transition-all"
+                        className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] text-slate-500 hover:text-violet-400 font-semibold rounded-lg hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-all"
                       >
                         <Plus size={11} />
                         Adicionar mais arquivos
@@ -3208,14 +3202,14 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
               <div className="flex-1 overflow-y-auto">
                 {loadingBriefing ? (
                   <div className="flex flex-col items-center justify-center py-20 gap-3">
-                    <div className="w-8 h-8 rounded-full border-2 border-violet-500/30 border-t-violet-500 animate-spin" />
+                    <Loader2 size={24} className="animate-spin text-violet-500" />
                     <span className="text-xs text-slate-500">Buscando respostas...</span>
                   </div>
                 ) : !briefingData ? (
                   <div className="flex flex-col items-center justify-center py-20 text-center px-8">
                     <div className="relative mb-5">
                       <div className="absolute inset-0 bg-slate-500/10 rounded-3xl blur-xl" />
-                      <div className="relative w-16 h-16 rounded-2xl bg-white/[0.03] border border-white/8 flex items-center justify-center">
+                      <div className="relative w-16 h-16 rounded-2xl bg-black/[0.03] dark:bg-white/[0.03] border border-black/10 dark:border-white/8 flex items-center justify-center">
                         <FileText size={26} className="text-slate-500" />
                       </div>
                     </div>
@@ -3339,7 +3333,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                   return (
                     <div>
                       {/* Header banner */}
-                      <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-emerald-500/5">
+                      <div className="px-6 py-4 border-b border-black/5 dark:border-white/5 flex items-center justify-between bg-emerald-500/5">
                         <div className="flex items-center gap-2.5">
                           <div className="w-2 h-2 rounded-full bg-emerald-400" />
                           <span className="text-xs font-bold text-emerald-400">Formulário respondido</span>
@@ -3353,14 +3347,14 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                         {SECTIONS.filter(s => hasField(s.fields)).map(section => {
                           const accent = ACCENT[section.color] || '#7c3aed';
                           return (
-                            <div key={section.title} className="rounded-xl overflow-hidden border border-white/[0.06]">
+                            <div key={section.title} className="rounded-xl overflow-hidden border border-black/10 dark:border-white/[0.06]">
                               {/* Section header */}
                               <div className="flex items-center gap-2.5 px-4 py-2.5" style={{ background: accent + '18', borderBottom: '1px solid ' + accent + '30' }}>
                                 <div className="w-1 h-4 rounded-full" style={{ background: accent }} />
                                 <span className="text-[11px] font-black uppercase tracking-widest" style={{ color: accent }}>{section.title}</span>
                               </div>
                               {/* Fields */}
-                              <div className="bg-white/[0.015] divide-y divide-white/[0.04]">
+                              <div className="bg-white/[0.015] divide-y divide-black/5 dark:divide-white/[0.04]">
                                 {section.fields.map((field: any) => {
                                   const val = fd[field.key];
                                   const isEmpty = !val || (Array.isArray(val) && val.length === 0) || val === '';
@@ -3375,7 +3369,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                                         {field.isColor ? (
                                           <div className="flex items-center gap-2">
                                             {/^#[0-9A-Fa-f]{6}$/.test(String(val)) && (
-                                              <div className="w-5 h-5 rounded-md shrink-0 border border-white/15 shadow-sm" style={{ backgroundColor: String(val) }} />
+                                              <div className="w-5 h-5 rounded-md shrink-0 border border-black/10 dark:border-white/15 shadow-sm" style={{ backgroundColor: String(val) }} />
                                             )}
                                             <span className="text-xs text-dark-text font-mono">{String(val)}</span>
                                           </div>
@@ -3417,7 +3411,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
           {/* ─── RIGHT PANEL: Activity / Comments ─── */}
           <div className="w-[360px] shrink-0 flex flex-col bg-dark-bg/50">
             {/* Activity header */}
-            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-white/5 shrink-0">
+            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-black/5 dark:border-white/5 shrink-0">
               <div className="flex items-center gap-2">
                 <MessageCircle size={14} className="text-violet-400" />
                 <span className="text-xs font-bold text-dark-text">Atividade</span>
@@ -3431,7 +3425,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
               {loadingComments ? (
                 <div className="flex justify-center py-12">
-                  <div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+                  <Loader2 size={20} className="animate-spin text-violet-500" />
                 </div>
               ) : comments.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-slate-600">
@@ -3472,7 +3466,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                           <textarea
                             value={editText}
                             onChange={e => setEditText(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEditComment(c.id); } else if (e.key === 'Escape') cancelEditComment(); }}
+                            data-segura-esc onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEditComment(c.id); } else if (e.key === 'Escape') cancelEditComment(); }}
                             autoFocus
                             rows={2}
                             className="w-full bg-dark-bg border border-violet-500/40 rounded-xl px-3 py-2 text-[13px] text-dark-text focus:outline-none resize-none leading-relaxed"
@@ -3483,7 +3477,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                           </div>
                         </div>
                       ) : (
-                      <div className="bg-dark-card border border-white/5 rounded-2xl rounded-tl-sm px-3.5 py-2.5">
+                      <div className="bg-dark-card border border-black/5 dark:border-white/5 rounded-2xl rounded-tl-sm px-3.5 py-2.5">
                         {c.text && <p className="text-[13px] text-slate-300 whitespace-pre-wrap leading-relaxed break-words select-text">{renderCommentText(c.text)}</p>}
                         {commentFiles.length > 0 && (
                           <div className={`flex flex-wrap gap-2 ${c.text ? 'mt-2' : ''}`}>
@@ -3493,7 +3487,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                                   key={fi}
                                   src={cf.url}
                                   alt={cf.name}
-                                  className="max-w-full rounded-lg border border-white/10 cursor-pointer hover:opacity-90 transition-opacity"
+                                  className="max-w-full rounded-lg border border-black/10 dark:border-white/10 cursor-pointer hover:opacity-90 transition-opacity"
                                   style={{ maxHeight: 200 }}
                                   onClick={() => setCommentPreviewImg(cf.url)}
                                 />
@@ -3502,7 +3496,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                                   key={fi}
                                   href={cf.url}
                                   download={cf.name}
-                                  className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg hover:border-violet-500/30 transition-colors text-xs text-slate-300"
+                                  className="flex items-center gap-2 px-3 py-2 bg-black/[0.03] dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg hover:border-violet-500/30 transition-colors text-xs text-slate-300"
                                   onClick={e => e.stopPropagation()}
                                 >
                                   <FileText size={14} className="text-violet-400 shrink-0" />
@@ -3523,8 +3517,8 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
             </div>
 
             {/* Comment input */}
-            <div className="border-t border-white/5 px-4 py-3 bg-dark-card/80 shrink-0">
-              <div className="bg-dark-bg border border-white/10 rounded-xl focus-within:border-violet-500/50 transition-colors overflow-hidden">
+            <div className="border-t border-black/5 dark:border-white/5 px-4 py-3 bg-dark-card/80 shrink-0">
+              <div className="bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl focus-within:border-violet-500/50 transition-colors overflow-hidden">
                 <textarea
                   value={newComment}
                   onChange={e => setNewComment(e.target.value)}
@@ -3538,13 +3532,13 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                 />
                 {/* Pending file previews */}
                 {pendingCommentFiles.length > 0 && (
-                  <div className="flex flex-wrap gap-2 px-3 py-2 border-t border-white/5">
+                  <div className="flex flex-wrap gap-2 px-3 py-2 border-t border-black/5 dark:border-white/5">
                     {pendingCommentFiles.map((pf, i) => (
                       <div key={i} className="relative group">
                         {pf.type === 'image' ? (
-                          <img src={pf.url} alt={pf.name} className="h-16 rounded-lg border border-white/10 object-cover" />
+                          <img src={pf.url} alt={pf.name} className="h-16 rounded-lg border border-black/10 dark:border-white/10 object-cover" />
                         ) : (
-                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] text-slate-400">
+                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-black/[0.03] dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg text-[10px] text-slate-400">
                             <FileText size={12} className="text-violet-400" />
                             <span className="truncate max-w-[100px]">{pf.name}</span>
                           </div>
@@ -3559,11 +3553,11 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                     ))}
                   </div>
                 )}
-                <div className="flex items-center justify-between px-3 py-2 border-t border-white/5">
+                <div className="flex items-center justify-between px-3 py-2 border-t border-black/5 dark:border-white/5">
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => commentFileInputRef.current?.click()}
-                      className="p-1.5 text-slate-500 hover:text-violet-400 hover:bg-white/5 rounded-lg transition-colors"
+                      className="p-1.5 text-slate-500 hover:text-violet-400 hover:bg-black/[0.03] dark:hover:bg-white/5 rounded-lg transition-colors"
                       title="Anexar arquivo ao comentário"
                     >
                       <Paperclip size={14} />
@@ -3595,36 +3589,32 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
       </div>
 
       {/* ─── Fullscreen file preview ─── */}
-      {previewFile && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-xl" onClick={() => setPreviewFile(null)}>
-          <div
-            className="bg-[#0d0d14] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-            style={{ width: '92vw', height: '92vh' }}
-            onClick={e => e.stopPropagation()}
-          >
+      {previewFile && (
+        <Modal isOpen onClose={() => setPreviewFile(null)} semCabecalho semPadding maxWidth="max-w-[92vw]">
+          <div className="flex flex-col overflow-hidden flex-1 min-h-0" style={{ width: '100%', height: '86vh' }}>
             {/* Preview header */}
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/5 shrink-0">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-black/5 dark:border-white/5 shrink-0">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
                   isImg(previewFile) ? 'bg-violet-500/15 text-violet-400' : isPdf(previewFile) ? 'bg-rose-500/15 text-rose-400' : 'bg-violet-500/15 text-violet-400'
                 }`}>
                   {getFileIcon(previewFile)}
                 </div>
-                <span className="text-sm font-bold text-white truncate">{previewFile.name}</span>
+                <span className="text-sm font-bold text-dark-text truncate">{previewFile.name}</span>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {files.length > 1 && (
                   <>
                     <button
                       onClick={e => { e.stopPropagation(); const idx = files.findIndex(f => f.id === previewFile.id); setPreviewFile(files[(idx - 1 + files.length) % files.length]); }}
-                      className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                      className="p-1.5 text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors"
                     >
                       <ChevronRight size={16} className="rotate-180" />
                     </button>
                     <span className="text-[10px] text-slate-600">{files.findIndex(f => f.id === previewFile.id) + 1} / {files.length}</span>
                     <button
                       onClick={e => { e.stopPropagation(); const idx = files.findIndex(f => f.id === previewFile.id); setPreviewFile(files[(idx + 1) % files.length]); }}
-                      className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                      className="p-1.5 text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors"
                     >
                       <ChevronRight size={16} />
                     </button>
@@ -3638,7 +3628,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                   <Download size={12} />
                   Baixar
                 </a>
-                <button onClick={() => setPreviewFile(null)} className="p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+                <button onClick={() => setPreviewFile(null)} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors">
                   <X size={18} />
                 </button>
               </div>
@@ -3663,8 +3653,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
               )}
             </div>
           </div>
-        </div>,
-        document.body
+        </Modal>
       )}
 
       {/* ─── Comment image lightbox ─── */}
@@ -3676,7 +3665,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
           {/* Close button */}
           <button
             onClick={() => setCommentPreviewImg(null)}
-            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-xl transition-colors"
           >
             <X size={22} />
           </button>
@@ -3707,8 +3696,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
         </div>,
         document.body
       )}
-    </div>,
-    document.body
+    </Modal>
   );
 };
 const DocEditorModal = ({ file, onSave, onClose }: { file: any; onSave: (id: number, content: string) => Promise<void>; onClose: () => void }) => {
@@ -3724,8 +3712,8 @@ const DocEditorModal = ({ file, onSave, onClose }: { file: any; onSave: (id: num
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-3xl h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-3xl" className="h-[85vh]">
+      <div className="flex flex-col flex-1 min-h-0">
         <div className="flex items-center justify-between px-6 py-4 border-b border-black/5 dark:border-white/5">
           <div>
             <h2 className="text-base font-bold text-dark-text flex items-center gap-2">
@@ -3753,7 +3741,7 @@ const DocEditorModal = ({ file, onSave, onClose }: { file: any; onSave: (id: num
           />
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -3978,8 +3966,8 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-7xl h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-7xl" className="h-[92vh]" fecharComEsc={!editingDoc}>
+      <div className="flex flex-col flex-1 min-h-0">
         
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-black/5 dark:border-white/5">
@@ -4137,7 +4125,7 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
       {editingDoc && (
         <DocEditorModal file={editingDoc} onSave={handleSaveDocContent} onClose={() => setEditingDoc(null)} />
       )}
-    </div>
+    </Modal>
   );
 };
 
@@ -4491,12 +4479,12 @@ export default function VisualHub() {
             className={`flex items-center gap-2 px-4 py-2 text-[11px] font-bold rounded-xl border transition-all duration-200 ${
               briefingLinkCopied
                 ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
-                : 'bg-dark-card border-white/10 text-dark-text hover:border-fuchsia-500/40 hover:text-fuchsia-400'
+                : 'bg-dark-card border-black/10 dark:border-white/10 text-dark-text hover:border-violet-500/30'
             }`}
           >
             {briefingLinkCopied
               ? <><Check size={13} className="text-emerald-400" />Copiado!</>
-              : <><LinkIcon size={13} className="text-fuchsia-400" />Copiar formulário</>
+              : <><LinkIcon size={13} className="text-violet-500" />Copiar formulário</>
             }
           </button>
 
@@ -4513,9 +4501,9 @@ export default function VisualHub() {
           </button>
           <button
             onClick={() => setShowColumnConfig(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-black/10 dark:border-white/10 hover:border-sky-500/30 text-dark-text text-[11px] font-bold rounded-xl transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-black/10 dark:border-white/10 hover:border-violet-500/30 text-dark-text text-[11px] font-bold rounded-xl transition-colors"
           >
-            <Tag size={14} className="text-sky-400" />
+            <Tag size={14} className="text-violet-500" />
             Configurar Colunas
           </button>
           <button
@@ -4530,9 +4518,7 @@ export default function VisualHub() {
 
       {/* ── Content ── */}
       {loading ? (
-        <div className="flex items-center justify-center py-32">
-          <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-        </div>
+        <CarregandoBloco className="py-32" />
       ) : (
         <div className="px-8 pb-12">
           <DndContext sensors={dndSensors} collisionDetection={closestCorners} onDragStart={handleDndStart} onDragOver={handleDndOver} onDragEnd={handleDndEnd}>
@@ -4542,9 +4528,9 @@ export default function VisualHub() {
             <SortableListRow key={`group-${group.id}`} id={`group-${group.id}`}>
               {({ attributes, listeners }) => (
                 <motion.div
-                  initial={{ opacity: 0, y: -24, scale: 0.985 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{ duration: 0.4, delay: gIdx * 0.08, ease: [0.32, 0.72, 0, 1] }}
+                  initial={{ opacity: 0, y: -12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, delay: Math.min(gIdx, 6) * 0.05, ease: [0.32, 0.72, 0, 1] }}
                 >
                   <GroupBlock
                     group={group}
@@ -4565,12 +4551,12 @@ export default function VisualHub() {
           </SortableContext>
           <DragOverlay dropAnimation={null}>
             {activeDragId && activeDragId.startsWith('group-') ? (
-               <div className="bg-dark-bg/80 border-t-2 border-violet-500 rounded-xl p-4 shadow-2xl">
-                 <p className="text-white text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16}/> Movendo grupo...</p>
+               <div className="bg-dark-card border-t-2 border-violet-500 rounded-xl p-4 shadow-2xl">
+                 <p className="text-dark-text text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16}/> Movendo grupo...</p>
                </div>
             ) : activeDragId && activeDragId.startsWith('task-') ? (
-               <div className="bg-white/5 border border-violet-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-md">
-                 <p className="text-white text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16}/> Movendo tarefa...</p>
+               <div className="bg-dark-card border border-violet-500/50 rounded-xl p-4 shadow-2xl">
+                 <p className="text-dark-text text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16}/> Movendo tarefa...</p>
                </div>
             ) : null}
           </DragOverlay>
@@ -4584,7 +4570,7 @@ export default function VisualHub() {
                 ref={newGroupRef}
                 value={newGroupLabel}
                 onChange={e => setNewGroupLabel(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleAddGroup(); if (e.key === 'Escape') { setAddingNewGroup(false); setNewGroupLabel(''); } }}
+                data-segura-esc onKeyDown={e => { if (e.key === 'Enter') handleAddGroup(); if (e.key === 'Escape') { setAddingNewGroup(false); setNewGroupLabel(''); } }}
                 onBlur={handleAddGroup}
                 placeholder="Nome da nova etapa..."
                 className="bg-transparent border-b border-violet-500/40 text-dark-text text-xs font-bold uppercase tracking-widest outline-none w-64 py-1 placeholder-slate-600"

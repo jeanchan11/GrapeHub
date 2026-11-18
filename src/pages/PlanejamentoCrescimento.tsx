@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
-  TrendingUp, Users, Target, DollarSign, CalendarDays, Edit2, RefreshCw, AlertTriangle, CheckCircle2 
+  TrendingUp, Users, Target, DollarSign, CalendarDays, Edit2, RefreshCw, AlertTriangle, CheckCircle2, X
 } from 'lucide-react';
+import '../components/graficos.css';
 import { PageHeader } from '../components/ui/PageHeader';
 import OptionPicker from '../components/ui/OptionPicker';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend as RechartsLegend, ResponsiveContainer 
 } from 'recharts';
-import LoadingSpinner from '../components/LoadingSpinner';
+import { CarregandoPagina } from '../components/LoadingSpinner';
+import { Modal } from '../components/ui/Modal';
 
 interface GrowthMonthData {
   id?: number;
@@ -84,7 +86,7 @@ const AnimatedNumber: React.FC<AnimNumProps> = ({ value, format = 'int', prefix 
   return <span className={className}>{prefix}{display()}{suffix}</span>;
 };
 
-export default function PlanejamentoCrescimento() {
+export default function PlanejamentoCrescimento({ pageLabel }: { pageLabel?: string } = {}) {
   const [year] = useState(2026);
   const [selectedMonth, setSelectedMonth] = useState<number>(6); // Defaults to June (6)
   const [loading, setLoading] = useState(true);
@@ -283,9 +285,7 @@ export default function PlanejamentoCrescimento() {
   // Premium loading view
   if (loading && projections.length === 0) {
     return (
-      <div className="flex items-center justify-center min-h-[75vh] w-full bg-dark-bg">
-        <LoadingSpinner size="lg" />
-      </div>
+      <CarregandoPagina />
     );
   }
 
@@ -295,9 +295,9 @@ export default function PlanejamentoCrescimento() {
         
         {/* ── Page Header ─────────────────────────────────────────── */}
         <PageHeader 
-          title="Planejamento de" 
-          titleAccent="Crescimento" 
-          subtitle="ACOMPANHAMENTO DE METAS VS RESULTADOS REAIS DE 2026"
+          title={(() => { const n = (pageLabel || 'Planejamento de Crescimento').trim(); const i = n.lastIndexOf(' '); return i > 0 ? n.slice(0, i) : ''; })()}
+          titleAccent={(() => { const n = (pageLabel || 'Planejamento de Crescimento').trim(); const i = n.lastIndexOf(' '); return i > 0 ? n.slice(i + 1) : n; })()}
+          subtitle={`Acompanhamento de metas vs resultados reais de ${year}`}
         >
           <div className="flex items-center gap-3">
             {/* Month select dropdown */}
@@ -320,7 +320,7 @@ export default function PlanejamentoCrescimento() {
             {/* Refresh button */}
             <button
               onClick={() => fetchData(true)}
-              className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors hover:bg-white/5 bg-dark-card border border-white/10"
+              title="Atualizar" className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:border-violet-500/40"
             >
               <RefreshCw size={14} className={`text-slate-400 ${spinning ? 'animate-spin' : ''}`} />
             </button>
@@ -331,7 +331,7 @@ export default function PlanejamentoCrescimento() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
           {/* Big Chart Card */}
-          <div className="lg:col-span-2 bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col justify-between">
+          <div className="lg:col-span-2 gf-cartao p-6 flex flex-col justify-between">
             <div>
               <h2 className="text-sm font-bold text-dark-text">Crescimento de Base: Projeção vs Real</h2>
               <p className="text-xs text-slate-500 mb-5 mt-0.5">Evolução acumulativa da base total de clientes ao longo do ano</p>
@@ -367,7 +367,7 @@ export default function PlanejamentoCrescimento() {
           </div>
 
           {/* Side Month Status Card */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col justify-between">
+          <div className="gf-cartao p-6 flex flex-col justify-between">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Target size={16} className="text-violet-400" />
@@ -378,7 +378,7 @@ export default function PlanejamentoCrescimento() {
               <div className="space-y-4">
                 
                 {/* Headers */}
-                <div className="grid grid-cols-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest pb-2 border-b border-white/5">
+                <div className="grid grid-cols-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest pb-2 border-b border-black/5 dark:border-white/5">
                   <span className="col-span-1">Métrica</span>
                   <span className="text-right">Meta</span>
                   <span className="text-right">Real</span>
@@ -387,7 +387,7 @@ export default function PlanejamentoCrescimento() {
 
                 {/* Metric 1: Novos Clientes */}
                 <div className="grid grid-cols-4 text-xs py-1 items-center">
-                  <span className="font-semibold text-slate-300 col-span-1">Novos</span>
+                  <span className="font-semibold text-slate-600 dark:text-slate-300 col-span-1">Novos</span>
                   <span className="text-right font-medium text-slate-400">{monthStatus.newCl.meta}</span>
                   <span className="text-right font-medium text-dark-text">{monthStatus.newCl.real !== null ? monthStatus.newCl.real : '—'}</span>
                   <span className={`text-right font-bold ${
@@ -400,7 +400,7 @@ export default function PlanejamentoCrescimento() {
 
                 {/* Metric 2: Saída (Churn) */}
                 <div className="grid grid-cols-4 text-xs py-1 items-center">
-                  <span className="font-semibold text-slate-300 col-span-1">Saídas</span>
+                  <span className="font-semibold text-slate-600 dark:text-slate-300 col-span-1">Saídas</span>
                   <span className="text-right font-medium text-slate-400">{monthStatus.churnCnt.meta}</span>
                   <span className="text-right font-medium text-dark-text">{monthStatus.churnCnt.real !== null ? monthStatus.churnCnt.real : '—'}</span>
                   <span className={`text-right font-bold ${
@@ -413,7 +413,7 @@ export default function PlanejamentoCrescimento() {
 
                 {/* Metric 3: Churn % */}
                 <div className="grid grid-cols-4 text-xs py-1 items-center">
-                  <span className="font-semibold text-slate-300 col-span-1">Churn %</span>
+                  <span className="font-semibold text-slate-600 dark:text-slate-300 col-span-1">Churn %</span>
                   <span className="text-right font-medium text-slate-400">{monthStatus.churnRate.meta.toFixed(1)}%</span>
                   <span className="text-right font-medium text-dark-text">{monthStatus.churnRate.real !== null ? `${monthStatus.churnRate.real.toFixed(1)}%` : '—'}</span>
                   <span className={`text-right font-bold ${
@@ -426,7 +426,7 @@ export default function PlanejamentoCrescimento() {
 
                 {/* Metric 4: Investimento */}
                 <div className="grid grid-cols-4 text-xs py-1 items-center">
-                  <span className="font-semibold text-slate-300 col-span-1">Tráfego</span>
+                  <span className="font-semibold text-slate-600 dark:text-slate-300 col-span-1">Tráfego</span>
                   <span className="text-right font-medium text-slate-400">{fmtBRL(monthStatus.budget.meta)}</span>
                   <span className="text-right font-medium text-dark-text">{monthStatus.budget.real !== null ? fmtBRL(monthStatus.budget.real) : '—'}</span>
                   <span className={`text-right font-bold ${
@@ -439,7 +439,7 @@ export default function PlanejamentoCrescimento() {
 
                 {/* Metric 5: CAC */}
                 <div className="grid grid-cols-4 text-xs py-1 items-center">
-                  <span className="font-semibold text-slate-300 col-span-1">CAC</span>
+                  <span className="font-semibold text-slate-600 dark:text-slate-300 col-span-1">CAC</span>
                   <span className="text-right font-medium text-slate-400">{fmtBRL(monthStatus.cac.meta)}</span>
                   <span className="text-right font-medium text-dark-text">{monthStatus.cac.real !== null ? fmtBRL(monthStatus.cac.real) : '—'}</span>
                   <span className={`text-right font-bold ${
@@ -454,7 +454,7 @@ export default function PlanejamentoCrescimento() {
             </div>
 
             {/* Strategic Callout Box */}
-            <div className="mt-6 p-4 rounded-xl border border-[#7c3aed]/10 bg-[#7c3aed]/5 text-xs text-[#b392f0]">
+            <div className="mt-6 p-4 rounded-xl border border-violet-500/10 bg-violet-500/5 text-xs text-violet-600 dark:text-violet-300">
               "O planejamento estratégico é a base para o crescimento sustentável. Acompanhe os desvios mensalmente para ajustar a rota de marketing e vendas."
             </div>
           </div>
@@ -465,7 +465,7 @@ export default function PlanejamentoCrescimento() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           
           {/* Table 1: Projections */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
+          <div className="gf-cartao p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-sm font-bold text-dark-text">PROJEÇÃO {year}</h3>
@@ -475,7 +475,7 @@ export default function PlanejamentoCrescimento() {
                 <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-violet-500/20 text-violet-400 uppercase tracking-widest">Planejado</span>
                 <button
                   onClick={() => openEditModal('projections', selectedMonth)}
-                  className="px-3 py-1 rounded-lg border border-white/10 text-xs font-semibold text-slate-300 hover:bg-white/5 transition-colors flex items-center gap-1"
+                  className="px-3 py-1 rounded-lg border border-black/10 dark:border-white/10 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors flex items-center gap-1"
                 >
                   <Edit2 size={10} /> Editar
                 </button>
@@ -485,7 +485,7 @@ export default function PlanejamentoCrescimento() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="border-b border-white/5 text-slate-500 uppercase tracking-widest text-[9px] font-bold">
+                  <tr className="border-b border-black/5 dark:border-white/5 text-slate-500 uppercase tracking-widest text-[9px] font-bold">
                     <th className="pb-2">Mês</th>
                     <th className="pb-2 text-right">Início</th>
                     <th className="pb-2 text-right">Churn %</th>
@@ -501,7 +501,7 @@ export default function PlanejamentoCrescimento() {
                       key={p.month}
                       onClick={() => setSelectedMonth(p.month)}
                       onDoubleClick={() => openEditModal('projections', p.month)}
-                      className={`border-b border-white/5 hover:bg-white/5 cursor-pointer transition-colors ${
+                      className={`border-b border-black/5 dark:border-white/5 hover:bg-black/[0.03] dark:hover:bg-white/5 cursor-pointer transition-colors ${
                         selectedMonth === p.month ? 'bg-violet-500/5' : ''
                       }`}
                     >
@@ -532,7 +532,7 @@ export default function PlanejamentoCrescimento() {
           </div>
 
           {/* Table 2: Realized */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
+          <div className="gf-cartao p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-sm font-bold text-dark-text">REALIZADO {year}</h3>
@@ -542,7 +542,7 @@ export default function PlanejamentoCrescimento() {
                 <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-emerald-500/20 text-emerald-400 uppercase tracking-widest">Atualizado</span>
                 <button
                   onClick={() => openEditModal('realized', selectedMonth)}
-                  className="px-3 py-1 rounded-lg border border-white/10 text-xs font-semibold text-slate-300 hover:bg-white/5 transition-colors flex items-center gap-1"
+                  className="px-3 py-1 rounded-lg border border-black/10 dark:border-white/10 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors flex items-center gap-1"
                 >
                   <Edit2 size={10} /> Editar
                 </button>
@@ -552,7 +552,7 @@ export default function PlanejamentoCrescimento() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="border-b border-white/5 text-slate-500 uppercase tracking-widest text-[9px] font-bold">
+                  <tr className="border-b border-black/5 dark:border-white/5 text-slate-500 uppercase tracking-widest text-[9px] font-bold">
                     <th className="pb-2">Mês</th>
                     <th className="pb-2 text-right">Início</th>
                     <th className="pb-2 text-right">Churn %</th>
@@ -570,7 +570,7 @@ export default function PlanejamentoCrescimento() {
                         key={r.month}
                         onClick={() => setSelectedMonth(r.month)}
                         onDoubleClick={() => openEditModal('realized', r.month)}
-                        className={`border-b border-white/5 hover:bg-white/5 cursor-pointer transition-colors ${
+                        className={`border-b border-black/5 dark:border-white/5 hover:bg-black/[0.03] dark:hover:bg-white/5 cursor-pointer transition-colors ${
                           selectedMonth === r.month ? 'bg-emerald-500/5' : ''
                         }`}
                       >
@@ -607,8 +607,7 @@ export default function PlanejamentoCrescimento() {
 
       {/* ── Glassmorphic Modal Editor ───────────────────────────── */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 transition-opacity">
-          <div className="relative w-full max-w-lg bg-white/95 dark:bg-[#11111b]/95 rounded-3xl border border-slate-200 dark:border-white/10 shadow-2xl p-6">
+        <Modal isOpen onClose={() => setIsModalOpen(false)} semCabecalho maxWidth="max-w-lg" fecharAoClicarFora={false}>
             
             <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-white/5 pb-3">
               <div>
@@ -622,8 +621,9 @@ export default function PlanejamentoCrescimento() {
               <button 
                 onClick={() => setIsModalOpen(false)}
                 className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-slate-100 dark:hover:bg-white/5 transition-colors text-slate-400 hover:text-slate-600 dark:hover:text-dark-text text-sm font-bold"
+                aria-label="Fechar"
               >
-                ✕
+                <X size={18} />
               </button>
             </div>
 
@@ -718,8 +718,7 @@ export default function PlanejamentoCrescimento() {
 
             </form>
 
-          </div>
-        </div>
+        </Modal>
       )}
 
     </div>

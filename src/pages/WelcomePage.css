@@ -53,7 +53,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  animation: fadeUp 0.8s ease-out both;
+  animation: fadeUp 0.4s ease-out both;
 }
 
 @keyframes fadeUp {
@@ -61,39 +61,29 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
-}
-
-@keyframes pulse-glow {
-  0%, 100% { filter: drop-shadow(0 0 8px rgba(127, 119, 221, 0.3)); }
-  50% { filter: drop-shadow(0 0 20px rgba(127, 119, 221, 0.5)); }
-}
-
 .grape-icon {
   display: inline-block;
   margin-bottom: 2rem;
-  animation: float 4s ease-in-out infinite, pulse-glow 4s ease-in-out infinite;
+  /* sem animação infinita (18/11/2026) */
 }
 
 .greeting {
   font-size: 2.2rem;
   font-weight: 500;
-  color: #E8E6F0;
+  color: rgb(var(--dark-text));
   margin-bottom: 0.6rem;
   letter-spacing: -0.02em;
 }
 
 .subtitle {
   font-size: 1rem;
-  color: #9B97B8;
+  color: rgb(var(--dark-text) / 0.6);
   line-height: 1.6;
   margin-bottom: 3rem;
 }
 
 .subtitle span {
-  color: #7F77DD;
+  color: rgb(var(--accent-color));
 }
 
 .modules-grid {
@@ -105,16 +95,11 @@
 }
 
 .module-card {
-  background: #14112A;
-  border: 1px solid rgba(127, 119, 221, 0.12);
+  background: rgb(var(--dark-card));
+  border: 1px solid rgb(var(--dark-text) / 0.08);
   border-radius: 16px;
   padding: 1.5rem 1rem;
   text-align: center;
-}
-
-html.darker .module-card {
-  background: #0A0A0A;
-  border-color: rgba(255, 255, 255, 0.05);
 }
 
 .module-icon {
@@ -133,30 +118,30 @@ html.darker .module-card {
 }
 
 .module-icon.operacional {
-  background: rgba(83, 74, 183, 0.15);
+  background: rgba(139, 92, 246, 0.15);
 }
-.module-icon.operacional svg { color: #7F77DD; }
+.module-icon.operacional svg { color: #8b5cf6; }
 
 .module-icon.comercial {
-  background: rgba(239, 159, 39, 0.15);
+  background: rgba(245, 158, 11, 0.15);
 }
-.module-icon.comercial svg { color: #EF9F27; }
+.module-icon.comercial svg { color: #f59e0b; }
 
 .module-icon.colaboradores {
-  background: rgba(29, 158, 117, 0.15);
+  background: rgba(16, 185, 129, 0.15);
 }
-.module-icon.colaboradores svg { color: #1D9E75; }
+.module-icon.colaboradores svg { color: #10b981; }
 
 .module-name {
   font-size: 0.85rem;
   font-weight: 500;
-  color: #E8E6F0;
+  color: rgb(var(--dark-text));
   margin-bottom: 0.25rem;
 }
 
 .module-desc {
   font-size: 0.72rem;
-  color: #6B6788;
+  color: rgb(var(--dark-text) / 0.5);
   line-height: 1.4;
 }
 
@@ -166,7 +151,7 @@ html.darker .module-card {
   justify-content: center;
   gap: 8px;
   font-size: 0.75rem;
-  color: #6B6788;
+  color: rgb(var(--dark-text) / 0.5);
   letter-spacing: 0.05em;
 }
 
@@ -174,7 +159,7 @@ html.darker .module-card {
   width: 3px;
   height: 3px;
   border-radius: 50%;
-  background: #534AB7;
+  background: rgb(var(--accent-color));
   opacity: 0.6;
 }
 
@@ -193,16 +178,10 @@ html.darker .module-card {
 }
 
 /* Light Mode Overrides */
-html.light .greeting { color: #1e293b; }
-html.light .subtitle { color: #64748b; }
+/* Cores de texto e cartão vêm dos tokens (--dark-text/--dark-card), que já viram no claro */
 html.light .module-card {
-  background: #ffffff;
-  border-color: rgba(124, 58, 237, 0.15);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
 }
-html.light .module-name { color: #334155; }
-html.light .module-desc { color: #94a3b8; }
-html.light .footer-line { color: #94a3b8; }
 
 /* Invert the white logo to dark gray in light mode */
 html.light .grape-icon img {

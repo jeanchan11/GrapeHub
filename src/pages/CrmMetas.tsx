@@ -8,7 +8,10 @@ import {
   Calendar, Video, Percent
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import LoadingSpinner from '../components/LoadingSpinner';
+import { CarregandoPagina } from '../components/LoadingSpinner';
+import { Modal } from '../components/ui/Modal';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
+import { designSystem } from '../design-system';
 
 // ============================================================
 // TIPOS
@@ -131,7 +134,7 @@ const getProgressColor = (pct: number) => {
   if (pct >= 100) return '#10b981';
   if (pct >= 60)  return '#f59e0b';
   if (pct >= 30)  return '#8b5cf6';
-  return '#ef4444';
+  return '#f43f5e';
 };
 
 const getStatusLabel = (pct: number) => {
@@ -285,11 +288,7 @@ export default function CrmMetas() {
   const selectedTipo = TIPOS_META.find(t => t.id === form.tipo);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[75vh] w-full">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <CarregandoPagina />;
   }
 
   return (
@@ -302,22 +301,20 @@ export default function CrmMetas() {
             text=""
             highlight="Metas"
             subtitle="Acompanhe o progresso das suas metas de vendas"
-            className="text-2xl font-black tracking-tight text-slate-800 dark:text-white"
-            subtitleClassName="text-sm text-slate-500 mt-1"
           />
         </div>
         <div className="flex items-center gap-3">
           <button
             onClick={() => fetchMetas(true)}
             disabled={refreshing}
-            className="p-2 border border-slate-200 dark:border-white/10 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+            className="p-2 border border-black/10 dark:border-white/10 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
             title="Atualizar progresso"
           >
             <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
           </button>
           <button
             onClick={openModal}
-            className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-sm font-medium transition-colors"
+            className={designSystem.button.principal}
           >
             <Plus size={16} />
             Nova Meta
@@ -327,16 +324,16 @@ export default function CrmMetas() {
 
       {/* CARDS GRID */}
       {metas.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 gap-4 text-slate-400">
-          <Target size={48} className="opacity-20" />
-          <p className="font-medium">Nenhuma meta cadastrada ainda.</p>
-          <button
-            onClick={openModal}
-            className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            Criar primeira meta
-          </button>
-        </div>
+        <EstadoVazio
+          Icone={Target}
+          titulo="Nenhuma meta cadastrada ainda."
+          className="py-24"
+          acao={
+            <button onClick={openModal} className={designSystem.button.principal}>
+              Criar primeira meta
+            </button>
+          }
+        />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
           {metas.map(meta => {
@@ -350,7 +347,7 @@ export default function CrmMetas() {
             return (
               <div
                 key={meta.id}
-                className="bg-white dark:bg-dark-card border border-slate-200 dark:border-white/5 rounded-2xl p-5 flex flex-col gap-4 hover:shadow-md transition-shadow"
+                className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-4 hover:shadow-md transition-shadow"
               >
                 {/* Header do card */}
                 <div className="flex items-start justify-between">
@@ -383,7 +380,7 @@ export default function CrmMetas() {
 
                 {meta.tipo === 'taxa_conversao' ? (
                   <div className="flex flex-col items-center justify-center py-3">
-                    <span className="text-4xl font-black tabular-nums">
+                    <span className="numero text-4xl tabular-nums">
                       {formatValue(meta.tipo, meta.metrica, meta.valor_atual)}
                     </span>
                     <span className="text-xs text-slate-400 mt-2">
@@ -394,7 +391,7 @@ export default function CrmMetas() {
                   <>
                     {/* Valor atual */}
                     <div className="flex items-end justify-between">
-                      <span className="text-3xl font-black">
+                      <span className="numero text-3xl">
                         {formatValue(meta.tipo, meta.metrica, meta.valor_atual)}
                       </span>
                       <span className="text-sm text-slate-400">
@@ -431,9 +428,9 @@ export default function CrmMetas() {
       {/* ================================================================ */}
       {/* MODAL — 2 passos                                                  */}
       {/* ================================================================ */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="relative w-full max-w-lg bg-white dark:bg-[#1C1F26] rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden">
+      {/* Não fechava clicando fora (formulário de 2 passos): mantido com fecharAoClicarFora={false} */}
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} semCabecalho semPadding fecharAoClicarFora={false} maxWidth="max-w-lg" className="overflow-hidden">
+          <div className="relative w-full">
             
             {/* Barra de progresso do wizard */}
             <div className="h-1 bg-slate-100 dark:bg-white/5">
@@ -675,8 +672,7 @@ export default function CrmMetas() {
               </div>
             )}
           </div>
-        </div>
-      )}
+      </Modal>
     </div>
   );
 }

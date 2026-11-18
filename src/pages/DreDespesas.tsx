@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
+import { CarregandoBloco } from '../components/LoadingSpinner';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
+import '../components/graficos.css';
 import DespesasPorCategoria from '../components/DespesasPorCategoria';
 import AlertasCusto from '../components/AlertasCusto';
 
@@ -73,10 +76,10 @@ const DreDespesas: React.FC = () => {
         </div>
       </div>
 
-      {loading ? <div className="py-20 text-center text-sm text-slate-500">Carregando…</div>
-        : !data ? <div className="py-20 text-center text-sm text-slate-500">Não foi possível carregar o DFC.</div>
+      {loading ? <CarregandoBloco className="py-20" />
+        : !data ? <EstadoVazio Icone={AlertTriangle} titulo="Não foi possível carregar o DFC." className="py-20" />
         : meses.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 py-20 text-center text-sm text-slate-500">Nenhum lançamento em {year}.</div>
+          <div className="gf-cartao"><EstadoVazio titulo={`Nenhum lançamento em ${year}.`} className="py-20" /></div>
         ) : (
           <>
           {/* Alerta de custo subindo — do grupo em foco */}

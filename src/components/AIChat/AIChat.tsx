@@ -1,9 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import ReactDOM from 'react-dom';
 import Lottie from 'lottie-react';
 import grapeLoader from '../../assets/grape-loader.json';
 import fredImg from '../../assets/fred.png';
 import { usePersonalityConfig } from '../../hooks/usePersonalityConfig';
+import { Modal } from '../ui/Modal';
+import {
+  History, SquarePen, Trash2, Settings, X, AlertTriangle, SendHorizontal, Check,
+  DollarSign, Handshake, TrendingUp, Grape, type LucideIcon,
+} from 'lucide-react';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -36,13 +40,14 @@ const PAGE_SECTION_MAP: Record<string, string> = {
   'todo':                 'operacional',
 };
 
-const SECTION_META: Record<string, { label: string; color: string; icon: string; fredMode: string }> = {
-  financial:   { label: 'Especialista Financeiro',  color: '#3B82F6', icon: '💰',   fredMode: 'financeiro'   },
-  crm:         { label: 'Especialista Comercial',   color: '#EF4444', icon: '🤝🔥', fredMode: 'comercial'   },
-  atividades:  { label: 'Especialista Comercial',   color: '#EF4444', icon: '🤝🔥', fredMode: 'comercial'   },
-  marketing:   { label: 'Especialista em Marketing',color: '#F97316', icon: '📈',   fredMode: 'marketing'   },
-  operacional: { label: 'Especialista Operacional', color: '#FBBF24', icon: '⚙️',   fredMode: 'operacional' },
-  general:     { label: 'Sócio Grape',              color: '#A78BFA', icon: '🍇',   fredMode: 'grape'       },
+// Ícone da área: lucide (antes emoji 💰 🤝🔥 📈 ⚙️ 🍇)
+const SECTION_META: Record<string, { label: string; color: string; icon: LucideIcon; fredMode: string }> = {
+  financial:   { label: 'Especialista Financeiro',  color: '#3B82F6', icon: DollarSign, fredMode: 'financeiro'   },
+  crm:         { label: 'Especialista Comercial',   color: '#EF4444', icon: Handshake,  fredMode: 'comercial'   },
+  atividades:  { label: 'Especialista Comercial',   color: '#EF4444', icon: Handshake,  fredMode: 'comercial'   },
+  marketing:   { label: 'Especialista em Marketing',color: '#F97316', icon: TrendingUp, fredMode: 'marketing'   },
+  operacional: { label: 'Especialista Operacional', color: '#FBBF24', icon: Settings,   fredMode: 'operacional' },
+  general:     { label: 'Sócio Grape',              color: '#A78BFA', icon: Grape,      fredMode: 'grape'       },
 };
 const HISTORY_KEY_PREFIX = 'fred_conversation_history';
 const MAX_SESSIONS = 30;
@@ -125,7 +130,7 @@ function RichMarkdown({ text }: { text: string }) {
       if (best.before) parts.push(<span key={key++}>{best.before}</span>);
 
       if (best.type === 'code')
-        parts.push(<code key={key++} style={{ background: 'rgba(124,58,237,0.15)', color: '#c4b5fd', padding: '1px 5px', borderRadius: 4, fontSize: '0.9em', fontFamily: 'monospace' }}>{best.content}</code>);
+        parts.push(<code key={key++} style={{ background: 'rgba(124,58,237,0.15)', color: '#8b5cf6', padding: '1px 5px', borderRadius: 4, fontSize: '0.9em', fontFamily: 'monospace' }}>{best.content}</code>);
       else if (best.type === 'link')
         parts.push(<a key={key++} href={best.href} target="_blank" rel="noopener noreferrer" style={{ color: '#a78bfa', textDecoration: 'underline' }}>{best.content}</a>);
       else if (best.type === 'bi')
@@ -155,7 +160,7 @@ function RichMarkdown({ text }: { text: string }) {
       nodes.push(
         <div key={i} style={{ margin: '10px 0', borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(124,58,237,0.3)' }}>
           {lang && (
-            <div style={{ background: 'rgba(124,58,237,0.3)', padding: '3px 10px', fontSize: 10, fontWeight: 700, color: '#c4b5fd', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+            <div style={{ background: 'rgba(124,58,237,0.3)', padding: '3px 10px', fontSize: 10, fontWeight: 700, color: '#8b5cf6', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
               {lang}
             </div>
           )}
@@ -183,7 +188,7 @@ function RichMarkdown({ text }: { text: string }) {
             <thead>
               <tr style={{ background: 'rgba(124,58,237,0.2)' }}>
                 {headers.map((h, hi) => (
-                  <th key={hi} style={{ padding: '6px 10px', textAlign: 'left', color: '#c4b5fd', fontWeight: 700, borderBottom: '1px solid rgba(124,58,237,0.3)', whiteSpace: 'nowrap' }}>
+                  <th key={hi} style={{ padding: '6px 10px', textAlign: 'left', color: '#8b5cf6', fontWeight: 700, borderBottom: '1px solid rgba(124,58,237,0.3)', whiteSpace: 'nowrap' }}>
                     {parseInline(h)}
                   </th>
                 ))}
@@ -399,39 +404,40 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
     return () => obs.disconnect();
   }, []);
 
+  // Superfície e texto vêm dos tokens do tema (--dark-card / --dark-text): acompanha dark e darker.
   const c = isDark ? {
-    panelBg: '#0f0f17',
-    msgsBg: '#0f0f17',
-    headerBg: '#0f0f17',
+    panelBg: 'rgb(var(--dark-card))',
+    msgsBg: 'rgb(var(--dark-card))',
+    headerBg: 'rgb(var(--dark-card))',
     border: 'rgba(255,255,255,0.08)',
     configBg: 'rgba(0,0,0,0.2)',
-    inputAreaBg: '#0f0f17',
+    inputAreaBg: 'rgb(var(--dark-card))',
     inputWrapBg: 'rgba(255,255,255,0.06)',
     inputWrapBorder: 'rgba(255,255,255,0.12)',
-    text: '#fff',
+    text: 'rgb(var(--dark-text))',
     subText: 'rgba(255,255,255,0.5)',
     labelText: 'rgba(255,255,255,0.3)',
     assistantBubbleBg: 'transparent',
-    assistantBubbleText: 'rgba(255,255,255,0.88)',
+    assistantBubbleText: 'rgb(var(--dark-text) / 0.9)',
     iconBtnBg: 'rgba(255,255,255,0.07)',
     iconBtnColor: 'rgba(255,255,255,0.5)',
     boxShadow: '0 24px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(124,58,237,0.15)',
     dotColor: '#A78BFA',
     hintText: 'rgba(255,255,255,0.2)',
   } : {
-    panelBg: '#ffffff',
-    msgsBg: '#ffffff',
-    headerBg: '#ffffff',
-    border: '#e5e7eb',
+    panelBg: 'rgb(var(--dark-card))',
+    msgsBg: 'rgb(var(--dark-card))',
+    headerBg: 'rgb(var(--dark-card))',
+    border: 'rgba(0,0,0,0.1)',
     configBg: '#f9fafb',
-    inputAreaBg: '#ffffff',
+    inputAreaBg: 'rgb(var(--dark-card))',
     inputWrapBg: '#f4f4f4',
     inputWrapBorder: '#d1d5db',
-    text: '#1a1a1a',
-    subText: '#6b7280',
+    text: 'rgb(var(--dark-text))',
+    subText: '#64748b',
     labelText: '#9ca3af',
     assistantBubbleBg: 'transparent',
-    assistantBubbleText: '#1a1a1a',
+    assistantBubbleText: 'rgb(var(--dark-text))',
     iconBtnBg: '#f3f4f6',
     iconBtnColor: '#6b7280',
     boxShadow: '0 24px 80px rgba(0,0,0,0.15), 0 0 0 1px rgba(124,58,237,0.1)',
@@ -446,17 +452,8 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
     }
   }, [messages, open]);
 
-  // ESC fecha qualquer popup aberto em cascata
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== 'Escape') return;
-      if (showConfig) { setShowConfig(false); return; }
-      if (showHistory) { setShowHistory(false); return; }
-      if (open) { setOpen(false); }
-    }
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open, showConfig, showHistory]);
+  // ESC em cascata: agora é do <Modal> — o painel do chat desliga o Esc enquanto Histórico ou
+  // Configurar estão abertos, então o Esc fecha só o de cima (mesmo comportamento de antes).
 
   // Prevent body scroll when open
   useEffect(() => {
@@ -559,48 +556,36 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
 
   const greeting = userName ? `Olá, ${userName.split(' ')[0]}!` : 'Olá!';
 
-  const modal = open ? (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 9990,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px',
-      }}
-    >
-      {/* Backdrop */}
-      <div
-        onClick={() => setOpen(false)}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'rgba(0,0,0,0.55)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-        }}
-      />
+  const SectionIcon = sectionMeta.icon;
+  const iconBtn = (ativo = false): React.CSSProperties => ({
+    width: 30, height: 30, borderRadius: 8, border: 'none', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: ativo ? 'rgba(124,58,237,0.2)' : c.iconBtnBg,
+    color: ativo ? '#8b5cf6' : c.iconBtnColor,
+  });
 
+  // Painel do chat no <Modal> padrão (portal, overlay, Esc, clique fora fecha — como antes).
+  const modal = (
+    <Modal
+      isOpen={open}
+      onClose={() => setOpen(false)}
+      semCabecalho
+      semPadding
+      fecharComEsc={!showConfig && !showHistory}
+      maxWidth="max-w-[1100px]"
+    >
       {/* Panel */}
       <div
         id="ai-chat-panel"
         style={{
           position: 'relative',
-          zIndex: 1,
           width: '100%',
-          maxWidth: 1100,
-          height: '92vh',
+          height: 'calc(100vh - 120px)',
           maxHeight: 920,
-          borderRadius: 24,
           background: c.panelBg,
-          border: `1px solid ${c.border}`,
-          boxShadow: c.boxShadow,
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          animation: 'ai-modal-in 0.2s ease',
         }}
       >
         {/* ── Header ── */}
@@ -623,8 +608,8 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
             <div style={{ fontWeight: 700, fontSize: 17, color: c.text }}>{config.nome}</div>
             <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: sectionMeta.color, flexShrink: 0 }} />
-              <span style={{ color: sectionMeta.color }}>
-                {sectionMeta.label} {sectionMeta.icon}
+              <span style={{ color: sectionMeta.color, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                {sectionMeta.label} <SectionIcon size={11} />
               </span>
             </div>
           </div>
@@ -633,48 +618,46 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
             <button
               onClick={openHistory}
               title="Histórico de conversas"
-              style={{ width: 30, height: 30, borderRadius: 8, background: showHistory ? 'rgba(124,58,237,0.3)' : c.iconBtnBg, border: 'none', color: showHistory ? '#A78BFA' : c.iconBtnColor, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >🕐</button>
+              style={iconBtn(showHistory)}
+            ><History size={15} /></button>
             <button
               onClick={newConversation}
               title="Nova conversa"
-              style={{ width: 30, height: 30, borderRadius: 8, background: c.iconBtnBg, border: 'none', color: c.iconBtnColor, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >✏️</button>
+              style={iconBtn()}
+            ><SquarePen size={15} /></button>
             <button
               onClick={clearHistory}
               title="Limpar conversa"
-              style={{ width: 30, height: 30, borderRadius: 8, background: c.iconBtnBg, border: 'none', color: c.iconBtnColor, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >🗑</button>
+              style={iconBtn()}
+            ><Trash2 size={15} /></button>
             <button
               onClick={() => setShowConfig(s => !s)}
               title="Configurar personalidade"
-              style={{ width: 30, height: 30, borderRadius: 8, background: showConfig ? 'rgba(124,58,237,0.3)' : c.iconBtnBg, border: 'none', color: showConfig ? '#A78BFA' : c.iconBtnColor, cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >⚙</button>
+              style={iconBtn(showConfig)}
+            ><Settings size={15} /></button>
             <button
               onClick={() => setOpen(false)}
               title="Fechar"
-              style={{ width: 30, height: 30, borderRadius: 8, background: c.iconBtnBg, border: 'none', color: c.iconBtnColor, cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >✕</button>
+              style={iconBtn()}
+            ><X size={16} /></button>
           </div>
         </div>
 
         {/* ── History Modal ── */}
-        {showHistory && ReactDOM.createPortal(
-          <div style={{ position: 'fixed', inset: 0, zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-            <div onClick={() => setShowHistory(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }} />
-            <div style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: 600, borderRadius: 20, background: c.panelBg, border: '1px solid rgba(124,58,237,0.4)', boxShadow: '0 24px 80px rgba(0,0,0,0.6)', overflow: 'hidden', animation: 'ai-modal-in 0.18s ease' }}>
+        <Modal isOpen={showHistory} onClose={() => setShowHistory(false)} semCabecalho semPadding maxWidth="max-w-[600px]">
+            <div style={{ position: 'relative', width: '100%', overflow: 'hidden' }}>
               {/* Header */}
-              <div style={{ padding: '18px 24px', borderBottom: '1px solid rgba(124,58,237,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(124,58,237,0.08)' }}>
+              <div style={{ padding: '18px 24px', borderBottom: `1px solid ${c.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 16, color: c.text }}>🕐 Histórico de Conversas</div>
-                  <div style={{ fontSize: 11, color: 'rgba(167,139,250,0.7)', marginTop: 3 }}>{historySessions.length} sessão(ões) salva(s)</div>
+                  <div style={{ fontWeight: 700, fontSize: 16, color: c.text, display: 'flex', alignItems: 'center', gap: 8 }}><History size={16} style={{ color: '#8b5cf6' }} /> Histórico de Conversas</div>
+                  <div style={{ fontSize: 11, color: c.subText, marginTop: 3 }}>{historySessions.length} sessão(ões) salva(s)</div>
                 </div>
-                <button onClick={() => setShowHistory(false)} style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 16 }}>✕</button>
+                <button onClick={() => setShowHistory(false)} aria-label="Fechar" style={iconBtn()}><X size={16} /></button>
               </div>
               {/* List */}
               <div style={{ maxHeight: '65vh', overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {historySessions.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '48px 0', color: 'rgba(255,255,255,0.3)', fontSize: 14 }}>
+                  <div style={{ textAlign: 'center', padding: '48px 0', color: c.subText, fontSize: 14, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                     <div style={{ width: 64, height: 64, marginBottom: 4 }}>
                 <img src={fredImg} alt="Fred" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
               </div>
@@ -686,54 +669,40 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
                   const timeStr = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
                   const msgCount = session.messages.length;
                   return (
-                    <div key={session.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.03)', cursor: 'pointer', transition: 'background 0.15s' }}
-                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(124,58,237,0.12)'}
-                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)'}
+                    <div key={session.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 12, border: `1px solid ${c.border}`, background: c.configBg, cursor: 'pointer', transition: 'background 0.15s' }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(124,58,237,0.08)'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = c.configBg}
                     >
                       <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => loadSession(session)}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: c.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{session.title}</div>
-                        <div style={{ fontSize: 11, color: 'rgba(167,139,250,0.6)', marginTop: 3 }}>{dateStr} às {timeStr} · {msgCount} mensagens</div>
+                        <div style={{ fontSize: 11, color: c.subText, marginTop: 3 }}>{dateStr} às {timeStr} · {msgCount} mensagens</div>
                       </div>
                       <button
                         onClick={() => loadSession(session)}
-                        style={{ padding: '5px 14px', fontSize: 11, fontWeight: 700, background: 'rgba(124,58,237,0.2)', color: '#A78BFA', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                        style={{ padding: '5px 14px', fontSize: 11, fontWeight: 700, background: 'rgba(124,58,237,0.12)', color: '#8b5cf6', border: '1px solid rgba(124,58,237,0.25)', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap' }}
                       >Abrir</button>
                       <button
                         onClick={e => { e.stopPropagation(); deleteSession(session.id); }}
-                        style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: 'rgba(239,68,68,0.6)', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                        style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.2)', color: '#f43f5e', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                         title="Excluir sessão"
-                      >🗑</button>
+                      ><Trash2 size={13} /></button>
                     </div>
                   );
                 })}
               </div>
             </div>
-          </div>,
-          document.body
-        )}
+        </Modal>
 
-        {/* ── Config Modal ── */}
-        {showConfig && ReactDOM.createPortal(
-          <div style={{
-            position: 'fixed', inset: 0, zIndex: 10000,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
-          }}>
-            {/* Backdrop */}
-            <div onClick={() => setShowConfig(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }} />
-            {/* Modal */}
-            <div style={{
-              position: 'relative', zIndex: 1, width: '100%', maxWidth: 680,
-              borderRadius: 20, background: c.panelBg, border: '1px solid rgba(124,58,237,0.4)',
-              boxShadow: '0 24px 80px rgba(0,0,0,0.6)', overflow: 'hidden',
-              animation: 'ai-modal-in 0.18s ease',
-            }}>
+        {/* ── Config Modal ── (formulário: clique fora não fecha; Esc e Cancelar fecham) */}
+        <Modal isOpen={showConfig} onClose={() => setShowConfig(false)} semCabecalho semPadding fecharAoClicarFora={false} maxWidth="max-w-[680px]">
+            <div style={{ position: 'relative', width: '100%', overflow: 'hidden' }}>
               {/* Header */}
-              <div style={{ padding: '18px 24px', borderBottom: '1px solid rgba(124,58,237,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(124,58,237,0.08)' }}>
+              <div style={{ padding: '18px 24px', borderBottom: `1px solid ${c.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 16, color: c.text }}>⚙ Configurar {config.nome}</div>
-                  <div style={{ fontSize: 11, color: 'rgba(167,139,250,0.7)', marginTop: 3 }}>Personalize a personalidade e instruções do assistente</div>
+                  <div style={{ fontWeight: 700, fontSize: 16, color: c.text, display: 'flex', alignItems: 'center', gap: 8 }}><Settings size={16} style={{ color: '#8b5cf6' }} /> Configurar {config.nome}</div>
+                  <div style={{ fontSize: 11, color: c.subText, marginTop: 3 }}>Personalize a personalidade e instruções do assistente</div>
                 </div>
-                <button onClick={() => setShowConfig(false)} style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 16 }}>✕</button>
+                <button onClick={() => setShowConfig(false)} aria-label="Fechar" style={iconBtn()}><X size={16} /></button>
               </div>
               {/* Body */}
               <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16, maxHeight: '70vh', overflowY: 'auto' }}>
@@ -741,13 +710,13 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                   {(['nome', 'humor'] as const).map(field => (
                     <div key={field}>
-                      <label style={{ fontSize: 11, fontWeight: 600, color: 'rgba(167,139,250,0.8)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: c.subText, display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                         {field === 'nome' ? 'Nome do assistente' : 'Humor / Tom'}
                       </label>
                       <input
                         value={config[field]}
                         onChange={e => updateField(field, e.target.value)}
-                        style={{ width: '100%', padding: '8px 12px', fontSize: 13, background: isDark ? 'rgba(255,255,255,0.06)' : '#f8fafc', border: `1px solid rgba(124,58,237,0.25)`, borderRadius: 10, color: c.text, outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.2s' }}
+                        style={{ width: '100%', padding: '8px 12px', fontSize: 13, background: c.inputWrapBg, border: `1px solid rgba(124,58,237,0.25)`, borderRadius: 10, color: c.text, outline: 'none', boxSizing: 'border-box', transition: 'border-color 0.2s' }}
                         onFocus={e => e.target.style.borderColor = 'rgba(124,58,237,0.6)'}
                         onBlur={e => e.target.style.borderColor = 'rgba(124,58,237,0.25)'}
                       />
@@ -756,12 +725,12 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
                 </div>
                 {/* Personalidade */}
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 600, color: 'rgba(167,139,250,0.8)', display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Personalidade</label>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: c.subText, display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Personalidade</label>
                   <textarea
                     value={config.personalidade}
                     onChange={e => updateField('personalidade', e.target.value)}
                     rows={4}
-                    style={{ width: '100%', padding: '10px 12px', fontSize: 13, background: isDark ? 'rgba(255,255,255,0.06)' : '#f8fafc', border: '1px solid rgba(124,58,237,0.25)', borderRadius: 10, color: c.text, outline: 'none', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.6, fontFamily: 'inherit', transition: 'border-color 0.2s' }}
+                    style={{ width: '100%', padding: '10px 12px', fontSize: 13, background: c.inputWrapBg, border: '1px solid rgba(124,58,237,0.25)', borderRadius: 10, color: c.text, outline: 'none', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.6, fontFamily: 'inherit', transition: 'border-color 0.2s' }}
                     onFocus={e => e.target.style.borderColor = 'rgba(124,58,237,0.6)'}
                     onBlur={e => e.target.style.borderColor = 'rgba(124,58,237,0.25)'}
                   />
@@ -769,36 +738,34 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
                 {/* Instruções extras */}
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: 'rgba(167,139,250,0.8)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Instruções extras</label>
-                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>{config.instrucoes_extras.length} caracteres</span>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: c.subText, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Instruções extras</label>
+                    <span style={{ fontSize: 10, color: c.labelText }}>{config.instrucoes_extras.length} caracteres</span>
                   </div>
                   <textarea
                     value={config.instrucoes_extras}
                     onChange={e => updateField('instrucoes_extras', e.target.value)}
                     rows={8}
                     placeholder="Ex: Quando o usuário pedir gráficos, use Chart.js via CDN..."
-                    style={{ width: '100%', padding: '10px 12px', fontSize: 12.5, background: isDark ? 'rgba(255,255,255,0.06)' : '#f8fafc', border: '1px solid rgba(124,58,237,0.25)', borderRadius: 10, color: c.text, outline: 'none', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.7, fontFamily: 'monospace', transition: 'border-color 0.2s' }}
+                    style={{ width: '100%', padding: '10px 12px', fontSize: 12.5, background: c.inputWrapBg, border: '1px solid rgba(124,58,237,0.25)', borderRadius: 10, color: c.text, outline: 'none', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.7, fontFamily: 'monospace', transition: 'border-color 0.2s' }}
                     onFocus={e => e.target.style.borderColor = 'rgba(124,58,237,0.6)'}
                     onBlur={e => e.target.style.borderColor = 'rgba(124,58,237,0.25)'}
                   />
                 </div>
               </div>
               {/* Footer */}
-              <div style={{ padding: '16px 24px', borderTop: '1px solid rgba(124,58,237,0.15)', display: 'flex', gap: 10, justifyContent: 'flex-end', background: 'rgba(0,0,0,0.15)' }}>
-                <button onClick={() => { resetConfig(); }} style={{ padding: '8px 18px', fontSize: 12, fontWeight: 600, background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, cursor: 'pointer' }}>
+              <div style={{ padding: '16px 24px', borderTop: `1px solid ${c.border}`, display: 'flex', gap: 10, justifyContent: 'flex-end', background: c.configBg }}>
+                <button onClick={() => { resetConfig(); }} style={{ padding: '8px 18px', fontSize: 12, fontWeight: 600, background: c.iconBtnBg, color: c.iconBtnColor, border: `1px solid ${c.border}`, borderRadius: 10, cursor: 'pointer' }}>
                   Resetar padrões
                 </button>
-                <button onClick={() => setShowConfig(false)} style={{ padding: '8px 18px', fontSize: 12, fontWeight: 600, background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, cursor: 'pointer' }}>
+                <button onClick={() => setShowConfig(false)} style={{ padding: '8px 18px', fontSize: 12, fontWeight: 600, background: c.iconBtnBg, color: c.iconBtnColor, border: `1px solid ${c.border}`, borderRadius: 10, cursor: 'pointer' }}>
                   Cancelar
                 </button>
-                <button onClick={() => { saveConfig(); setShowConfig(false); }} style={{ padding: '8px 24px', fontSize: 12, fontWeight: 700, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', color: '#fff', border: 'none', borderRadius: 10, cursor: 'pointer', boxShadow: '0 4px 16px rgba(124,58,237,0.4)' }}>
-                  ✓ Salvar configuração
+                <button onClick={() => { saveConfig(); setShowConfig(false); }} style={{ padding: '8px 24px', fontSize: 12, fontWeight: 700, background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 10, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Check size={14} /> Salvar configuração
                 </button>
               </div>
             </div>
-          </div>,
-          document.body
-        )}
+        </Modal>
 
         {/* ── Messages ── */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 24, background: c.msgsBg, fontFamily: "'General Sans', system-ui, -apple-system, sans-serif" }}>
@@ -813,8 +780,8 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
               </p>
               {isFinancialPage && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 8, padding: '6px 14px' }}>
-                  <span style={{ color: '#A78BFA', fontSize: 12 }}>✓</span>
-                  <span style={{ fontSize: 12, color: '#A78BFA', fontWeight: 600 }}>Dados financeiros disponíveis para análise</span>
+                  <Check size={13} style={{ color: '#8b5cf6' }} />
+                  <span style={{ fontSize: 12, color: '#8b5cf6', fontWeight: 600 }}>Dados financeiros disponíveis para análise</span>
                 </div>
               )}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 8 }}>
@@ -825,9 +792,9 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
                   <button
                     key={suggestion}
                     onClick={() => { setInput(suggestion); setTimeout(() => inputRef.current?.focus(), 50); }}
-                    style={{ padding: '8px 16px', fontSize: 13, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, color: 'rgba(255,255,255,0.6)', cursor: 'pointer', transition: 'all 0.15s' }}
-                    onMouseEnter={e => { (e.target as HTMLElement).style.background = 'rgba(124,58,237,0.2)'; (e.target as HTMLElement).style.color = '#A78BFA'; (e.target as HTMLElement).style.borderColor = 'rgba(124,58,237,0.4)'; }}
-                    onMouseLeave={e => { (e.target as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; (e.target as HTMLElement).style.color = 'rgba(255,255,255,0.6)'; (e.target as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)'; }}
+                    style={{ padding: '8px 16px', fontSize: 13, background: c.iconBtnBg, border: `1px solid ${c.border}`, borderRadius: 20, color: c.subText, cursor: 'pointer', transition: 'all 0.15s' }}
+                    onMouseEnter={e => { (e.target as HTMLElement).style.background = 'rgba(124,58,237,0.12)'; (e.target as HTMLElement).style.color = '#8b5cf6'; (e.target as HTMLElement).style.borderColor = 'rgba(124,58,237,0.4)'; }}
+                    onMouseLeave={e => { (e.target as HTMLElement).style.background = c.iconBtnBg; (e.target as HTMLElement).style.color = c.subText; (e.target as HTMLElement).style.borderColor = c.border; }}
                   >
                     {suggestion}
                   </button>
@@ -843,7 +810,7 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
                   <div style={{ width: 22, height: 22, flexShrink: 0 }}>
                   <img src={fredImg} alt="Fred" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
                 </div>
-                  <span style={{ fontSize: 12, color: isDark ? 'rgba(255,255,255,0.5)' : '#6b7280', fontWeight: 600, fontFamily: "'General Sans', system-ui, -apple-system, sans-serif", letterSpacing: '0.01em' }}>{config.nome}</span>
+                  <span style={{ fontSize: 12, color: c.subText, fontWeight: 600, fontFamily: "'General Sans', system-ui, -apple-system, sans-serif", letterSpacing: '0.01em' }}>{config.nome}</span>
                 </div>
               )}
               {(() => {
@@ -858,7 +825,7 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
                       background: isDark ? 'rgba(255,255,255,0.08)' : '#f0f0f0',
                       borderRadius: '18px 18px 4px 18px',
                       padding: '11px 16px',
-                      color: isDark ? 'rgba(255,255,255,0.92)' : '#1a1a1a',
+                      color: c.text,
                     }}>
                       <p style={{ margin: 0, fontSize: 15, lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: "'General Sans', system-ui, -apple-system, sans-serif" }}>{m.content}</p>
                     </div>
@@ -872,7 +839,7 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
                     background: 'transparent',
                     border: 'none',
                     padding: isHtmlContent ? '0' : '0 0 0 30px',
-                    color: isDark ? 'rgba(255,255,255,0.88)' : '#1a1a1a',
+                    color: c.assistantBubbleText,
                   }}>
                     {renderAssistantMessage(m.content, c)}
                   </div>
@@ -887,7 +854,7 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
                 <div style={{ width: 22, height: 22 }}>
                   <img src={fredImg} alt="Fred" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
                 </div>
-                <span style={{ fontSize: 12, color: isDark ? 'rgba(255,255,255,0.5)' : '#6b7280', fontWeight: 600, fontFamily: "'General Sans', system-ui, -apple-system, sans-serif" }}>{config.nome}</span>
+                <span style={{ fontSize: 12, color: c.subText, fontWeight: 600, fontFamily: "'General Sans', system-ui, -apple-system, sans-serif" }}>{config.nome}</span>
               </div>
               <div style={{ paddingLeft: 30 }}>
                 <Lottie
@@ -901,9 +868,9 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
           )}
 
           {error && (
-            <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#FCA5A5', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-              <span>⚠ {error}</span>
-              <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: '#FCA5A5', cursor: 'pointer', fontSize: 16, padding: 0 }}>✕</button>
+            <div style={{ background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.3)', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#f43f5e', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={14} style={{ flexShrink: 0 }} /> {error}</span>
+              <button onClick={() => setError(null)} aria-label="Fechar aviso" style={{ background: 'none', border: 'none', color: '#f43f5e', cursor: 'pointer', padding: 0, display: 'flex' }}><X size={15} /></button>
             </div>
           )}
 
@@ -959,15 +926,16 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
                 transition: 'background 0.2s',
                 flexShrink: 0,
               }}
-            >➤</button>
+              aria-label="Enviar"
+            ><SendHorizontal size={16} /></button>
           </div>
           <p style={{ fontSize: 10, color: c.hintText, margin: '6px 0 0', textAlign: 'center' }}>
             Enter para enviar · Shift+Enter para nova linha
           </p>
         </div>
       </div>
-    </div>
-  ) : null;
+    </Modal>
+  );
 
   return (
     <>
@@ -984,7 +952,7 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
             width: 52,
             height: 52,
             borderRadius: '50%',
-            background: open ? '#5B21B6' : 'linear-gradient(135deg,#7C3AED,#5B21B6)',
+            background: open ? '#6d28d9' : '#7c3aed',
             color: '#fff',
             border: 'none',
             cursor: 'pointer',
@@ -992,27 +960,20 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 4px 24px rgba(124,58,237,0.5)',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
             transition: 'all 0.2s',
             transform: open ? 'rotate(90deg) scale(0.9)' : 'scale(1)',
           }}
         >
           {open
-            ? <span style={{ fontSize: 18 }}>✕</span>
+            ? <X size={18} />
             : <img src={fredImg} alt="Fred" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
           }
         </button>
         )}
 
-      {/* ── Modal via Portal ── */}
-      {ReactDOM.createPortal(modal, document.body)}
-
-      <style>{`
-        @keyframes ai-modal-in {
-          from { opacity: 0; transform: scale(0.96) translateY(10px); }
-          to   { opacity: 1; transform: scale(1) translateY(0); }
-        }
-      `}</style>
+      {/* ── Modal (o <Modal> já usa portal) ── */}
+      {modal}
     </>
   );
 }

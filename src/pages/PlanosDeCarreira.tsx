@@ -4,6 +4,8 @@ import RichTextEditor from '../components/RichTextEditor';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
 import { confirmDialog } from '@/src/lib/confirm';
+import { Modal } from '../components/ui/Modal';
+import { CarregandoPagina } from '../components/LoadingSpinner';
 
 interface DocPage {
   id: string;
@@ -133,9 +135,7 @@ export default function PlanosDeCarreira({ activePage = 'default' }: PlanosDeCar
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-dark-bg">
-        <div className="w-10 h-10 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-      </div>
+      <CarregandoPagina />
     );
   }
 
@@ -144,22 +144,19 @@ export default function PlanosDeCarreira({ activePage = 'default' }: PlanosDeCar
       {/* Header */}
       <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4">
         <div>
-          <SplitHeadline text="Planos de " highlight="Carreira" className="text-2xl font-black tracking-tight text-dark-text" />
-          <p className="text-[10px] font-bold text-dark-text/30 uppercase tracking-widest mt-0.5">
-            Documentação de cargos e benefícios
-          </p>
+          <SplitHeadline text="Planos de " highlight="Carreira" subtitle="Documentação de cargos e benefícios" subtitleClassName="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5" />
         </div>
       </div>
 
       {/* Document editor */}
       <div className="px-6 md:px-8 pb-10">
         <div
-          className="flex gap-0 bg-dark-card border border-white/[0.06] rounded-2xl overflow-hidden shadow-xl"
+          className="flex gap-0 bg-dark-card border border-black/10 dark:border-white/[0.06] rounded-2xl overflow-hidden shadow-sm"
           style={{ minHeight: '70vh' }}
         >
           {/* Sidebar */}
-          <div className="w-56 flex-shrink-0 border-r border-white/[0.06] flex flex-col">
-            <div className="px-4 py-4 border-b border-white/[0.06]">
+          <div className="w-56 flex-shrink-0 border-r border-black/10 dark:border-white/[0.06] flex flex-col">
+            <div className="px-4 py-4 border-b border-black/10 dark:border-white/[0.06]">
               <p className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest">Planos</p>
             </div>
             <div className="flex-1 overflow-y-auto custom-scrollbar py-2 px-2 space-y-0.5">
@@ -169,7 +166,7 @@ export default function PlanosDeCarreira({ activePage = 'default' }: PlanosDeCar
                   className={`group flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all ${
                     activeDocPageId === page.id
                       ? 'bg-violet-600/15 text-violet-400'
-                      : 'text-dark-text/60 hover:bg-white/[0.04] hover:text-dark-text'
+                      : 'text-dark-text/60 hover:bg-black/[0.04] dark:hover:bg-white/[0.04] hover:text-dark-text'
                   }`}
                   onClick={() => switchPage(page.id)}
                 >
@@ -215,7 +212,7 @@ export default function PlanosDeCarreira({ activePage = 'default' }: PlanosDeCar
                 </div>
               ))}
             </div>
-            <div className="px-2 py-3 border-t border-white/[0.06]">
+            <div className="px-2 py-3 border-t border-black/10 dark:border-white/[0.06]">
               <button
                 onClick={createPage}
                 className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-xs font-medium text-dark-text/40 hover:text-violet-400 hover:bg-violet-500/10 transition-all"
@@ -231,7 +228,7 @@ export default function PlanosDeCarreira({ activePage = 'default' }: PlanosDeCar
             {activePage_ ? (
               <>
                 {/* Page Header */}
-                <div className="px-8 pt-6 pb-4 border-b border-white/[0.06]">
+                <div className="px-8 pt-6 pb-4 border-b border-black/10 dark:border-white/[0.06]">
                   <input
                     value={activePage_.title}
                     onChange={e => {
@@ -252,7 +249,7 @@ export default function PlanosDeCarreira({ activePage = 'default' }: PlanosDeCar
                       <button onClick={() => {
                         setTempAllowedUsers(activePage_.allowed_users || []);
                         setPermissionsModalOpen(true);
-                      }} className="ml-2 flex items-center gap-1.5 px-2 py-1 bg-white/5 hover:bg-white/10 rounded text-[10px] font-bold text-dark-text/60 hover:text-dark-text transition-colors">
+                      }} className="ml-2 flex items-center gap-1.5 px-2 py-1 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 rounded text-[10px] font-bold text-dark-text/60 hover:text-dark-text transition-colors">
                         <Lock size={10} /> {activePage_.allowed_users && activePage_.allowed_users.length > 0 ? `${activePage_.allowed_users.length} usuários restritos` : 'Público'}
                       </button>
                     )}
@@ -277,7 +274,7 @@ export default function PlanosDeCarreira({ activePage = 'default' }: PlanosDeCar
                 <p className="text-sm font-medium">Selecione um plano ou crie um novo</p>
                 <button
                   onClick={createPage}
-                  className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-bold transition-all"
+                  className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold transition-all"
                 >
                   <Plus size={13} /> Criar primeiro plano
                 </button>
@@ -289,8 +286,7 @@ export default function PlanosDeCarreira({ activePage = 'default' }: PlanosDeCar
 
       {/* Permissions Modal */}
       {permissionsModalOpen && activePage_ && (
-        <div className="fixed inset-0 z-[9999] modal-overlay flex items-center justify-center p-4" onMouseDown={e => { if (e.target === e.currentTarget) setPermissionsModalOpen(false); }}>
-          <div className="modal-container w-full max-w-md flex flex-col max-h-[85vh]">
+        <Modal isOpen onClose={() => setPermissionsModalOpen(false)} semCabecalho semPadding maxWidth="max-w-md" className="max-h-[85vh]">
             <div className="p-5 border-b modal-divider flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-bold modal-title">Permissões de Acesso</h3>
@@ -301,7 +297,7 @@ export default function PlanosDeCarreira({ activePage = 'default' }: PlanosDeCar
               </button>
             </div>
             
-            <div className="p-4 bg-violet-500/10 border-b border-violet-500/20 text-xs text-violet-400">
+            <div className="p-4 bg-violet-500/10 border-b border-violet-500/20 text-xs text-violet-600 dark:text-violet-400">
               {tempAllowedUsers.length === 0 ? (
                 <><strong>Acesso Público:</strong> Todos os usuários podem ver este plano.</>
               ) : (
@@ -313,11 +309,11 @@ export default function PlanosDeCarreira({ activePage = 'default' }: PlanosDeCar
               {systemUsers.map(u => {
                 const checked = tempAllowedUsers.includes(u.email);
                 return (
-                  <label key={u.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 cursor-pointer transition-colors border border-transparent hover:border-white/10">
+                  <label key={u.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors border border-transparent hover:border-black/10 dark:hover:border-white/10">
                     <input type="checkbox" checked={checked} onChange={e => {
                       if (e.target.checked) setTempAllowedUsers(prev => [...prev, u.email]);
                       else setTempAllowedUsers(prev => prev.filter(email => email !== u.email));
-                    }} className="w-4 h-4 rounded border-white/20 bg-dark-input text-violet-500 focus:ring-violet-500 focus:ring-offset-dark-card" />
+                    }} className="w-4 h-4 rounded border-black/20 dark:border-white/20 bg-dark-input text-violet-500 focus:ring-violet-500 focus:ring-offset-dark-card" />
                     <div className="flex items-center gap-3">
                       {u.picture ? (
                         <img src={u.picture} alt="" className="w-8 h-8 rounded-full object-cover" />
@@ -347,8 +343,7 @@ export default function PlanosDeCarreira({ activePage = 'default' }: PlanosDeCar
                 Salvar Permissões
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
     </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import {
   CalendarClock, TrendingUp, Users, MessageSquare,
   BrainCircuit, Smile, Frown, Meh, SmilePlus, Calendar, Clock,
@@ -9,7 +9,8 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer
 } from 'recharts';
-import LoadingSpinner from '../../components/LoadingSpinner';
+import { CarregandoBloco } from '../../components/LoadingSpinner';
+import { EstadoVazio } from '../../components/ui/EstadoVazio';
 import StarRow from '../../components/StarRow';
 import { auth } from '../../firebase';
 
@@ -258,9 +259,7 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-96">
-        <LoadingSpinner />
-      </div>
+      <CarregandoBloco className="h-96" />
     );
   }
 
@@ -284,7 +283,7 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         
         {/* Card 1: Próximo 1:1 */}
-        <div className="bg-slate-50 dark:bg-dark-bg/40 border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col justify-between min-h-[140px] hover:border-violet-500/20 transition-all duration-200 relative overflow-hidden group">
+        <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col justify-between min-h-[140px] hover:border-violet-500/20 transition-colors duration-200 relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-32 h-32 bg-violet-500/5 rounded-full blur-2xl group-hover:bg-violet-500/10 transition-colors pointer-events-none" />
           <div className="flex items-start gap-4">
             <div className="w-10 h-10 rounded-xl bg-violet-500/15 flex items-center justify-center text-violet-500 shrink-0">
@@ -300,7 +299,7 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
                   return (
                     <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
                       isPast ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' :
-                      isToday ? 'bg-amber-500/10 text-amber-500 border-amber-500/20 animate-pulse' :
+                      isToday ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
                       'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
                     }`}>
                       {isPast ? `${Math.abs(dias)}d atrás` : isToday ? 'Hoje' : `em ${dias}d`}
@@ -311,7 +310,7 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
 
               {proximo1on1 ? (
                 <>
-                  <h3 className="text-base font-black text-slate-800 dark:text-white leading-tight">
+                  <h3 className="text-base font-black text-dark-text leading-tight">
                     {parseDate(proximo1on1.data).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
                   </h3>
                   <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-500 dark:text-slate-400">
@@ -345,7 +344,7 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
         </div>
 
         {/* Card 2: Próxima Avaliação */}
-        <div className="bg-slate-50 dark:bg-dark-bg/40 border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col justify-between min-h-[140px] hover:border-violet-500/20 transition-all duration-200 relative overflow-hidden group">
+        <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col justify-between min-h-[140px] hover:border-violet-500/20 transition-colors duration-200 relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-32 h-32 bg-violet-500/5 rounded-full blur-2xl group-hover:bg-violet-500/10 transition-colors pointer-events-none" />
           <div className="flex items-start gap-4">
             <div className="w-10 h-10 rounded-xl bg-violet-500/15 flex items-center justify-center text-violet-500 shrink-0">
@@ -361,7 +360,7 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
                   return (
                     <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
                       isPast ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' :
-                      isToday ? 'bg-amber-500/10 text-amber-500 border-amber-500/20 animate-pulse' :
+                      isToday ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
                       'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
                     }`}>
                       {isPast ? `${Math.abs(dias)}d atrás` : isToday ? 'Hoje' : `em ${dias}d`}
@@ -372,7 +371,7 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
 
               {proximaAvaliacao ? (
                 <>
-                  <h3 className="text-base font-black text-slate-800 dark:text-white leading-tight">
+                  <h3 className="text-base font-black text-dark-text leading-tight">
                     {parseDate(proximaAvaliacao.data).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
                   </h3>
                   <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-500 dark:text-slate-400">
@@ -415,7 +414,7 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           
           {/* KPI 1: Desempenho — mesmo desenho do bloco "Média Geral" da aba Desempenho */}
-          <div className="bg-slate-50 dark:bg-dark-bg/40 border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col items-center justify-center text-center gap-3 transition-all hover:border-violet-500/20">
+          <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col items-center justify-center text-center gap-3 transition-all hover:border-violet-500/20">
             <div className="flex items-center gap-2">
               <div className="bg-violet-500/20 p-1.5 rounded-lg">
                 <Award size={14} className="text-violet-500" />
@@ -423,7 +422,7 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
               <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Média Geral</span>
             </div>
 
-            <div className="text-4xl font-black text-slate-800 dark:text-white leading-none">
+            <div className="text-4xl font-black text-dark-text leading-none">
               {media > 0 ? media.toFixed(1) : '—'}
             </div>
 
@@ -435,12 +434,12 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
           </div>
 
           {/* KPI 2: 1:1s */}
-          <div className="bg-slate-50 dark:bg-dark-bg/40 border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 transition-all hover:border-violet-500/20">
+          <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 transition-all hover:border-violet-500/20">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Reuniões 1:1</span>
               <div className="w-8 h-8 rounded-lg bg-teal-500/10 flex items-center justify-center text-teal-500"><Users size={16} /></div>
             </div>
-            <div className="text-2xl font-black text-slate-800 dark:text-white leading-tight">
+            <div className="text-2xl font-black text-dark-text leading-tight">
               {total1on1s}
             </div>
             <div className="text-[10px] text-slate-400 dark:text-slate-500">
@@ -449,12 +448,12 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
           </div>
 
           {/* KPI 4: Feedbacks */}
-          <div className="bg-slate-50 dark:bg-dark-bg/40 border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 transition-all hover:border-violet-500/20">
+          <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 transition-all hover:border-violet-500/20">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Feedbacks</span>
               <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-500"><MessageSquare size={16} /></div>
             </div>
-            <div className="text-2xl font-black text-slate-800 dark:text-white leading-tight">
+            <div className="text-2xl font-black text-dark-text leading-tight">
               {totalFeedbacks}
             </div>
             <div className="text-[10px] text-slate-400 dark:text-slate-500">
@@ -463,12 +462,12 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
           </div>
 
           {/* KPI 5: PDI */}
-          <div className="bg-slate-50 dark:bg-dark-bg/40 border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 transition-all hover:border-violet-500/20">
+          <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 transition-all hover:border-violet-500/20">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Plano PDI</span>
               <div className="w-8 h-8 rounded-lg bg-orange-500/10 flex items-center justify-center text-orange-500"><BrainCircuit size={16} /></div>
             </div>
-            <div className="text-2xl font-black text-slate-800 dark:text-white leading-tight">
+            <div className="text-2xl font-black text-dark-text leading-tight">
               {pdiInfo.ativos}
             </div>
             <div className="text-[10px] text-slate-400 dark:text-slate-500">
@@ -480,12 +479,12 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
       </div>
 
       {/* ── 3. Histórico de Humor (Bottom Row) ─────────────────────────────────── */}
-      <div className="bg-slate-50 dark:bg-dark-bg/40 border border-slate-200 dark:border-white/10 rounded-2xl p-6 transition-all relative overflow-hidden">
+      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 transition-all relative overflow-hidden">
         
         {/* Header da Seção de Humor */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-5 border-b border-slate-200/50 dark:border-white/5">
           <div>
-            <h2 className="text-sm font-bold text-slate-800 dark:text-white">Respostas de Humor</h2>
+            <h2 className="text-sm font-bold text-dark-text">Respostas de Humor</h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Acompanhamento de pulso e bem-estar (últimos 30 dias)</p>
           </div>
 
@@ -516,15 +515,13 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
 
         {/* Render do Gráfico */}
         {chartData.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-400 dark:text-slate-500">
-            <Smile size={48} className="mb-3 opacity-30 text-violet-500" />
-            <h4 className="font-bold text-sm mb-1">Nenhum dado de humor registrado</h4>
-            <p className="text-xs text-center max-w-xs opacity-75">
-              {isSelf 
-                ? 'Registre seu humor diário usando os emojis acima para começar a acompanhar seu bem-estar.'
-                : 'Este colaborador ainda não registrou respostas de humor nos últimos 30 dias.'}
-            </p>
-          </div>
+          <EstadoVazio
+            Icone={Smile}
+            titulo="Nenhum dado de humor registrado"
+            descricao={isSelf
+              ? 'Registre seu humor diário usando os emojis acima para começar a acompanhar seu bem-estar.'
+              : 'Este colaborador ainda não registrou respostas de humor nos últimos 30 dias.'}
+          />
         ) : (
           <div className="h-[230px] w-full pr-4">
             <ResponsiveContainer width="100%" height="100%">
@@ -555,7 +552,7 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
                     if (active && payload && payload.length) {
                       const data = payload[0].payload;
                       return (
-                        <div className="bg-white dark:bg-[#11111b] border border-slate-200 dark:border-white/10 p-3 rounded-xl shadow-xl flex flex-col gap-1">
+                        <div className="bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 p-3 rounded-xl shadow-xl flex flex-col gap-1">
                           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{data.fullDate}</p>
                           <div className="flex items-center gap-1.5">
                             <span className="text-lg">{moodEmojis[data.humor]}</span>

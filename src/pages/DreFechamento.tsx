@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Lock, LockOpen, CheckCircle2, XCircle, AlertTriangle, Info, Loader2, ChevronDown } from 'lucide-react';
 import { confirmDialog, promptDialog } from '@/src/lib/confirm';
 import { toast } from '@/src/lib/toast';
+import { CarregandoBloco } from '@/src/components/LoadingSpinner';
+import '@/src/components/graficos.css';
 
 /**
  * Aba "Fechamento" do DFC. Cada mês passa por conferências (servidor:
@@ -156,7 +158,7 @@ const DreFechamento: React.FC = () => {
       </div>
 
       {/* Detalhe do mês */}
-      <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60">
+      <div className="gf-cartao">
         <div className="flex items-start justify-between gap-4 flex-wrap px-5 py-4 border-b border-slate-100 dark:border-white/5">
           <div>
             <h3 className="text-lg font-bold text-slate-900 dark:text-white capitalize">{nomeLongo(sel)}</h3>
@@ -193,7 +195,7 @@ const DreFechamento: React.FC = () => {
         </div>
 
         {carregando || !det ? (
-          <div className="py-16 flex justify-center"><Loader2 size={22} className="animate-spin text-violet-500" /></div>
+          <CarregandoBloco />
         ) : (
           <div className="grid lg:grid-cols-[1fr_320px]">
             {/* Conferências */}

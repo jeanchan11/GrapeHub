@@ -162,11 +162,12 @@ const ToastContent: React.FC<{
   return (
     <div
       style={{
-        background: isDark ? 'rgba(28, 28, 30, 0.82)' : 'rgba(255, 255, 255, 0.92)',
+        // tokens do tema (claro / escuro / escuro profundo), como em lib/toast.tsx
+        background: 'rgb(var(--dark-card) / 0.94)',
         backdropFilter: 'blur(24px) saturate(180%)',
         WebkitBackdropFilter: 'blur(24px) saturate(180%)',
         borderRadius: 18,
-        border: isDark ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(0, 0, 0, 0.08)',
+        border: '1px solid rgb(var(--dark-text) / 0.1)',
         boxShadow: isDark
           ? (isExpanded 
              ? '0 2px 12px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.06)'
@@ -214,8 +215,8 @@ const ToastContent: React.FC<{
           {!toast.isOverdue && (
             <span style={{
               fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
-              color: isDark ? '#30d158' : '#34c759',
-              background: isDark ? 'rgba(48, 209, 88, 0.15)' : 'rgba(52, 199, 89, 0.12)',
+              color: '#10b981',
+              background: 'rgba(16, 185, 129, 0.14)',
               borderRadius: 4, padding: '1px 5px',
             }}>
               Em breve
@@ -224,7 +225,7 @@ const ToastContent: React.FC<{
           {toast.kanbanName && (
             <span style={{
               fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
-              color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)',
+              color: 'rgb(var(--dark-text) / 0.4)',
             }}>
               {toast.kanbanName}
             </span>
@@ -233,7 +234,7 @@ const ToastContent: React.FC<{
 
         <p style={{
           fontSize: 13, fontWeight: 600, margin: 0, lineHeight: 1.3,
-          color: isDark ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.88)',
+          color: 'rgb(var(--dark-text) / 0.95)',
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>
           {toast.title}
@@ -241,7 +242,7 @@ const ToastContent: React.FC<{
 
         <p style={{
           fontSize: 11, fontWeight: 500, margin: 0, marginTop: 1, lineHeight: 1.3,
-          color: isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)',
+          color: 'rgb(var(--dark-text) / 0.45)',
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>
           {toast.subtitle}
@@ -255,19 +256,19 @@ const ToastContent: React.FC<{
           width: 28, height: 28, borderRadius: '50%', display: 'flex',
           alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
           flexShrink: 0, transition: 'all 0.15s ease',
-          background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
-          border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.06)',
-          color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)',
+          background: 'rgb(var(--dark-text) / 0.08)',
+          border: '1px solid rgb(var(--dark-text) / 0.1)',
+          color: 'rgb(var(--dark-text) / 0.4)',
         }}
         onMouseEnter={(e) => {
           const el = e.currentTarget as HTMLButtonElement;
-          el.style.background = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)';
-          el.style.color = isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)';
+          el.style.background = 'rgb(var(--dark-text) / 0.15)';
+          el.style.color = 'rgb(var(--dark-text) / 0.8)';
         }}
         onMouseLeave={(e) => {
           const el = e.currentTarget as HTMLButtonElement;
-          el.style.background = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
-          el.style.color = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)';
+          el.style.background = 'rgb(var(--dark-text) / 0.08)';
+          el.style.color = 'rgb(var(--dark-text) / 0.4)';
         }}
       >
         <X size={13} />
@@ -306,9 +307,9 @@ const ActivityToastStack: React.FC = () => {
     const actIsOverdue = isOverdue(a.due_date || '', a.start_time);
     const title = a.title || 'Atividade';
     const subtitle = [
-      timeLabel ? `🕐 ${timeLabel}` : '',
+      timeLabel || '',
       a.type || '',
-      a.lead_name ? `👤 ${a.lead_name}` : '',
+      a.lead_name || '',
       a.kanban_name || '',
     ].filter(Boolean).join(' · ');
 
@@ -469,7 +470,7 @@ const ActivityToastStack: React.FC = () => {
                 alignItems: 'center',
                 justifyContent: 'center',
                 boxShadow: '0 2px 8px rgba(139, 92, 246, 0.5)',
-                border: isDark ? '2px solid rgba(28, 28, 30, 0.9)' : '2px solid rgba(255, 255, 255, 0.95)',
+                border: '2px solid rgb(var(--dark-card))',
               }}
             >
               {toasts.length}
@@ -495,7 +496,7 @@ const ActivityToastStack: React.FC = () => {
                 zIndex: -1,
                 pointerEvents: 'none',
                 ...(isDark
-                  ? { background: 'rgba(10, 10, 14, 0.8)' }
+                  ? { background: 'rgb(var(--dark-bg) / 0.8)' }
                   : {
                       backdropFilter: 'blur(40px) saturate(250%)',
                       WebkitBackdropFilter: 'blur(40px) saturate(250%)',
@@ -530,7 +531,7 @@ const ActivityToastStack: React.FC = () => {
               <span style={{
                 fontSize: 12,
                 fontWeight: 700,
-                color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)',
+                color: 'rgb(var(--dark-text) / 0.7)',
                 letterSpacing: '0.03em',
               }}>
                 <Bell size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
@@ -565,9 +566,9 @@ const ActivityToastStack: React.FC = () => {
                   style={{
                     fontSize: 11,
                     fontWeight: 600,
-                    color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)',
-                    background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
-                    border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.08)',
+                    color: 'rgb(var(--dark-text) / 0.6)',
+                    background: 'rgb(var(--dark-text) / 0.08)',
+                    border: '1px solid rgb(var(--dark-text) / 0.1)',
                     borderRadius: 8,
                     padding: '4px 10px',
                     cursor: 'pointer',
@@ -577,10 +578,10 @@ const ActivityToastStack: React.FC = () => {
                     transition: 'all 0.15s ease',
                   }}
                   onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.background = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.1)';
+                    (e.currentTarget as HTMLButtonElement).style.background = 'rgb(var(--dark-text) / 0.14)';
                   }}
                   onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.background = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
+                    (e.currentTarget as HTMLButtonElement).style.background = 'rgb(var(--dark-text) / 0.08)';
                   }}
                 >
                   <ChevronDown size={12} /> Recolher

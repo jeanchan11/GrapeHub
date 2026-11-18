@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage } from '../firebase';
 import SplitHeadline from '../components/SplitHeadline';
 import { toast } from '@/src/lib/toast';
-import { confirmDialog } from '@/src/lib/confirm';
+import { confirmDialog, promptDialog } from '@/src/lib/confirm';
+import { Modal } from '../components/ui/Modal';
+import { CarregandoBloco } from '../components/LoadingSpinner';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
 import { useAuth } from '../contexts/AuthContext';
 import { DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
@@ -268,10 +271,8 @@ const AulaModal: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onFechar}>
-      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-lg bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}>
+    <Modal isOpen onClose={onFechar} semCabecalho semPadding maxWidth="max-w-lg" className="max-h-[90vh]">
+      <div className="p-6 space-y-4 overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-black text-dark-text">{aula.id ? 'Editar aula' : 'Nova aula'}</h3>
           <button onClick={onFechar} className="text-slate-400 hover:text-dark-text"><X size={18} /></button>
@@ -319,12 +320,12 @@ const AulaModal: React.FC<{
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onFechar} className="px-4 py-2.5 rounded-xl text-sm font-bold text-slate-400 hover:text-dark-text">Cancelar</button>
           <button onClick={salvar} disabled={salvando || progresso !== null}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm font-bold transition-colors">
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-bold transition-colors">
             {salvando && <Loader2 size={14} className="animate-spin" />} Salvar
           </button>
         </div>
-      </motion.div>
-    </div>
+      </div>
+    </Modal>
   );
 };
 
@@ -385,17 +386,15 @@ const Relatorio: React.FC<{ cursoId: number; onFechar: () => void }> = ({ cursoI
   }, [dados]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onFechar}>
-      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-4xl bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}>
+    <Modal isOpen onClose={onFechar} semCabecalho semPadding maxWidth="max-w-4xl" className="max-h-[90vh]">
+      <div className="p-6 space-y-4 overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-black text-dark-text">Acompanhamento da turma</h3>
           <button onClick={onFechar} className="text-slate-400 hover:text-dark-text"><X size={18} /></button>
         </div>
 
         {carregando ? (
-          <div className="py-16 flex justify-center"><Loader2 size={22} className="animate-spin text-violet-400" /></div>
+          <CarregandoBloco />
         ) : !dados ? null : (
           <>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -490,8 +489,8 @@ const Relatorio: React.FC<{ cursoId: number; onFechar: () => void }> = ({ cursoI
             </div>
           </>
         )}
-      </motion.div>
-    </div>
+      </div>
+    </Modal>
   );
 };
 
@@ -526,7 +525,7 @@ const CelebracaoAula: React.FC<{
       <motion.div onClick={e => e.stopPropagation()}
         initial={{ scale: 0.7, y: 30, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 260, damping: 20 }}
-        className="relative w-full max-w-sm overflow-hidden rounded-3xl bg-dark-card border border-black/10 dark:border-white/10 shadow-2xl p-8 text-center">
+        className="relative w-full max-w-sm overflow-hidden rounded-2xl bg-dark-card border border-black/10 dark:border-white/10 shadow-2xl p-8 text-center">
         <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 h-64 rounded-full bg-emerald-500/20 blur-3xl pointer-events-none" />
 
         {/* Check que se desenha, com anel pulsando */}
@@ -549,13 +548,13 @@ const CelebracaoAula: React.FC<{
           </p>
           <h3 className="text-xl font-black text-dark-text mt-1 leading-snug">{titulo}</h3>
           <p className="text-sm text-slate-500 mt-2">
-            {ultimoDoCurso ? 'Você terminou todas as aulas deste curso. 🎉' : 'Mandou bem — segue o ritmo.'}
+            {ultimoDoCurso ? 'Você terminou todas as aulas deste curso.' : 'Mandou bem — segue o ritmo.'}
           </p>
 
           <div className="flex flex-col gap-2 mt-6">
             {proxima && (
               <button onClick={onProxima}
-                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold transition-colors">
+                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold transition-colors">
                 Próxima aula: <span className="truncate max-w-[160px]">{proxima.title}</span> <ArrowRight size={15} />
               </button>
             )}
@@ -716,7 +715,7 @@ const DescricaoAula: React.FC<{
             <button onClick={() => { setTexto(aula.description || ''); setEditando(false); }}
               className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-dark-text">Cancelar</button>
             <button onClick={salvar} disabled={salvando}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold disabled:opacity-50">
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold disabled:opacity-50">
               {salvando && <Loader2 size={12} className="animate-spin" />} Salvar
             </button>
           </div>
@@ -846,7 +845,7 @@ const ComentariosAula: React.FC<{ aulaId: number }> = ({ aulaId }) => {
       </h3>
 
       {carregando ? (
-        <div className="py-6 flex justify-center"><Loader2 size={18} className="animate-spin text-violet-500" /></div>
+        <CarregandoBloco className="py-6" />
       ) : lista.length === 0 ? (
         <p className="text-sm text-slate-500 mb-4">Nenhum comentário ainda. Ficou alguma dúvida? Comente aqui.</p>
       ) : (
@@ -878,7 +877,7 @@ const ComentariosAula: React.FC<{ aulaId: number }> = ({ aulaId }) => {
           placeholder="Escreva um comentário… (Ctrl/⌘ + Enter envia)"
           className="flex-1 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text outline-none focus:border-violet-500/60 resize-none" />
         <button onClick={enviar} disabled={enviando || !texto.trim()}
-          className="h-[46px] px-4 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold flex items-center gap-1.5 disabled:opacity-40">
+          className="h-[46px] px-4 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold flex items-center gap-1.5 disabled:opacity-40">
           {enviando ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Enviar
         </button>
       </div>
@@ -1018,7 +1017,7 @@ const Cursos: React.FC = () => {
 
   // ── CRUD ──
   const criarCurso = async () => {
-    const title = window.prompt('Nome do curso:');
+    const title = await promptDialog({ title: 'Novo curso', message: 'Nome do curso:', placeholder: 'Ex.: Onboarding comercial', confirmText: 'Criar' });
     if (!title?.trim()) return;
     const r = await fetch('/api/cursos', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1050,7 +1049,7 @@ const Cursos: React.FC = () => {
 
   const criarModulo = async () => {
     if (!cursoAtivo) return;
-    const title = window.prompt('Nome do módulo:');
+    const title = await promptDialog({ title: 'Novo módulo', message: 'Nome do módulo:', confirmText: 'Criar' });
     if (!title?.trim()) return;
     const r = await fetch(`/api/cursos/${cursoAtivo.id}/modulos`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1124,10 +1123,13 @@ const Cursos: React.FC = () => {
           const horas = segundos >= 3600 ? `${(segundos / 3600).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}h` : fmtDuracao(segundos);
           return (
             <div className="px-6 pt-6 pb-2">
-              <div className="relative overflow-hidden rounded-3xl p-7 md:p-9 text-white"
+              <div className="mb-6">
+                <SplitHeadline text="Central de " highlight="Treinamentos" />
+              </div>
+              <div className="relative overflow-hidden rounded-2xl p-7 md:p-9 text-white"
                 style={{ background: 'linear-gradient(120deg, #1a0b2e 0%, #3b1673 45%, #6d28d9 80%, #8b5cf6 100%)' }}>
                 {/* Decoração */}
-                <div className="absolute -top-24 -right-16 w-80 h-80 rounded-full bg-fuchsia-500/30 blur-3xl pointer-events-none" />
+                <div className="absolute -top-24 -right-16 w-80 h-80 rounded-full bg-violet-400/25 blur-3xl pointer-events-none" />
                 <div className="absolute -bottom-28 left-1/3 w-96 h-96 rounded-full bg-violet-400/20 blur-3xl pointer-events-none" />
                 <div className="absolute inset-0 opacity-[0.07] pointer-events-none"
                   style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, #fff 1px, transparent 0)', backgroundSize: '22px 22px' }} />
@@ -1135,19 +1137,16 @@ const Cursos: React.FC = () => {
 
                 <div className="relative flex flex-col lg:flex-row lg:items-end justify-between gap-8">
                   <div className="max-w-xl">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-[11px] font-bold uppercase tracking-widest">
-                      <Sparkles size={12} /> Central de Treinamentos
-                    </span>
-                    <h1 className="text-3xl md:text-4xl font-black tracking-tight mt-4 leading-tight">
+                    <p className="text-2xl md:text-3xl font-black tracking-tight leading-tight">
                       {primeiroNome ? `Bora evoluir, ${primeiroNome}?` : 'Bora evoluir?'}
-                    </h1>
+                    </p>
                     <p className="text-sm md:text-base text-white/70 mt-2">
                       As trilhas de formação da Grape: o jeito como a gente trabalha, aula por aula.
                     </p>
                     <div className="flex flex-wrap items-center gap-3 mt-6">
                       {continuar && (
                         <button onClick={() => abrirCurso(continuar)}
-                          className="flex items-center gap-2 px-5 py-3 rounded-xl bg-white text-violet-700 text-sm font-black hover:bg-violet-50 transition-colors shadow-lg shadow-black/20">
+                          className="flex items-center gap-2 px-5 py-3 rounded-xl bg-white text-violet-700 text-sm font-black hover:bg-violet-50 transition-colors">
                           <Play size={15} fill="currentColor" />
                           {continuar.aulas_concluidas > 0 || continuar.tempo_assistido > 0 ? 'Continuar' : 'Começar'}: {continuar.title}
                           <ArrowRight size={15} />
@@ -1186,16 +1185,15 @@ const Cursos: React.FC = () => {
 
         <div className="px-6 pb-10">
           {carregando ? (
-            <div className="py-20 flex justify-center"><Loader2 size={22} className="animate-spin text-violet-400" /></div>
+            <CarregandoBloco className="py-20" />
           ) : cursos.length === 0 ? (
-            <div className="py-20 flex flex-col items-center gap-3 text-center">
-              <GraduationCap size={34} className="text-slate-600" />
-              <p className="text-sm text-slate-500 max-w-sm">
-                {isAdmin
-                  ? 'Nenhum curso ainda. Crie o primeiro e monte a trilha de ramp-up da equipe.'
-                  : 'Nenhum treinamento liberado para você no momento.'}
-              </p>
-            </div>
+            <EstadoVazio
+              Icone={GraduationCap}
+              className="py-20"
+              titulo={isAdmin
+                ? 'Nenhum curso ainda. Crie o primeiro e monte a trilha de ramp-up da equipe.'
+                : 'Nenhum treinamento liberado para você no momento.'}
+            />
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {cursos.map(c => {
@@ -1267,7 +1265,7 @@ const Cursos: React.FC = () => {
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${
                 cursoAtivo.status === 'publicado'
                   ? 'border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10'
-                  : 'bg-violet-600 hover:bg-violet-500 text-white'
+                  : 'bg-violet-600 hover:bg-violet-700 text-white'
               }`}>
               {cursoAtivo.status === 'publicado' ? <><Eye size={14} /> Publicado</> : <><EyeOff size={14} /> Publicar</>}
             </button>

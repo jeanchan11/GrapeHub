@@ -2,13 +2,28 @@ import React, { useState, useEffect, useRef } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useSpring, useTransform, useInView } from 'motion/react';
-import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2, MessageCircle, MessageSquare, Copy, Phone, Mail, Users, DollarSign, Filter, RefreshCw, MoreHorizontal, RotateCcw } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2, MessageCircle, MessageSquare, Copy, Phone, Mail, Users, DollarSign, Filter, RefreshCw, MoreHorizontal, RotateCcw, Landmark, Folder } from 'lucide-react';
 import BotaoSincronizar from '../components/BotaoSincronizar';
 import { confirmDialog } from '../lib/confirm';
 import { toast } from '../lib/toast';
+import CrmCommentHistory from '../components/CrmCommentHistory';
+import { Modal } from '../components/ui/Modal';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
+import { CarregandoBloco } from '../components/LoadingSpinner';
+import { CartaoKpi } from '../components/graficos';
+import { Abas } from '../components/ui/Abas';
 
 // ── Types ──────────────────────────────────────────────
+// Nome a mostrar para um inadimplente: o do cadastro do GrapeHub (igual a Clientes Ativos);
+// sem vínculo, o do Asaas. O do Asaas é o da pessoa/CNPJ da cobrança e costuma ser outro
+// ("Ellen Veríssimo…" no Asaas × "Vilela Brescovici advocacia" no GrapeHub).
+const nomeDoCliente = (c: { client_name_internal?: string | null; customer_name?: string | null }) =>
+  (c.client_name_internal || '').trim() || (c.customer_name || '').trim();
+const normalizaNome = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+
 interface InvoiceItem {
+  client_id?: string | null;
+  client_name_internal?: string | null;
   id: number;
   asaas_id: string;
   customer_name: string | null;
@@ -70,7 +85,7 @@ const extractClientName = (desc: string): string => {
 const CountUp = ({ value, isCurrency = false, suffix = '' }: { value: number; isCurrency?: boolean; suffix?: string }) => {
   const ref = useRef<HTMLSpanElement>(null);
   const isInView = useInView(ref, { once: true, margin: '-50px' });
-  const springValue = useSpring(0, { duration: 1200, bounce: 0 });
+  const springValue = useSpring(0, { duration: 600, bounce: 0 });
   const display = useTransform(springValue, (v: number) => {
     if (isCurrency) return (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     return Math.round(v).toLocaleString('pt-BR') + suffix;
@@ -88,7 +103,10 @@ const CountUp = ({ value, isCurrency = false, suffix = '' }: { value: number; is
 // de contexto. Fica no nível do módulo de propósito: declarado dentro do componente,
 // ele remontaria a cada render (polling de 30s, cada tecla da busca) e o CountUp
 // recomeçaria do zero.
-const CartaoNumero = ({ Icone, cor, rotulo, valor, contexto, alerta, valorCls, onClick, hoverCls, sinal }: {
+// 18/11/2026: o desenho passou a ser o CartaoKpi (graficos.tsx), como no Fluxo de Caixa e no
+// Dashboard Financeiro. Ícone e cor saíram do cartão (o padrão novo não tem); o clique e o sinal
+// pulsante ficaram. A assinatura antiga foi mantida para não mexer nas chamadas.
+const CartaoNumero = ({ Icone: _Icone, cor: _cor, rotulo, valor, contexto, alerta, valorCls, onClick, hoverCls: _hoverCls, sinal, moeda }: {
   Icone: any;
   cor: string;
   rotulo: string;
@@ -99,22 +117,18 @@ const CartaoNumero = ({ Icone, cor, rotulo, valor, contexto, alerta, valorCls, o
   onClick?: () => void;
   hoverCls?: string;
   sinal?: React.ReactNode;
+  /** Valor em reais: fonte um pouco menor, para não cortar o número em 4 colunas. */
+  moeda?: boolean;
 }) => (
-  <div
-    onClick={onClick}
-    className={`px-5 py-4 rounded-2xl border transition-colors ${
-      alerta ? 'bg-rose-500/[0.06] border-rose-500/20' : 'bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5'
-    } ${onClick ? `cursor-pointer ${hoverCls || 'hover:border-violet-500/40'}` : ''}`}
-  >
-    <div className="flex items-center gap-2 mb-2">
-      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${cor}1a`, color: cor }}>
-        <Icone size={14} />
-      </div>
-      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">{rotulo}</p>
-      {sinal && <span className="ml-auto flex items-center">{sinal}</span>}
-    </div>
-    <h3 className={`text-2xl font-bold ${alerta ? 'text-rose-500' : valorCls || 'text-slate-900 dark:text-white'}`}>{valor}</h3>
-    <p className={`text-[11px] mt-0.5 truncate ${alerta ? 'text-rose-400' : 'text-slate-500'}`}>{contexto}</p>
+  <div onClick={onClick} className={`relative h-full ${onClick ? 'cursor-pointer' : ''}`}>
+    <CartaoKpi
+      className={onClick ? 'gf-cartao--sobe' : ''}
+      titulo={rotulo}
+      alerta={alerta}
+      valor={<span className={`${moeda ? 'text-[clamp(22px,2vw,34px)]' : ''} ${alerta ? 'text-rose-500' : valorCls || ''}`}>{valor}</span>}
+      apoio={contexto}
+    />
+    {sinal && <span className="absolute top-5 right-5 flex items-center">{sinal}</span>}
   </div>
 );
 
@@ -128,14 +142,14 @@ const BOTAO_SEC_CLS = 'h-10 flex items-center gap-2 px-3 rounded-xl border borde
 const TABELA_CLS = 'rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 overflow-hidden';
 const PILULA_CLS = 'inline-flex items-center gap-1 h-5 px-2 rounded-full text-[10px] font-semibold whitespace-nowrap';
 
-const BILLING_LABELS: Record<string, { label: string; icon: string }> = {
-  'PIX': { label: 'Pix', icon: '⚡' },
-  'BOLETO': { label: 'Boleto', icon: '📄' },
-  'CREDIT_CARD': { label: 'Cartão', icon: '💳' },
-  'DEBIT_CARD': { label: 'Débito', icon: '💳' },
-  'TRANSFER': { label: 'Transferência', icon: '🏦' },
-  'DEPOSIT': { label: 'Depósito', icon: '🏦' },
-  'UNDEFINED': { label: 'Outros', icon: '📁' },
+const BILLING_LABELS: Record<string, { label: string; icon: React.ComponentType<{ size?: number; className?: string }> }> = {
+  'PIX': { label: 'Pix', icon: Zap },
+  'BOLETO': { label: 'Boleto', icon: FileText },
+  'CREDIT_CARD': { label: 'Cartão', icon: CreditCard },
+  'DEBIT_CARD': { label: 'Débito', icon: CreditCard },
+  'TRANSFER': { label: 'Transferência', icon: Landmark },
+  'DEPOSIT': { label: 'Depósito', icon: Landmark },
+  'UNDEFINED': { label: 'Outros', icon: Folder },
 };
 
 const TRANSACTION_LABELS: Record<string, string> = {
@@ -144,67 +158,6 @@ const TRANSACTION_LABELS: Record<string, string> = {
   'RECEIVABLE_ANTICIPATION_GROSS_CREDIT': 'Crédito Antecipação',
   'PAYMENT_FEE_REFUND': 'Reembolso de Taxas',
   'REFUND_RECEIVED': 'Reembolsos',
-};
-
-// ── CollapsibleGroup ─────────────────────────────────
-const CollapsibleGroup = ({ title, icon, items, total, valueColor, defaultOpen }: {
-  title: string;
-  icon: string;
-  items: { label: string; sublabel?: string; date: string; value: number; badge?: { text: string; bg: string; color: string }; url?: string | null }[];
-  total: number;
-  valueColor?: string;
-  defaultOpen?: boolean;
-}) => {
-  const [isOpen, setIsOpen] = useState(defaultOpen || false);
-
-  return (
-    <div className="mb-2 border border-white/10 rounded-xl overflow-hidden">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-4 bg-dark-card hover:bg-dark-card-hover transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-xl">{icon}</span>
-          <span className="text-sm font-bold text-dark-text">{title}</span>
-          <span className="text-[10px] text-slate-500 font-normal ml-2">{items.length} itens</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className={`text-sm font-bold ${valueColor || 'text-dark-text'}`}>{formatCurrency(total)}</span>
-          {isOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-        </div>
-      </button>
-      {isOpen && (
-        <div className="bg-dark-bg p-2 space-y-1 border-t border-white/10">
-          {items.map((item, idx) => (
-            <div key={idx} className="flex items-center justify-between p-3 hover:bg-dark-card rounded-lg transition-colors">
-              <div className="flex flex-col flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-dark-text truncate">{item.label}</span>
-                  {item.badge && (
-                    <span className={`px-1.5 py-0.5 ${item.badge.bg} ${item.badge.color} text-[9px] font-bold rounded-full shrink-0`}>
-                      {item.badge.text}
-                    </span>
-                  )}
-                  {item.url && (
-                    <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:text-violet-300 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      <ExternalLink size={12} />
-                    </a>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 mt-0.5">
-                  <span className="text-[10px] text-slate-500">{fmtDate(item.date)}</span>
-                  {item.sublabel && <span className="text-[10px] text-slate-500 truncate max-w-[280px]">{item.sublabel}</span>}
-                </div>
-              </div>
-              <span className={`text-xs font-bold ${valueColor || 'text-emerald-400'} ml-4 shrink-0`}>
-                {formatCurrency(item.value)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 };
 
 // ── Collection Rules Block ────────────────────────────
@@ -317,7 +270,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
       if (clRes.ok) {
         const clData = await clRes.json();
         const map = new Map<string, any>();
-        for (const c of clData) map.set((c.name || '').toLowerCase().trim(), c);
+        for (const c of clData) { map.set((c.name || '').toLowerCase().trim(), c); map.set(`id:${c.id}`, c); }
         setClientsMap(map);
       }
     } catch (e) { /* silent */ }
@@ -687,19 +640,19 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
 
   const timelineStyles: Record<string, { bg: string, border: string, text: string, pillBg: string, iconColor: string }> = {
     preventivo: {
-      bg: 'bg-[#2dd4bf]/10 dark:bg-[#2dd4bf]/5', border: 'border-[#2dd4bf]/30', text: 'text-teal-600 dark:text-[#2dd4bf]', pillBg: 'bg-[#2dd4bf]/10', iconColor: 'bg-teal-500 dark:bg-[#2dd4bf]'
+      bg: 'bg-teal-400/10 dark:bg-teal-400/5', border: 'border-teal-400/30', text: 'text-teal-600 dark:text-teal-400', pillBg: 'bg-teal-400/10', iconColor: 'bg-teal-500 dark:bg-teal-400'
     },
     vencimento: {
-      bg: 'bg-[#f59e0b]/10 dark:bg-[#f59e0b]/5', border: 'border-[#f59e0b]/30', text: 'text-amber-600 dark:text-[#f59e0b]', pillBg: 'bg-[#f59e0b]/10', iconColor: 'bg-amber-500 dark:bg-[#f59e0b]'
+      bg: 'bg-amber-500/10 dark:bg-amber-500/5', border: 'border-amber-500/30', text: 'text-amber-600 dark:text-amber-500', pillBg: 'bg-amber-500/10', iconColor: 'bg-amber-500 dark:bg-amber-500'
     },
     reativo: {
-      bg: 'bg-[#f87171]/10 dark:bg-[#f87171]/5', border: 'border-[#f87171]/30', text: 'text-rose-600 dark:text-[#f87171]', pillBg: 'bg-[#f87171]/10', iconColor: 'bg-rose-500 dark:bg-[#f87171]'
+      bg: 'bg-rose-400/10 dark:bg-rose-400/5', border: 'border-rose-400/30', text: 'text-rose-600 dark:text-rose-400', pillBg: 'bg-rose-400/10', iconColor: 'bg-rose-500 dark:bg-rose-400'
     },
     humano: {
-      bg: 'bg-[#a78bfa]/10 dark:bg-[#a78bfa]/5', border: 'border-[#a78bfa]/30', text: 'text-violet-600 dark:text-[#a78bfa]', pillBg: 'bg-[#a78bfa]/10', iconColor: 'bg-violet-500 dark:bg-[#a78bfa]'
+      bg: 'bg-violet-400/10 dark:bg-violet-400/5', border: 'border-violet-400/30', text: 'text-violet-600 dark:text-violet-400', pillBg: 'bg-violet-400/10', iconColor: 'bg-violet-500 dark:bg-violet-400'
     },
     suspensao: {
-      bg: 'bg-[#fb923c]/10 dark:bg-[#fb923c]/5', border: 'border-[#fb923c]/30', text: 'text-orange-600 dark:text-[#fb923c]', pillBg: 'bg-[#fb923c]/10', iconColor: 'bg-orange-500 dark:bg-[#fb923c]'
+      bg: 'bg-orange-400/10 dark:bg-orange-400/5', border: 'border-orange-400/30', text: 'text-orange-600 dark:text-orange-400', pillBg: 'bg-orange-400/10', iconColor: 'bg-orange-500 dark:bg-orange-400'
     },
   };
 
@@ -757,7 +710,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
       </div>
 
       {loading ? (
-        <div className="py-12 flex justify-center"><div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" /></div>
+        <CarregandoBloco />
       ) : (
         <>
           {/* Alerta Humano */}
@@ -810,25 +763,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               contexto={<>D+15 · <span className={`font-semibold ${dispatchSuspensaoCount > 0 ? 'text-orange-600 dark:text-orange-400' : ''}`}>{dispatchSuspensaoCount} clientes</span></>} />
           </div>
           {/* Modal Régua de Cobrança */}
-          <AnimatePresence>
-            {showReguaModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                <motion.div
-                  className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-                  onClick={() => setShowReguaModal(false)}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.25, ease: 'easeOut' }}
-                />
-                <motion.div
-                  className="relative bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-5xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]"
-                  onClick={e => e.stopPropagation()}
-                  initial={{ opacity: 0, scale: 0.92, y: 20 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.92, y: 20 }}
-                  transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
-                >
+          <Modal isOpen={showReguaModal} onClose={() => setShowReguaModal(false)} semCabecalho semPadding maxWidth="max-w-5xl" className="max-h-[90vh]">
                 <div className="p-6 border-b border-gray-100 dark:border-white/10 flex items-center justify-between shrink-0">
                   <div className="flex items-center gap-3">
                     <Settings2 size={20} className="text-violet-500" />
@@ -851,15 +786,15 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                     </button>
                   </div>
                 </div>
-                <div className="overflow-auto flex-1 p-6 space-y-6">
+                <div className="overflow-auto flex-1 min-h-0 p-6 space-y-6">
 
           {/* Legenda Timeline */}
           <div className="flex items-center gap-6 mb-8 text-xs font-semibold text-gray-500 dark:text-slate-300">
-            <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#2dd4bf]" /> Preventivo</div>
-            <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#f59e0b]" /> Vencimento</div>
-            <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#f87171]" /> Reativo automático</div>
-            <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#a78bfa]" /> Contato humano</div>
-            <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#fb923c]" /> Suspensão</div>
+            <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-teal-400" /> Preventivo</div>
+            <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-amber-500" /> Vencimento</div>
+            <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-rose-400" /> Reativo automático</div>
+            <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-violet-400" /> Contato humano</div>
+            <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-orange-400" /> Suspensão</div>
           </div>
 
           {/* 3. Timeline Vertical (Novo Design) */}
@@ -937,15 +872,12 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                 )}
               </div>
                 </div>
-                </motion.div>
-              </div>
-            )}
-          </AnimatePresence>
+          </Modal>
 
           {/* Fila de Disparos Content */}
           {(() => {
             // ── Filtros de sub-tab baseados em day_offset (como a régua original) ──
-            const search = (i: any) => !searchTerm || i.customer_name?.toLowerCase().includes(searchTerm.toLowerCase());
+            const search = (i: any) => !searchTerm || i.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) || i.client_name_internal?.toLowerCase().includes(searchTerm.toLowerCase());
 
             // Classifica cada fatura pelo estágio REAL: dias desde o vencimento (hoje - due_date)
             const hoje = new Date(); hoje.setHours(12,0,0,0);
@@ -1008,7 +940,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
 
             // Deduplica overdueClients por cliente: pega a fatura com maior atraso por customer_asaas_id
             const overdueSearch = overdueClients.filter(o =>
-              !searchTerm || o.customer_name?.toLowerCase().includes(searchTerm.toLowerCase())
+              !searchTerm || o.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) || o.client_name_internal?.toLowerCase().includes(searchTerm.toLowerCase())
             );
             const overdueByCustomer = new Map<string, any>();
             for (const o of overdueSearch) {
@@ -1077,10 +1009,10 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                   {/* Rows */}
                   <div className="divide-y divide-slate-100 dark:divide-white/5">
                     {currentItems.length === 0 ? (
-                      <div className="px-4 py-10 text-center text-sm text-slate-500">Nenhum item nesta categoria.</div>
+                      <EstadoVazio titulo="Nenhum item nesta categoria." className="py-10" />
                     ) : currentItems.map((item, idx) => {
                       const isRowExpanded = expandedDispatchId === item.id;
-                      const cl = clientsMap.get((item.customer_name || '').toLowerCase().trim());
+                      const cl = ((item.client_id && clientsMap.get(`id:${item.client_id}`)) || clientsMap.get((item.customer_name || '').toLowerCase().trim()));
                       const method = cl?.billingMethod;
                       const contact = method === 'E-mail' ? (cl?.billingEmail || item.customer_phone || '—')
                                     : method === 'Whatsapp' ? (cl?.billingPhone || item.customer_phone || '—')
@@ -1116,10 +1048,10 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                             {/* Client Info */}
                             <div className="flex items-center gap-3 min-w-0">
                               <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${pillColors[phaseKey]}`}>
-                                {(item.customer_name || 'X').charAt(0).toUpperCase()}
+                                {(nomeDoCliente(item) || 'X').charAt(0).toUpperCase()}
                               </div>
                               <div className="min-w-0">
-                                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{item.customer_name}</p>
+                                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate" title={item.customer_name ? `No Asaas: ${item.customer_name}` : undefined}>{nomeDoCliente(item)}</p>
                                 <p className="text-[11px] text-slate-500">{formatCurrency(item.amount)} • {fmtDate(item.due_date)}</p>
                               </div>
                             </div>
@@ -1276,25 +1208,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
       )}
 
       {/* ── Config Modal ─────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {showConfigModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setShowConfigModal(false)}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
-            />
-            <motion.div
-              className="relative bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-[22px] w-full max-w-md shadow-2xl overflow-hidden"
-              onClick={e => e.stopPropagation()}
-              initial={{ opacity: 0, scale: 0.92, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: 20 }}
-              transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
-            >
+      <Modal isOpen={showConfigModal} onClose={() => setShowConfigModal(false)} semCabecalho semPadding maxWidth="max-w-md">
             <div className="px-6 py-5 border-b border-gray-100 dark:border-white/10 flex items-center justify-between">
               <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2"><Settings size={16} className="text-violet-500" /> Configurações de Disparo</h3>
               <button onClick={() => setShowConfigModal(false)} className="text-gray-400 hover:text-gray-700 dark:hover:text-white"><X size={18} /></button>
@@ -1303,7 +1217,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-white/5 rounded-xl">
                 <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Disparos automáticos</span>
                 <button onClick={() => setCfgForm(f => ({ ...f, dispatch_enabled: !f.dispatch_enabled }))}
-                  className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${cfgForm.dispatch_enabled ? 'bg-violet-500' : 'bg-gray-300 dark:bg-slate-700'}`}>
+                  className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${cfgForm.dispatch_enabled ? 'bg-violet-500' : 'bg-gray-300 dark:bg-white/10'}`}>
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${cfgForm.dispatch_enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
                 </button>
               </div>
@@ -1499,64 +1413,23 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                 {savingCfg && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />} Salvar
               </button>
             </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      </Modal>
 
       {/* ── Send-all confirm ────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {showSendAllConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setShowSendAllConfirm(false)}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
-            />
-            <motion.div
-              className="relative bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-[22px] w-full max-w-sm shadow-2xl p-6"
-              onClick={e => e.stopPropagation()}
-              initial={{ opacity: 0, scale: 0.92, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: 20 }}
-              transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
-            >
+      <Modal isOpen={showSendAllConfirm} onClose={() => setShowSendAllConfirm(false)} semCabecalho maxWidth="max-w-sm">
             <h3 className="text-base font-bold text-gray-900 dark:text-white mb-2">Disparar fila completa?</h3>
             <p className="text-sm text-gray-500 dark:text-slate-400 mb-6">Isso irá enviar <strong className="text-gray-900 dark:text-white">{dispatchItems.filter(i => i.status === 'AGENDADO').length} mensagens</strong> agendadas para hoje, respeitando o intervalo configurado.</p>
             <div className="flex justify-end gap-3">
               <button onClick={() => setShowSendAllConfirm(false)} className="px-4 py-2 text-gray-500 text-xs font-bold">Cancelar</button>
               <button onClick={handleSendAll} className="px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-bold">Confirmar</button>
             </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      </Modal>
 
       {/* 6. Modal de Edição */}
-      <AnimatePresence>
-        {editingRule && (() => {
+      {editingRule && (() => {
           const style = timelineStyles[editingRule.phase] || timelineStyles.reativo;
           return (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-              <motion.div
-                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-                onClick={() => setEditingRule(null)}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.25, ease: 'easeOut' }}
-              />
-              <motion.div
-                className="relative bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden"
-                onClick={e => e.stopPropagation()}
-                initial={{ opacity: 0, scale: 0.92, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.92, y: 20 }}
-                transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
-              >
+            <Modal isOpen onClose={() => setEditingRule(null)} semCabecalho semPadding maxWidth="max-w-lg">
               <div className="p-6 border-b border-gray-100 dark:border-white/10 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className={`px-3 py-1 text-[10px] font-bold rounded-full border flex items-center justify-center ${style.pillBg} ${style.text} ${style.border}`}>
@@ -1612,35 +1485,16 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                   Salvar Mensagem
                 </button>
               </div>
-              </motion.div>
-            </div>
+            </Modal>
           );
         })()}
-      </AnimatePresence>
 
       {/* 7. Modal Detalhe por Fase */}
-      <AnimatePresence>
-        {phaseDetail && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setPhaseDetail(null)}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
-            />
-            <motion.div
-              className="relative bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden max-h-[80vh]"
-              onClick={e => e.stopPropagation()}
-              initial={{ opacity: 0, scale: 0.92, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: 20 }}
-              transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
-            >
+      {phaseDetail && (
+          <Modal isOpen onClose={() => setPhaseDetail(null)} semCabecalho semPadding maxWidth="max-w-2xl" className="max-h-[80vh]">
             <div className="p-6 border-b border-gray-100 dark:border-white/10 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className={`w-3 h-3 rounded-full ${phaseDetail.phase === 'preventivo' ? 'bg-[#2dd4bf]' : phaseDetail.phase === 'vencimento' ? 'bg-[#f59e0b]' : phaseDetail.phase === 'reativo' ? 'bg-[#f87171]' : phaseDetail.phase === 'suspensao' ? 'bg-[#fb923c]' : 'bg-[#a78bfa]'}`} />
+                <div className={`w-3 h-3 rounded-full ${phaseDetail.phase === 'preventivo' ? 'bg-teal-400' : phaseDetail.phase === 'vencimento' ? 'bg-amber-500' : phaseDetail.phase === 'reativo' ? 'bg-rose-400' : phaseDetail.phase === 'suspensao' ? 'bg-orange-400' : 'bg-violet-400'}`} />
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">{phaseDetail.label}</h3>
                 <span className="text-xs text-gray-500 dark:text-slate-400 font-medium">{phaseDetail.items.length} cliente(s)</span>
               </div>
@@ -1649,11 +1503,11 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               </button>
             </div>
             
-            <div className="overflow-auto flex-1">
+            <div className="overflow-auto flex-1 min-h-0">
               {loadingDetail ? (
-                <div className="py-12 flex justify-center"><div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" /></div>
+                <CarregandoBloco />
               ) : phaseDetail.items.length === 0 ? (
-                <div className="py-12 text-center text-gray-500 dark:text-slate-400 text-sm">Nenhum cliente nesta fase.</div>
+                <EstadoVazio Icone={Users} titulo="Nenhum cliente nesta fase." />
               ) : (
                 <div className="flex flex-col">
                   {/* Header */}
@@ -1666,10 +1520,10 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                   {/* Rows */}
                   {phaseDetail.items.map((item: any, idx: number) => (
                     <div key={idx} className="flex items-center px-6 py-3 border-b border-gray-100 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                      <p className="flex-1 min-w-0 text-sm font-bold text-gray-900 dark:text-white truncate pr-3" title={item.customer_name || 'Desconhecido'}>{item.customer_name || 'Desconhecido'}</p>
+                      <p className="flex-1 min-w-0 text-sm font-bold text-gray-900 dark:text-white truncate pr-3" title={item.customer_name ? `No Asaas: ${item.customer_name}` : undefined}>{nomeDoCliente(item) || 'Desconhecido'}</p>
                       <span className="w-32 shrink-0 text-sm font-semibold text-gray-900 dark:text-white text-right whitespace-nowrap">{formatCurrency(item.value)}</span>
                       <span className="w-28 shrink-0 text-xs text-gray-600 dark:text-slate-400 text-center whitespace-nowrap">{fmtDate(item.due_date)}</span>
-                      <span className={`w-14 shrink-0 text-xs font-bold text-center whitespace-nowrap ${Number(item.days_offset) < 0 ? 'text-teal-600 dark:text-[#2dd4bf]' : Number(item.days_offset) === 0 ? 'text-amber-600 dark:text-[#f59e0b]' : Number(item.days_offset) <= 10 ? 'text-rose-600 dark:text-[#f87171]' : 'text-violet-600 dark:text-[#a78bfa]'}`}>
+                      <span className={`w-14 shrink-0 text-xs font-bold text-center whitespace-nowrap ${Number(item.days_offset) < 0 ? 'text-teal-600 dark:text-teal-400' : Number(item.days_offset) === 0 ? 'text-amber-600 dark:text-amber-500' : Number(item.days_offset) <= 10 ? 'text-rose-600 dark:text-rose-400' : 'text-violet-600 dark:text-violet-400'}`}>
                         {Number(item.days_offset) < 0 ? `D${item.days_offset}` : Number(item.days_offset) === 0 ? 'D0' : `D+${item.days_offset}`}
                       </span>
                     </div>
@@ -1686,15 +1540,13 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                 </div>
               )}
             </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+          </Modal>
+      )}
       {/* Global Fixed Tooltip */}
       {tooltipData && (() => {
         const { item, type, x, y } = tooltipData;
         const isSent = type === 'sent';
-        const ttCl = clientsMap.get((item.customer_name || '').toLowerCase().trim());
+        const ttCl = ((item.client_id && clientsMap.get(`id:${item.client_id}`)) || clientsMap.get((item.customer_name || '').toLowerCase().trim()));
         const ttMethod = ttCl?.billingMethod;
         const ttIsEmail = ttMethod === 'E-mail' || ttMethod === 'Email' || (!ttMethod && item.channel === 'EMAIL');
         const ttLabel = ttIsEmail ? 'E-mail' : 'WhatsApp';
@@ -1708,7 +1560,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
         const top = y - 8;
         return (
           <div className="pointer-events-none" style={{ position: 'fixed', top, left, zIndex: 99999, transform: 'translateY(-100%)' }}>
-            <div className={`w-72 rounded-xl shadow-2xl p-3 border text-left ${isSent ? 'bg-white dark:bg-gray-900 border-gray-200 dark:border-white/10' : 'bg-white dark:bg-gray-900 border-rose-300 dark:border-rose-500/30'}`}>
+            <div className={`w-72 rounded-xl shadow-2xl p-3 border text-left ${isSent ? 'bg-white dark:bg-dark-card border-gray-200 dark:border-white/10' : 'bg-white dark:bg-dark-card border-rose-300 dark:border-rose-500/30'}`}>
               <p className={`text-[10px] font-bold uppercase tracking-widest mb-2 flex items-center gap-1.5 ${isSent ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                 {isSent ? <CheckCircle2 size={10} /> : <AlertTriangle size={10} />}
                 {isSent ? 'Mensagem Enviada' : 'Falha no Envio'}
@@ -1795,6 +1647,10 @@ interface InadimplentesClient {
   max_days_overdue: number;
   charges: InadimplentesCharge[];
   note: string | null;
+  promessa_data?: string | null;   // última promessa registrada no histórico (AAAA-MM-DD)
+  ultimo_contato?: string | null;  // último contato registrado por uma pessoa
+  ultima_cobranca?: string | null;      // 'AAAA-MM-DD HH:MM' (horário de Brasília): régua ou pessoa
+  ultima_cobranca_tipo?: 'auto' | 'manual' | null;
 }
 
 // Só cor (visual): fundo ~10% e texto legível nos dois temas
@@ -1818,6 +1674,7 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [versaoHistorico, setVersaoHistorico] = useState(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'days' | 'value' | 'charges'>('days');
   const [subTab, setSubTab] = useState<'mes' | 'todos'>('mes');
@@ -1906,7 +1763,7 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
   }, [activeClients.length, onCountChange]);
 
   const filtered = activeClients
-    .filter(c => !search || c.customer_name?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search))
+    .filter(c => !search || c.customer_name?.toLowerCase().includes(search.toLowerCase()) || c.client_name_internal?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search))
     .sort((a, b) => {
       if (sortBy === 'days') return (b.max_days_overdue || 0) - (a.max_days_overdue || 0);
       if (sortBy === 'value') return parseFloat(b.total_value) - parseFloat(a.total_value);
@@ -1917,6 +1774,24 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
   const avgDays = activeClients.length > 0 ? Math.round(activeClients.reduce((s, c) => s + (c.max_days_overdue || 0), 0) / activeClients.length) : 0;
   const criticalCount = activeClients.filter(c => c.max_days_overdue >= 30).length;
 
+  // Abrir o WhatsApp registra "Cobrança manual via WhatsApp" no histórico do cliente e abre a
+  // linha, onde aparece "Como foi?" para anotar o resultado (promessa com data).
+  const registrarCobrancaManual = (client: InadimplentesClient) => {
+    if (!client.client_id) return;
+    fetch(`/api/clientes/${encodeURIComponent(client.client_id)}/historico/cobranca-manual`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        canal: 'whatsapp',
+        valor: parseFloat(client.total_value) || 0,
+        qtd: client.total_charges,
+        customer_id: client.customer_id,
+        mensagem: decodeURIComponent(getWhatsAppMessage(client)),
+      }),
+    })
+      .then(r => { if (r.ok) { setExpandedId(client.customer_id); setVersaoHistorico(v => v + 1); } })
+      .catch(() => {});
+  };
+
   const copyWhatsAppMsg = (client: InadimplentesClient) => {
     const msg = decodeURIComponent(getWhatsAppMessage(client));
     navigator.clipboard.writeText(msg);
@@ -1925,9 +1800,7 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <div className="w-8 h-8 border-4 border-rose-500/30 border-t-rose-500 rounded-full animate-spin" />
-    </div>
+    <CarregandoBloco className="py-24" />
   );
 
   return (
@@ -1946,7 +1819,7 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
         <CartaoNumero Icone={Users} cor="#f43f5e" rotulo="Inadimplentes"
           valor={<CountUp value={activeClients.length} />}
           contexto="Clientes com atraso" />
-        <CartaoNumero Icone={DollarSign} cor="#f97316" rotulo="Total Em Risco"
+        <CartaoNumero Icone={DollarSign} cor="#f97316" rotulo="Total Em Risco" moeda
           valor={<CountUp value={totalAmount} isCurrency />}
           contexto="Em cobranças abertas" />
         <CartaoNumero Icone={Clock} cor="#f59e0b" rotulo="Média De Atraso"
@@ -1991,22 +1864,17 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
       {/* Clients List */}
       <div className={TABELA_CLS}>
         {filtered.length === 0 ? (
-          <div className="py-16 text-center">
-            <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-              <CheckCircle2 size={22} className="text-emerald-500" />
-            </div>
-            <p className="text-base font-bold text-slate-900 dark:text-white mb-1">Nenhum inadimplente!</p>
-            <p className="text-sm text-slate-500">Todos os clientes estão em dia com os pagamentos.</p>
-          </div>
+          <EstadoVazio Icone={CheckCircle2} titulo="Nenhum inadimplente." descricao="Todos os clientes estão em dia com os pagamentos." className="py-16" />
         ) : (
           <>
             {/* Table Header */}
-            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 bg-slate-50 dark:bg-white/[0.02] border-b border-slate-200 dark:border-white/5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 bg-slate-50 dark:bg-white/[0.02] border-b border-slate-200 dark:border-white/5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
               <span>Cliente</span>
               <span>Cobranças</span>
               <span>Total Em Aberto</span>
               <span>Atraso</span>
-              <span className="w-24 text-center">Ações</span>
+              <span>Cobrado</span>
+              <span className="w-7" />
             </div>
 
             {/* Rows */}
@@ -2031,26 +1899,36 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
                   >
                     {/* Main Row */}
                     <div
-                      className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-4 py-3 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors cursor-pointer items-center"
+                      className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-3 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors cursor-pointer items-center"
                       onClick={() => setExpandedId(isExpanded ? null : client.customer_id)}
                     >
                       {/* Client Info */}
                       <div className="flex items-center gap-3 min-w-0">
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${daysColor.bg} ${daysColor.text}`}>
-                          {(client.customer_name || 'X').charAt(0).toUpperCase()}
+                          {(nomeDoCliente(client) || 'X').charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{client.customer_name || 'Desconhecido'}</p>
+                          {/* Nome do cadastro do GrapeHub (o mesmo de Clientes Ativos); o do Asaas fica embaixo quando é outro */}
+                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate" title={nomeDoCliente(client)}>{nomeDoCliente(client) || 'Desconhecido'}</p>
+                          {client.client_name_internal && client.customer_name && normalizaNome(client.client_name_internal) !== normalizaNome(client.customer_name) && (
+                            <p className="text-[11px] text-slate-400 truncate" title={`Nome no Asaas: ${client.customer_name}`}>No Asaas: {client.customer_name}</p>
+                          )}
                           <div className="flex items-center gap-2 mt-0.5">
                             {client.phone && (
                               <span className="text-[11px] text-slate-500 flex items-center gap-1">
                                 <Phone size={10} /> {client.phone}
                               </span>
                             )}
-                            {client.squad && (
-                              <span className={`${PILULA_CLS} h-4 px-1.5 bg-violet-500/10 text-violet-600 dark:text-violet-400`}>
-                                {client.squad}
-                              </span>
+                            {client.promessa_data && (() => {
+                              const vencida = client.promessa_data < new Date().toLocaleDateString('sv-SE');
+                              return (
+                                <span className={`${PILULA_CLS} h-4 px-1.5 ${vencida ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
+                                  {vencida ? 'Promessa vencida' : 'Prometeu'} {client.promessa_data.slice(8, 10)}/{client.promessa_data.slice(5, 7)}
+                                </span>
+                              );
+                            })()}
+                            {!client.ultimo_contato && (client.max_days_overdue || 0) >= 15 && (
+                              <span className={`${PILULA_CLS} h-4 px-1.5 bg-slate-500/10 text-slate-500`} title="Nenhum contato de cobrança registrado no histórico">sem contato registrado</span>
                             )}
                           </div>
                         </div>
@@ -2077,30 +1955,34 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
                         </span>
                       </div>
 
-                      {/* Actions */}
-                      <div className="flex items-center gap-1.5 w-24 justify-end" onClick={e => e.stopPropagation()}>
-                        {waUrl && (
-                          <a
-                            href={waUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="Abrir WhatsApp"
-                            className="h-7 flex items-center gap-1 px-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 rounded-lg text-[11px] font-semibold transition-colors"
-                          >
-                            <MessageCircle size={12} /> WA
-                          </a>
-                        )}
-                        <button
-                          onClick={() => copyWhatsAppMsg(client)}
-                          title="Copiar mensagem"
-                          className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors border ${
-                            copiedId === client.customer_id
-                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
-                              : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                          }`}
-                        >
-                          {copiedId === client.customer_id ? <Check size={12} /> : <Copy size={12} />}
-                        </button>
+                      {/* Cobrado: hoje (verde) ou a data da última cobrança, da régua ou de uma pessoa */}
+                      <div>
+                        {(() => {
+                          const uc = client.ultima_cobranca;
+                          const quem = client.ultima_cobranca_tipo === 'auto' ? 'Régua' : 'Manual';
+                          if (!uc) return <span className="text-[11px] text-slate-400">Nunca cobrado</span>;
+                          const dia = uc.slice(0, 10);
+                          const hoje = new Date().toLocaleDateString('sv-SE');
+                          if (dia === hoje) {
+                            return (
+                              <div>
+                                <span className={`${PILULA_CLS} bg-emerald-500/10 text-emerald-600 dark:text-emerald-400`}><Check size={10} /> Hoje, {uc.slice(11, 16)}</span>
+                                <p className="text-[11px] text-slate-500 mt-0.5">{quem}</p>
+                              </div>
+                            );
+                          }
+                          const dias = Math.round((new Date(`${hoje}T12:00:00`).getTime() - new Date(`${dia}T12:00:00`).getTime()) / 86400000);
+                          return (
+                            <div>
+                              <p className="text-[12.5px] font-medium text-slate-700 dark:text-slate-200">{dia.slice(8, 10)}/{dia.slice(5, 7)}</p>
+                              <p className="text-[11px] text-slate-500">{quem} · {dias === 1 ? 'ontem' : `há ${dias} dias`}</p>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Só a seta; WhatsApp e copiar mensagem ficam dentro da linha aberta */}
+                      <div className="flex items-center w-7 justify-end">
                         <button className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${isExpanded ? 'text-violet-500 bg-violet-500/10' : 'text-slate-400 hover:text-slate-700 dark:hover:text-white'}`}>
                           {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                         </button>
@@ -2119,7 +2001,7 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
                             return (
                               <div key={idx} className="flex items-center justify-between gap-3 px-3 py-2.5 bg-white dark:bg-dark-card rounded-xl border border-slate-200 dark:border-white/5">
                                 <div className="flex items-center gap-3 min-w-0">
-                                  <span className="text-base">{bt.icon}</span>
+                                  <bt.icon size={14} className="text-slate-400 shrink-0" />
                                   <div className="min-w-0">
                                     <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate max-w-[300px]">{charge.description || 'Cobrança'}</p>
                                     <p className="text-[11px] text-slate-500">Venceu em {fmtDate(charge.due_date)}</p>
@@ -2145,14 +2027,50 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
                             );
                           })}
                         </div>
-                        {client.email && (
-                          <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
-                            <Mail size={12} />
-                            <span>{client.email}</span>
-                          </div>
-                        )}
+                        <div className="mt-3 flex flex-wrap items-center gap-3" onClick={e => e.stopPropagation()}>
+                          {waUrl && (
+                            <a
+                              href={waUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => { e.stopPropagation(); registrarCobrancaManual(client); }}
+                              title={client.client_id ? 'Abrir WhatsApp e registrar a cobrança no histórico' : 'Abrir WhatsApp'}
+                              className="h-7 flex items-center gap-1 px-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 rounded-lg text-[11px] font-semibold transition-colors"
+                            >
+                              <MessageCircle size={12} /> WA
+                            </a>
+                          )}
+                          <button
+                            onClick={() => copyWhatsAppMsg(client)}
+                            title="Copiar mensagem"
+                            className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors border ${
+                              copiedId === client.customer_id
+                                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                                : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            {copiedId === client.customer_id ? <Check size={12} /> : <Copy size={12} />}
+                          </button>
+                          {client.email && (
+                            <span className="flex items-center gap-2 text-xs text-slate-500">
+                              <Mail size={12} />
+                              <span>{client.email}</span>
+                            </span>
+                          )}
+                        </div>
 
-                        {/* Anotação de cobrança */}
+                        {/* Histórico do cliente (o mesmo de Clientes Ativos e Retenção): cobranças automáticas,
+                            cobrança manual com o resultado, notas. Substitui a "Anotação de cobrança".
+                            Sem cadastro no GrapeHub: fica a anotação solta, porque não há histórico onde gravar. */}
+                        {client.client_id ? (
+                          <div className="mt-4 pt-4 border-t border-slate-200 dark:border-white/5" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <MessageSquare size={12} className="text-slate-500" />
+                              <p className="text-[12px] font-medium text-slate-500">Histórico do cliente</p>
+                            </div>
+                            <CrmCommentHistory key={`${client.client_id}-${versaoHistorico}`} clientId={client.client_id} onAlterado={fetchData} tipoInicial="Contato realizado" />
+                          </div>
+                        ) : (
                         <div className="mt-4 pt-4 border-t border-slate-200 dark:border-white/5" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-1.5 mb-2">
                             <MessageSquare size={12} className="text-slate-500" />
@@ -2178,6 +2096,7 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
                             </button>
                           </div>
                         </div>
+                        )}
                       </div>
                     )}
                   </motion.div>
@@ -2200,7 +2119,7 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
 };
 
 // ── Main Component ───────────────────────────────────
-export default function ContasAReceber() {
+export default function ContasAReceber({ pageLabel }: { pageLabel?: string } = {}) {
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<Summary>({ total_recebido: 0, total_recebidas: 0, total_confirmadas: 0, total_antecipacoes: 0, total_a_receber: 0, total_mes: 0 });
@@ -2250,7 +2169,7 @@ export default function ContasAReceber() {
 
   // Group invoices (A Receber) by billing_type
   const groupInvoicesByType = (items: InvoiceItem[]) => {
-    const grouped: Record<string, { label: string; icon: string; total: number; items: { label: string; sublabel?: string; date: string; value: number; badge?: { text: string; bg: string; color: string }; url?: string | null }[] }> = {};
+    const grouped: Record<string, { label: string; icon: any; total: number; items: { label: string; sublabel?: string; date: string; value: number; badge?: { text: string; bg: string; color: string }; url?: string | null }[] }> = {};
 
     for (const inv of items) {
       const bt = inv.billing_type || 'UNDEFINED';
@@ -2261,7 +2180,7 @@ export default function ContasAReceber() {
       const valor = parseFloat(inv.value || '0');
       grouped[bt].total += valor;
       grouped[bt].items.push({
-        label: inv.customer_name || inv.description || 'Cobrança',
+        label: nomeDoCliente(inv) || inv.description || 'Cobrança',
         sublabel: inv.description || undefined,
         date: inv.due_date,
         value: valor,
@@ -2320,7 +2239,12 @@ export default function ContasAReceber() {
           esquerda, mês num controle só à direita, abas numa barra segmentada abaixo */}
       <div className="max-w-[1600px] mx-auto px-6 md:px-8 pt-8 pb-5 space-y-5">
         <div className="flex items-start justify-between gap-4 flex-wrap">
-          <SplitHeadline text="Contas a " highlight="Receber" subtitle={`Referência: ${monthLabel}`} />
+          {/* Título = nome da página no menu (hoje "Cobranças"); a última palavra vai em destaque */}
+          {(() => {
+            const nome = (pageLabel || 'Cobranças').trim();
+            const i = nome.lastIndexOf(' ');
+            return <SplitHeadline text={i > 0 ? nome.slice(0, i + 1) : ''} highlight={i > 0 ? nome.slice(i + 1) : nome} subtitle={`Referência: ${monthLabel}`} />;
+          })()}
 
           {/* Month nav — um controle só, com as setas dentro */}
           <div className="h-10 flex items-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shrink-0">
@@ -2342,25 +2266,19 @@ export default function ContasAReceber() {
         </div>
 
         {/* Tabs */}
-        <div className={ABAS_CLS}>
-          <button onClick={() => setMainTab('cobrancas')} className={abaCls(mainTab === 'cobrancas')}>
-            Cobranças
-          </button>
-          <button onClick={() => setMainTab('receber')} className={abaCls(mainTab === 'receber')}>
-            A Receber
-          </button>
-          <button onClick={() => setMainTab('inadimplentes')} className={abaCls(mainTab === 'inadimplentes')}>
-            <span>Inadimplentes</span>
-            {inadimplenteCount > 0 && <span className="text-[10px] font-bold h-5 min-w-[20px] px-1.5 rounded-full inline-flex items-center justify-center bg-rose-500/10 text-rose-600 dark:text-rose-400">{inadimplenteCount}</span>}
-          </button>
-        </div>
+        <Abas
+          abas={[
+            { id: 'cobrancas', rotulo: 'Cobranças', Icone: Banknote },
+            { id: 'inadimplentes', rotulo: 'Inadimplentes', Icone: AlertTriangle, contador: inadimplenteCount, alerta: true },
+          ]}
+          ativa={mainTab}
+          onChange={id => setMainTab(id as typeof mainTab)}
+        />
       </div>
 
       <div className="max-w-[1600px] mx-auto px-6 md:px-8 pb-8 space-y-5">
         {loading ? (
-          <div className="flex items-center justify-center py-24">
-            <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-          </div>
+          <CarregandoBloco className="py-24" />
         ) : (
           <>
             {/* ══ Tab: A Receber ══ */}
@@ -2369,19 +2287,19 @@ export default function ContasAReceber() {
                 {/* KPI Cards */}
                 <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
                   {/* 1) Recebidas */}
-                  <CartaoNumero Icone={TrendingUp} cor="#10b981" rotulo="Recebidas"
+                  <CartaoNumero Icone={TrendingUp} cor="#10b981" rotulo="Recebidas" moeda
                     valor={<CountUp value={summary.total_recebidas} isCurrency />}
                     contexto={<>Pix + Boleto · <span className="font-semibold text-emerald-600 dark:text-emerald-400">{recebidas.length} cobranças</span></>} />
                   {/* 2) Confirmadas */}
-                  <CartaoNumero Icone={Banknote} cor="#3b82f6" rotulo="Confirmadas"
+                  <CartaoNumero Icone={Banknote} cor="#3b82f6" rotulo="Confirmadas" moeda
                     valor={<CountUp value={summary.total_confirmadas} isCurrency />}
                     contexto={<>Cartão + Antecipadas · <span className="font-semibold text-blue-600 dark:text-blue-400">{confirmadas.length} cobranças</span></>} />
                   {/* 3) A Receber */}
-                  <CartaoNumero Icone={Clock} cor="#f59e0b" rotulo="A Receber"
+                  <CartaoNumero Icone={Clock} cor="#f59e0b" rotulo="A Receber" moeda
                     valor={<CountUp value={pendentes.reduce((s, r) => s + parseFloat(r.value || '0'), 0)} isCurrency />}
                     contexto={<>Cobranças · <span className="font-semibold text-amber-600 dark:text-amber-400">{pendentes.length} pendentes</span></>} />
                   {/* 4) Vencidas — cartão de alerta quando há cobrança atrasada */}
-                  <CartaoNumero Icone={AlertTriangle} cor="#f43f5e" rotulo="Vencidas"
+                  <CartaoNumero Icone={AlertTriangle} cor="#f43f5e" rotulo="Vencidas" moeda
                     alerta={vencidos.length > 0}
                     valor={<CountUp value={vencidos.reduce((s, r) => s + parseFloat(r.value || '0'), 0)} isCurrency />}
                     contexto={<>Atrasadas · <span className="font-semibold">{vencidos.length} cobranças</span></>} />
@@ -2433,12 +2351,12 @@ export default function ContasAReceber() {
                                 }}
                               >
                                 <td className="px-4 py-3">
-                                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{inv.customer_name || 'Desconhecido'}</p>
+                                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{nomeDoCliente(inv) || 'Desconhecido'}</p>
                                   {inv.description && <p className="text-[11px] text-slate-500 truncate max-w-[300px]">{inv.description}</p>}
                                 </td>
                                 <td className="px-4 py-3">
                                   <span className={`${PILULA_CLS} bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300`}>
-                                    {bt.icon} {bt.label}
+                                    <bt.icon size={12} /> {bt.label}
                                   </span>
                                 </td>
                                 <td className="px-4 py-3">
@@ -2503,12 +2421,12 @@ export default function ContasAReceber() {
                                 }}
                               >
                                 <td className="px-4 py-3">
-                                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{inv.customer_name || 'Desconhecido'}</p>
+                                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{nomeDoCliente(inv) || 'Desconhecido'}</p>
                                   {inv.description && <p className="text-[11px] text-slate-500 truncate max-w-[300px]">{inv.description}</p>}
                                 </td>
                                 <td className="px-4 py-3">
                                   <span className={`${PILULA_CLS} bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300`}>
-                                    {bt.icon} {bt.label}
+                                    <bt.icon size={12} /> {bt.label}
                                   </span>
                                 </td>
                                 <td className="px-4 py-3">

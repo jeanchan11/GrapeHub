@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import SplitHeadline from '../components/SplitHeadline';
 import OptionPicker from '../components/ui/OptionPicker';
 import { createPortal } from 'react-dom';
@@ -7,6 +7,8 @@ import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, 
 import RichTextEditor from '../components/RichTextEditor';
 import { useAuth } from '../contexts/AuthContext';
 import { confirmDialog } from '@/src/lib/confirm';
+import { Modal } from '../components/ui/Modal';
+import { CarregandoBloco } from '../components/LoadingSpinner';
 import {
   DndContext,
   closestCorners,
@@ -322,11 +324,11 @@ const StatusConfigModal = ({
     setDragOverIdx(null);
   };
 
-  return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+  return (
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-lg" className="max-h-[85vh]">
+      <div className="flex flex-col flex-1 min-h-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/5 shrink-0">
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-black/5 dark:border-white/5 shrink-0">
           <div>
             <h2 className="text-base font-bold text-dark-text flex items-center gap-2">
               <Layers size={18} className="text-violet-500" />
@@ -334,7 +336,7 @@ const StatusConfigModal = ({
             </h2>
             <p className="text-[10px] text-slate-500 mt-0.5">Reordene, renomeie, edite cores e emojis das etapas</p>
           </div>
-          <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+          <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -350,8 +352,8 @@ const StatusConfigModal = ({
               onDrop={() => handleDrop(idx)}
               className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-grab active:cursor-grabbing group ${
                 dragOverIdx === idx
-                  ? 'bg-white/10 border-white/20 scale-[1.01]'
-                  : 'bg-white/[0.02] border-white/5 hover:bg-white/5'
+                  ? 'bg-black/5 dark:bg-white/10 border-black/10 dark:border-white/20 scale-[1.01]'
+                  : 'bg-black/[0.02] dark:bg-white/[0.02] border-black/5 dark:border-white/5 hover:bg-black/[0.03] dark:hover:bg-white/5'
               }`}
               style={{ borderLeftColor: g.color, borderLeftWidth: 3 }}
             >
@@ -368,10 +370,10 @@ const StatusConfigModal = ({
                   {g.emoji || '📌'}
                 </button>
                 {showEmojiFor === g.id && (
-                  <div className="absolute top-8 left-0 z-50 p-2 bg-dark-card border border-white/10 rounded-xl shadow-2xl grid grid-cols-5 gap-1 w-36">
+                  <div className="absolute top-8 left-0 z-50 p-2 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl grid grid-cols-5 gap-1 w-36">
                     {IA_EMOJI_OPTIONS.map(em => (
                       <button key={em} onClick={() => handleEmojiChange(g.id, em)}
-                        className="text-base hover:bg-white/10 rounded-lg p-1 transition-colors">{em}</button>
+                        className="text-base hover:bg-black/5 dark:hover:bg-white/10 rounded-lg p-1 transition-colors">{em}</button>
                     ))}
                   </div>
                 )}
@@ -381,12 +383,12 @@ const StatusConfigModal = ({
               <div className="relative shrink-0">
                 <button
                   onClick={() => { setShowColorFor(showColorFor === g.id ? null : g.id); setShowEmojiFor(null); }}
-                  className="w-4 h-4 rounded-full border-2 border-white/20 hover:scale-125 transition-transform"
+                  className="w-4 h-4 rounded-full border-2 border-black/10 dark:border-white/20 hover:scale-125 transition-transform"
                   style={{ backgroundColor: g.color }}
                   title="Alterar cor"
                 />
                 {showColorFor === g.id && (
-                  <div className="absolute top-6 left-0 z-50 p-2 bg-dark-card border border-white/10 rounded-xl shadow-2xl grid grid-cols-6 gap-1 w-40">
+                  <div className="absolute top-6 left-0 z-50 p-2 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl grid grid-cols-6 gap-1 w-40">
                     {IA_COLOR_PALETTE.map(c => (
                       <button key={c} onClick={() => handleColorChange(g.id, c)}
                         className="w-5 h-5 rounded-full border-2 transition-all hover:scale-125"
@@ -409,7 +411,7 @@ const StatusConfigModal = ({
                     value={editLabel}
                     onChange={e => setEditLabel(e.target.value)}
                     onBlur={() => saveEdit(g.id)}
-                    onKeyDown={e => { if (e.key === 'Enter') saveEdit(g.id); if (e.key === 'Escape') setEditingId(null); }}
+                    data-segura-esc onKeyDown={e => { if (e.key === 'Enter') saveEdit(g.id); if (e.key === 'Escape') setEditingId(null); }}
                     className="bg-transparent border-b border-violet-500/50 text-dark-text text-xs font-bold uppercase tracking-widest outline-none w-full"
                   />
                 ) : (
@@ -436,7 +438,7 @@ const StatusConfigModal = ({
                 {confirmDelId === g.id ? (
                   <div className="flex items-center gap-1">
                     <button onClick={() => handleDelete(g.id)} className="px-2 py-1 text-[10px] font-bold text-rose-400 bg-rose-500/10 rounded-lg hover:bg-rose-500/20 transition-colors">Sim</button>
-                    <button onClick={() => setConfirmDelId(null)} className="px-2 py-1 text-[10px] font-bold text-slate-400 bg-white/5 rounded-lg hover:bg-white/10 transition-colors">Não</button>
+                    <button onClick={() => setConfirmDelId(null)} className="px-2 py-1 text-[10px] font-bold text-slate-400 bg-black/[0.03] dark:bg-white/5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors">Não</button>
                   </div>
                 ) : (
                   <button
@@ -453,7 +455,7 @@ const StatusConfigModal = ({
         </div>
 
         {/* Add new */}
-        <div className="px-4 py-3 border-t border-white/5 shrink-0">
+        <div className="px-4 py-3 border-t border-black/5 dark:border-white/5 shrink-0">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Novo Status</p>
           <div className="flex items-center gap-2">
             {/* Emoji for new */}
@@ -464,10 +466,10 @@ const StatusConfigModal = ({
                 title="Emoji"
               >{newEmoji}</button>
               {showNewEmojiPicker && (
-                <div className="absolute bottom-8 left-0 z-50 p-2 bg-dark-card border border-white/10 rounded-xl shadow-2xl grid grid-cols-5 gap-1 w-36">
+                <div className="absolute bottom-8 left-0 z-50 p-2 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl grid grid-cols-5 gap-1 w-36">
                   {IA_EMOJI_OPTIONS.map(em => (
                     <button key={em} onClick={() => { setNewEmoji(em); setShowNewEmojiPicker(false); }}
-                      className="text-base hover:bg-white/10 rounded-lg p-1 transition-colors">{em}</button>
+                      className="text-base hover:bg-black/5 dark:hover:bg-white/10 rounded-lg p-1 transition-colors">{em}</button>
                   ))}
                 </div>
               )}
@@ -477,12 +479,12 @@ const StatusConfigModal = ({
             <div className="relative">
               <button
                 onClick={() => { setShowNewColorPicker(v => !v); setShowNewEmojiPicker(false); }}
-                className="w-5 h-5 rounded-full border-2 border-white/20 hover:scale-110 transition-transform"
+                className="w-5 h-5 rounded-full border-2 border-black/10 dark:border-white/20 hover:scale-110 transition-transform"
                 style={{ backgroundColor: newColor }}
                 title="Cor"
               />
               {showNewColorPicker && (
-                <div className="absolute bottom-8 left-0 z-50 p-2 bg-dark-card border border-white/10 rounded-xl shadow-2xl grid grid-cols-6 gap-1 w-40">
+                <div className="absolute bottom-8 left-0 z-50 p-2 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl grid grid-cols-6 gap-1 w-40">
                   {IA_COLOR_PALETTE.map(c => (
                     <button key={c} onClick={() => { setNewColor(c); setShowNewColorPicker(false); }}
                       className="w-5 h-5 rounded-full border-2 transition-all hover:scale-125"
@@ -499,7 +501,7 @@ const StatusConfigModal = ({
               onChange={e => setNewLabel(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleAdd()}
               placeholder="Nome do novo status..."
-              className="flex-1 bg-white/5 border border-white/10 focus:border-violet-500/50 rounded-xl px-3 py-2 text-xs text-dark-text placeholder-slate-600 focus:outline-none transition-all"
+              className="flex-1 bg-black/[0.03] dark:bg-white/5 border border-black/10 dark:border-white/10 focus:border-violet-500/50 rounded-xl px-3 py-2 text-xs text-dark-text placeholder-slate-600 focus:outline-none transition-all"
             />
             <button
               onClick={handleAdd}
@@ -513,14 +515,13 @@ const StatusConfigModal = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-white/5 shrink-0">
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-black/5 dark:border-white/5 shrink-0">
           <button onClick={onClose} className="px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold rounded-xl transition-colors">
             Concluído
           </button>
         </div>
       </div>
-    </div>,
-    document.body
+    </Modal>
   );
 };
 
@@ -575,7 +576,7 @@ const Avatar = ({ url, name, size = 6 }: { url?: string; name?: string; size?: n
   const initials = (name || '??').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
   const sz = `w-${size} h-${size}`;
   if (url && !error) {
-    return <img src={url} alt={name || ''} onError={() => setError(true)} className={`${sz} rounded-full object-cover border border-white/10`} />;
+    return <img src={url} alt={name || ''} onError={() => setError(true)} className={`${sz} rounded-full object-cover border border-black/10 dark:border-white/10`} />;
   }
   return (
     <div className={`${sz} rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-[9px] font-bold text-violet-300`}>
@@ -687,11 +688,11 @@ function SingleDatePicker({ value, onChange, placeholder = '—', align = 'right
         )}
       </p>
       <div className="flex items-center justify-between mb-3">
-        <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+        <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors">
           <ChevronDown size={13} className="text-slate-400 rotate-90" />
         </button>
         <span className="text-sm font-bold text-dark-text">{MESES_FULL[viewMonth - 1]} {viewYear}</span>
-        <button onClick={() => stepMonth(1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+        <button onClick={() => stepMonth(1)} className="w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors">
           <ChevronDown size={13} className="text-slate-400 -rotate-90" />
         </button>
       </div>
@@ -707,7 +708,7 @@ function SingleDatePicker({ value, onChange, placeholder = '—', align = 'right
             <button key={iso}
               onClick={() => { onChange(iso); setOpen(false); }}
               className={`relative h-8 w-full text-xs font-semibold transition-all rounded-full
-                ${isSelected ? 'text-white' : 'text-dark-text hover:text-violet-600 hover:bg-white/5'}`}
+                ${isSelected ? 'text-white' : 'text-dark-text hover:text-violet-600 hover:bg-black/[0.03] dark:hover:bg-white/5'}`}
             >
               <span className={`absolute inset-0.5 flex items-center justify-center rounded-full text-xs
                 ${isSelected ? 'bg-violet-600 shadow-md shadow-violet-500/30' : ''}
@@ -799,7 +800,7 @@ const DraggableColHeaders = () => {
   const reset = () => { dragColRef.current = null; setDraggingCol(null); setOverCol(null); };
 
   return (
-    <div className="flex items-center gap-2 px-8 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5">
+    <div className="flex items-center gap-2 px-8 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-black/5 dark:border-white/5">
       <div className="w-[14px] shrink-0" />
       <div className="w-4 shrink-0" />
       {/* Fixed: Nome */}
@@ -905,11 +906,11 @@ const SortableSubtaskRow = ({
             style={{ position: 'fixed', top: subtaskRespPos.top, left: subtaskRespPos.left, zIndex: 9999, width: 192 }}
             className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto"
           >
-            <div className="px-2 py-1.5 border-b border-white/5 mb-1">
+            <div className="px-2 py-1.5 border-b border-black/5 dark:border-white/5 mb-1">
               <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
             </div>
             {cachedUsers.map((u: any) => (
-              <button key={u.id} onClick={() => handleSubtaskResponsible(sub.id, u.id, u.name, u.picture)} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
+              <button key={u.id} onClick={() => handleSubtaskResponsible(sub.id, u.id, u.name, u.picture)} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-black/[0.03] dark:hover:bg-white/5 rounded-lg text-left transition-colors">
                 <Avatar name={u.name} url={u.picture} size={5} />
                 <span className="text-xs text-dark-text truncate">{u.name}</span>
               </button>
@@ -1288,7 +1289,7 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
             {/* Dropdown menu */}
             {tagMenuOpen && (
               <div
-                className="absolute top-7 left-0 z-50 w-52 bg-dark-card border border-white/10 rounded-xl shadow-2xl p-2"
+                className="absolute top-7 left-0 z-50 w-52 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-2"
                 onClick={e => e.stopPropagation()}
               >
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-2 mb-2">Adicionar / Remover</p>
@@ -1306,7 +1307,7 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
                       const hasTag = task.tags.includes(c.name);
                       return (
                         <button key={c.id} onClick={() => handleToggleTag(c.name)}
-                          className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg transition-colors text-left ${hasTag ? 'bg-violet-500/10' : 'hover:bg-white/5'}`}>
+                          className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg transition-colors text-left ${hasTag ? 'bg-violet-500/10' : 'hover:bg-black/[0.03] dark:hover:bg-white/5'}`}>
                           <div className="flex items-center gap-2">
                             <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
                             <span className="text-xs text-dark-text truncate">{c.name}</span>
@@ -1393,8 +1394,8 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
             {taskRespPicker && createPortal(
               <div data-task-resp-portal onClick={e => e.stopPropagation()}
                 style={{ position: 'fixed', top: taskRespPos.top, left: taskRespPos.left, zIndex: 9999, width: 210 }}
-                className="bg-dark-card border border-white/10 rounded-xl shadow-2xl p-1 max-h-56 overflow-y-auto">
-                <div className="px-2 py-1.5 border-b border-white/5 mb-1">
+                className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-56 overflow-y-auto">
+                <div className="px-2 py-1.5 border-b border-black/5 dark:border-white/5 mb-1">
                   <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Responsáveis</span>
                 </div>
                 {cachedUsers.map(u => {
@@ -1402,7 +1403,7 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
                   return (
                     <button key={u.id}
                       onClick={e => { e.stopPropagation(); handleTaskResponsible(u.id, u.name, u.picture); }}
-                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors ${isSelected ? 'bg-violet-500/10' : 'hover:bg-white/5'}`}>
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors ${isSelected ? 'bg-violet-500/10' : 'hover:bg-black/[0.03] dark:hover:bg-white/5'}`}>
                       <Avatar name={u.name} url={u.picture} size={5} />
                       <span className="text-xs text-dark-text truncate flex-1">{u.name}</span>
                       {isSelected && (
@@ -1461,8 +1462,8 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
             {timePicker && createPortal(
               <div data-time-portal onClick={e => e.stopPropagation()}
                 style={{ position: 'fixed', top: timePickerPos.top, left: timePickerPos.left, zIndex: 9999, width: 210 }}
-                className="bg-dark-card border border-white/10 rounded-xl shadow-2xl p-1 max-h-56 overflow-y-auto">
-                <div className="px-2 py-1.5 border-b border-white/5 mb-1">
+                className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-56 overflow-y-auto">
+                <div className="px-2 py-1.5 border-b border-black/5 dark:border-white/5 mb-1">
                   <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Time</span>
                 </div>
                 {cachedUsers.map(u => {
@@ -1470,7 +1471,7 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
                   return (
                     <button key={u.id}
                       onClick={e => { e.stopPropagation(); handleTimeResponsible(u.id, u.name, u.picture); }}
-                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors ${isSelected ? 'bg-violet-500/10' : 'hover:bg-white/5'}`}>
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors ${isSelected ? 'bg-violet-500/10' : 'hover:bg-black/[0.03] dark:hover:bg-white/5'}`}>
                       <Avatar name={u.name} url={u.picture} size={5} />
                       <span className="text-xs text-dark-text truncate flex-1">{u.name}</span>
                       {isSelected && (
@@ -1555,7 +1556,7 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
               value={editNameValue}
               onChange={e => setEditNameValue(e.target.value)}
               onBlur={handleSaveName}
-              onKeyDown={e => { if (e.key === 'Enter') handleSaveName(); if (e.key === 'Escape') { setEditNameValue(task.client_name); setEditingName(false); } }}
+              data-segura-esc onKeyDown={e => { if (e.key === 'Enter') handleSaveName(); if (e.key === 'Escape') { setEditNameValue(task.client_name); setEditingName(false); } }}
               className="text-sm font-semibold text-dark-text bg-transparent border-b border-violet-500/50 outline-none w-full max-w-xs"
             />
           ) : (
@@ -1569,7 +1570,7 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
             </span>
           )}
           {task.subtask_count > 0 && (
-            <span className="text-[10px] text-slate-500 font-mono bg-white/5 px-1.5 py-0.5 rounded">
+            <span className="text-[10px] text-slate-500 font-mono bg-black/[0.03] dark:bg-white/5 px-1.5 py-0.5 rounded">
               ↳ {task.subtask_count}
             </span>
           )}
@@ -1583,7 +1584,7 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
         <div className="relative shrink-0" ref={menuRef}>
           <button
             onClick={() => setShowMenu(v => !v)}
-            className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-white/10"
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-black/5 dark:hover:bg-white/10"
           >
             <MoreHorizontal size={14} />
           </button>
@@ -1744,24 +1745,24 @@ const GroupBlock = ({ group, coloredTagDefs, onUpdate, onAddTask, onOpenDetail, 
     <div ref={menuRef} className="relative" onClick={e => e.stopPropagation()}>
       <button
         onClick={(e) => { e.stopPropagation(); setShowGroupMenu(v => !v); }}
-        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 hover:text-slate-300 hover:bg-white/5 transition-colors opacity-0 group-hover/header:opacity-100"
+        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 hover:text-slate-300 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors opacity-0 group-hover/header:opacity-100"
       >
         <MoreHorizontal size={14} />
       </button>
       {showGroupMenu && (
-        <div className="absolute top-8 left-0 z-50 w-56 bg-dark-card border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+        <div className="absolute top-8 left-0 z-50 w-56 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden">
           <div className="py-1">
-            <button onClick={() => { setShowGroupMenu(false); setEditLabel(group.label); setEditing(true); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-white/5 transition-colors">
+            <button onClick={() => { setShowGroupMenu(false); setEditLabel(group.label); setEditing(true); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors">
               <Edit2 size={13} className="text-violet-400" />
               Renomear
             </button>
-            <div className="h-px bg-white/5 mx-2 my-1" />
+            <div className="h-px bg-black/[0.03] dark:bg-white/5 mx-2 my-1" />
             {confirmDel ? (
               <div className="p-2 animate-in fade-in slide-in-from-top-2">
                 <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest text-center mb-2">Tem certeza?</p>
                 <div className="flex gap-2">
                   <button onClick={handleDelete} className="flex-1 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[10px] font-bold rounded-lg transition-colors uppercase">Sim</button>
-                  <button onClick={() => setConfirmDel(false)} className="flex-1 py-1.5 bg-white/5 hover:bg-white/10 text-slate-300 text-[10px] font-bold rounded-lg transition-colors uppercase">Não</button>
+                  <button onClick={() => setConfirmDel(false)} className="flex-1 py-1.5 bg-black/[0.03] dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 text-slate-300 text-[10px] font-bold rounded-lg transition-colors uppercase">Não</button>
                 </div>
               </div>
             ) : (
@@ -1788,7 +1789,7 @@ const GroupBlock = ({ group, coloredTagDefs, onUpdate, onAddTask, onOpenDetail, 
           value={editLabel}
           onChange={e => setEditLabel(e.target.value)}
           onBlur={handleSaveLabel}
-          onKeyDown={e => { if (e.key === 'Enter') handleSaveLabel(); if (e.key === 'Escape') { setEditLabel(group.label); setEditing(false); } }}
+          data-segura-esc onKeyDown={e => { if (e.key === 'Enter') handleSaveLabel(); if (e.key === 'Escape') { setEditLabel(group.label); setEditing(false); } }}
           onClick={e => e.stopPropagation()}
           className="bg-transparent border-b border-current text-current font-black uppercase tracking-widest outline-none w-40 text-inherit"
           style={{ fontSize: 'inherit' }}
@@ -1807,7 +1808,7 @@ const GroupBlock = ({ group, coloredTagDefs, onUpdate, onAddTask, onOpenDetail, 
   if (group.tasks.length === 0 && !expanded) {
     return (
       <DroppableListGroup id={`group-${group.id}`} className="mb-1 group/header">
-        <div className={`w-full flex items-center justify-between gap-2 px-4 py-2 rounded-xl transition-colors hover:bg-white/[0.03]`}>
+        <div className={`w-full flex items-center justify-between gap-2 px-4 py-2 rounded-xl transition-colors hover:bg-black/[0.03] dark:hover:bg-white/[0.03]`}>
           <div className="flex items-center gap-2">
             <div 
               className="cursor-grab active:cursor-grabbing text-slate-700 hover:text-slate-500 opacity-0 group-hover/header:opacity-100 transition-opacity"
@@ -1867,7 +1868,7 @@ const GroupBlock = ({ group, coloredTagDefs, onUpdate, onAddTask, onOpenDetail, 
                     <motion.div
                       initial={{ opacity: 0, y: -18, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{ duration: 0.35, delay: idx * 0.06, ease: [0.32, 0.72, 0, 1] }}
+                      transition={{ duration: 0.25, delay: Math.min(idx, 8) * 0.04, ease: [0.32, 0.72, 0, 1] }}
                     >
                       <TaskRow 
                         task={task} 
@@ -1921,14 +1922,14 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-md">
+      <div className="p-6">
         <h3 className="text-sm font-bold text-dark-text mb-4">Adicionar Cliente à Implementação IA</h3>
         <div className="space-y-3">
           <input
             value={clientName} onChange={e => setClientName(e.target.value)}
             placeholder="Nome do cliente *"
-            className="w-full bg-dark-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50"
+            className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50"
           />
           <OptionPicker
             value={squad || null}
@@ -1945,17 +1946,17 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
             <div>
               <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1 block">Data Inicial</label>
               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
+                className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
             </div>
             <div>
               <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1 block">Vencimento</label>
               <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
-                className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
+                className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
             </div>
           </div>
         </div>
         <div className="flex gap-3 mt-5">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm text-slate-400 hover:bg-white/5 transition-colors">Cancelar</button>
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-black/10 dark:border-white/10 text-sm text-slate-400 hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors">Cancelar</button>
           <button onClick={handleSave} disabled={saving || !clientName.trim()}
             className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-sm font-bold text-white transition-colors flex items-center justify-center gap-2">
             {saving ? <Loader2 size={14} className="animate-spin" /> : null}
@@ -1963,7 +1964,7 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -2023,8 +2024,8 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-lg" className="max-h-[85vh]" fecharComEsc={!selectedItem}>
+      <div className="flex flex-col flex-1 min-h-0">
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-black/5 dark:border-white/5">
           <div>
@@ -2034,7 +2035,7 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
             </h2>
             <p className="text-[10px] text-slate-500 mt-0.5">Subtarefas criadas automaticamente para cada novo cliente</p>
           </div>
-          <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+          <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -2043,7 +2044,7 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {loading ? (
             <div className="flex justify-center py-8">
-              <div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+              <Loader2 size={20} className="animate-spin text-violet-500" />
             </div>
           ) : items.length === 0 ? (
             <p className="text-center text-slate-600 text-sm py-8">Nenhuma subtarefa no modelo ainda.</p>
@@ -2113,17 +2114,17 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
         const itemIdx = items.findIndex(i => i.id === selectedItem.id);
         if (itemIdx === -1) return null;
         return (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setSelectedItem(null)}>
-            <div className="bg-dark-card border border-white/10 rounded-2xl shadow-2xl w-full max-w-7xl h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <Modal isOpen onClose={() => setSelectedItem(null)} semCabecalho semPadding maxWidth="max-w-7xl" className="h-[92vh]">
+            <div className="flex flex-col flex-1 min-h-0">
               {/* Header */}
-              <div className="flex items-center justify-between px-6 py-5 border-b border-white/5">
+              <div className="flex items-center justify-between px-6 py-5 border-b border-black/5 dark:border-white/5">
                 <div>
                   <h2 className="text-lg font-bold text-dark-text">{selectedItem.title}</h2>
                   <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-widest">
                     Modelo de subtarefa — o conteúdo aqui será copiado para cada novo cliente
                   </p>
                 </div>
-                <button onClick={() => setSelectedItem(null)} className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-xl transition-colors">
+                <button onClick={() => setSelectedItem(null)} className="p-2 text-slate-500 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-xl transition-colors">
                   <X size={18} />
                 </button>
               </div>
@@ -2161,17 +2162,17 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-4 border-t border-white/5 flex items-center justify-end gap-3">
+              <div className="px-6 py-4 border-t border-black/5 dark:border-white/5 flex items-center justify-end gap-3">
                 <button onClick={() => setSelectedItem(null)}
                   className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-sm font-bold text-white transition-colors">
                   Fechar
                 </button>
               </div>
             </div>
-          </div>
+          </Modal>
         );
       })()}
-    </div>
+    </Modal>
   );
 };// ── Task Detail Modal ─────────────────────────────────────
 const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; onClose: () => void; onUpdate: () => void }) => {
@@ -2322,22 +2323,19 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
   const statusColor = STATUS_COLORS[task.status_group] || { bg: 'bg-slate-500/15', text: 'text-slate-400' };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="bg-dark-card border border-white/10 rounded-2xl shadow-2xl flex overflow-hidden"
-        style={{ width: '860px', maxWidth: '95vw', height: '560px', maxHeight: '90vh' }}
-        onClick={e => e.stopPropagation()}
-      >
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-5xl" fecharComEsc={!commentPreviewImg}>
+      <div className="flex overflow-hidden w-full h-[90vh]">
         {/* LEFT PANEL */}
         <div className="flex flex-col" style={{ width: '520px', minWidth: 0 }}>
-          <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-white/5 shrink-0">
+          <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-black/5 dark:border-white/5 shrink-0">
             <div className="flex-1 mr-4 min-w-0">
               {isEditingTitle ? (
                 <input autoFocus
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-base font-bold text-dark-text outline-none focus:border-violet-500"
+                  className="w-full bg-black/[0.03] dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-2 py-1 text-base font-bold text-dark-text outline-none focus:border-violet-500"
                   value={editTitleStr}
                   onChange={e => setEditTitleStr(e.target.value)}
                   onBlur={saveTitle}
+                  data-segura-esc
                   onKeyDown={e => {
                     if (e.key === 'Enter') saveTitle();
                     if (e.key === 'Escape') { setEditTitleStr(task.client_name); setIsEditingTitle(false); }
@@ -2408,12 +2406,12 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                 <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-24 shrink-0 pt-0.5">Tags</span>
                 <div className="flex flex-wrap gap-1.5">
                   {(task.tags || []).map(t => (
-                    <span key={t} className="px-2 py-0.5 bg-white/5 border border-white/10 rounded-full text-[10px] text-slate-400 font-medium">{t}</span>
+                    <span key={t} className="px-2 py-0.5 bg-black/[0.03] dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-full text-[10px] text-slate-400 font-medium">{t}</span>
                   ))}
                 </div>
               </div>
             )}
-            <div className="border-t border-white/5 pt-4">
+            <div className="border-t border-black/5 dark:border-white/5 pt-4">
               <p className="text-[10px] text-slate-600 font-semibold uppercase tracking-widest mb-3">Dados do cliente</p>
               <div className="space-y-2.5">
                 {task.nome_fantasia && (
@@ -2440,8 +2438,8 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
         </div>
 
         {/* RIGHT PANEL: Comments */}
-        <div className="flex flex-col border-l border-white/5 bg-dark-bg/40" style={{ width: '340px', minWidth: 0 }}>
-          <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-white/5 shrink-0">
+        <div className="flex flex-col border-l border-black/5 dark:border-white/5 bg-dark-bg/40" style={{ width: '340px', minWidth: 0 }}>
+          <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-black/5 dark:border-white/5 shrink-0">
             <div className="flex items-center gap-2">
               <MessageCircle size={14} className="text-violet-400" />
               <span className="text-xs font-bold text-dark-text">Atividade</span>
@@ -2454,11 +2452,11 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
             {loadingComments ? (
               <div className="flex justify-center py-10">
-                <div className="w-5 h-5 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+                <Loader2 size={18} className="animate-spin text-violet-500" />
               </div>
             ) : comments.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-14 text-center">
-                <div className="w-10 h-10 rounded-2xl bg-white/[0.03] border border-white/8 flex items-center justify-center mb-3">
+                <div className="w-10 h-10 rounded-2xl bg-black/[0.03] dark:bg-white/[0.03] border border-black/10 dark:border-white/8 flex items-center justify-center mb-3">
                   <MessageCircle size={18} className="text-slate-600" />
                 </div>
                 <p className="text-xs font-semibold text-slate-500">Nenhum comentário</p>
@@ -2494,7 +2492,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                         <textarea
                           value={editText}
                           onChange={e => setEditText(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEditComment(c.id); } else if (e.key === 'Escape') cancelEditComment(); }}
+                          data-segura-esc onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEditComment(c.id); } else if (e.key === 'Escape') cancelEditComment(); }}
                           autoFocus
                           rows={2}
                           className="w-full bg-dark-bg border border-violet-500/40 rounded-xl px-3 py-2 text-xs text-dark-text focus:outline-none resize-none leading-relaxed"
@@ -2505,7 +2503,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                         </div>
                       </div>
                     ) : (
-                      <div className="bg-dark-card border border-white/[0.06] rounded-2xl rounded-tl-sm px-3 py-2.5">
+                      <div className="bg-dark-card border border-black/10 dark:border-white/[0.06] rounded-2xl rounded-tl-sm px-3 py-2.5">
                         {c.text && <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed select-text">{c.text}</p>}
                         {commentFiles.length > 0 && (
                           <div className={`flex flex-wrap gap-2 ${c.text ? 'mt-2' : ''}`}>
@@ -2515,7 +2513,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                                   key={fi}
                                   src={cf.url}
                                   alt={cf.name}
-                                  className="max-w-full rounded-lg border border-white/10 cursor-pointer hover:opacity-90 transition-opacity"
+                                  className="max-w-full rounded-lg border border-black/10 dark:border-white/10 cursor-pointer hover:opacity-90 transition-opacity"
                                   style={{ maxHeight: 200 }}
                                   onClick={() => setCommentPreviewImg(cf.url)}
                                 />
@@ -2524,7 +2522,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                                   key={fi}
                                   href={cf.url}
                                   download={cf.name}
-                                  className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg hover:border-violet-500/30 transition-colors text-xs text-slate-300"
+                                  className="flex items-center gap-2 px-3 py-2 bg-black/[0.03] dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg hover:border-violet-500/30 transition-colors text-xs text-slate-300"
                                   onClick={e => e.stopPropagation()}
                                 >
                                   <FileText size={14} className="text-violet-400 shrink-0" />
@@ -2544,15 +2542,15 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
             <div ref={commentsEndRef} />
           </div>
 
-          <div className="border-t border-white/5 px-4 py-3 bg-dark-card shrink-0">
+          <div className="border-t border-black/5 dark:border-white/5 px-4 py-3 bg-dark-card shrink-0">
             {pendingCommentFiles.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-2 ml-9">
                 {pendingCommentFiles.map((pf, i) => (
                   <div key={i} className="relative group/pf">
                     {pf.type === 'image' ? (
-                      <img src={pf.url} alt={pf.name} onClick={() => setCommentPreviewImg(pf.url)} className="h-16 rounded-lg border border-white/10 object-cover cursor-zoom-in" />
+                      <img src={pf.url} alt={pf.name} onClick={() => setCommentPreviewImg(pf.url)} className="h-16 rounded-lg border border-black/10 dark:border-white/10 object-cover cursor-zoom-in" />
                     ) : (
-                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] text-slate-400">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-black/[0.03] dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg text-[10px] text-slate-400">
                         <FileText size={12} className="text-violet-400" />
                         <span className="truncate max-w-[100px]">{pf.name}</span>
                       </div>
@@ -2583,7 +2581,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                 onPaste={handleCommentPaste}
                 placeholder="Escreva um comentário..."
                 rows={1}
-                className="flex-1 bg-dark-bg border border-white/10 rounded-2xl px-3 py-2.5 text-xs text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors resize-none leading-relaxed"
+                className="flex-1 bg-dark-bg border border-black/10 dark:border-white/10 rounded-2xl px-3 py-2.5 text-xs text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors resize-none leading-relaxed"
                 style={{ minHeight: '38px', maxHeight: '100px' }}
                 onInput={e => {
                   const el = e.currentTarget;
@@ -2594,7 +2592,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
               <button
                 onClick={() => commentFileInputRef.current?.click()}
                 title="Anexar arquivo"
-                className="w-8 h-8 rounded-full text-slate-500 hover:text-violet-400 hover:bg-white/5 flex items-center justify-center transition-all shrink-0"
+                className="w-8 h-8 rounded-full text-slate-500 hover:text-violet-400 hover:bg-black/[0.03] dark:hover:bg-white/5 flex items-center justify-center transition-all shrink-0"
               >
                 <Paperclip size={14} />
               </button>
@@ -2627,7 +2625,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
         </div>,
         document.body
       )}
-    </div>
+    </Modal>
   );
 };
 
@@ -2643,8 +2641,8 @@ const DocEditorModal = ({ file, onSave, onClose }: { file: any; onSave: (id: num
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-3xl h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-3xl" className="h-[85vh]">
+      <div className="flex flex-col flex-1 min-h-0">
         <div className="flex items-center justify-between px-6 py-4 border-b border-black/5 dark:border-white/5">
           <div>
             <h2 className="text-base font-bold text-dark-text flex items-center gap-2">
@@ -2672,7 +2670,7 @@ const DocEditorModal = ({ file, onSave, onClose }: { file: any; onSave: (id: num
           />
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -2897,8 +2895,8 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-7xl h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-7xl" className="h-[92vh]" fecharComEsc={!editingDoc}>
+      <div className="flex flex-col flex-1 min-h-0">
         
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-black/5 dark:border-white/5">
@@ -3056,7 +3054,7 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
       {editingDoc && (
         <DocEditorModal file={editingDoc} onSave={handleSaveDocContent} onClose={() => setEditingDoc(null)} />
       )}
-    </div>
+    </Modal>
   );
 };
 
@@ -3096,8 +3094,8 @@ const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onC
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-sm bg-dark-bg rounded-3xl border border-dark-text/10 shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-sm">
+      <div className="p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-black text-dark-text">Gerenciar <span className="text-violet-500">Tags</span></h2>
           <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-all"><X size={16} /></button>
@@ -3178,7 +3176,7 @@ const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onC
           </div>
         )}
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -3448,9 +3446,9 @@ export default function ImplementacaoIA() {
           </button>
           <button
             onClick={() => setShowStatusConfig(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-black/10 dark:border-white/10 hover:border-sky-500/30 text-dark-text text-[11px] font-bold rounded-xl transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-black/10 dark:border-white/10 hover:border-violet-500/30 text-dark-text text-[11px] font-bold rounded-xl transition-colors"
           >
-            <Layers size={14} className="text-sky-400" />
+            <Layers size={14} className="text-violet-500" />
             Configurar Status
           </button>
           <button
@@ -3465,9 +3463,7 @@ export default function ImplementacaoIA() {
 
       {/* ── Content ── */}
       {loading ? (
-        <div className="flex items-center justify-center py-32">
-          <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-        </div>
+        <CarregandoBloco className="py-32" />
       ) : (
         <div className="px-8 pb-12">
           <DndContext sensors={dndSensors} collisionDetection={closestCorners} onDragStart={handleDndStart} onDragOver={handleDndOver} onDragEnd={handleDndEnd}>
@@ -3477,9 +3473,9 @@ export default function ImplementacaoIA() {
             <SortableListRow key={`group-${group.id}`} id={`group-${group.id}`}>
               {({ attributes, listeners }) => (
                 <motion.div
-                  initial={{ opacity: 0, y: -24, scale: 0.985 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{ duration: 0.4, delay: gIdx * 0.08, ease: [0.32, 0.72, 0, 1] }}
+                  initial={{ opacity: 0, y: -12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, delay: Math.min(gIdx, 6) * 0.05, ease: [0.32, 0.72, 0, 1] }}
                 >
                   <GroupBlock
                     group={group}
@@ -3501,12 +3497,12 @@ export default function ImplementacaoIA() {
           </SortableContext>
           <DragOverlay dropAnimation={null}>
             {activeDragId && activeDragId.startsWith('group-') ? (
-               <div className="bg-dark-bg/80 border-t-2 border-violet-500 rounded-xl p-4 shadow-2xl">
-                 <p className="text-white text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16}/> Movendo grupo...</p>
+               <div className="bg-dark-card border-t-2 border-violet-500 rounded-xl p-4 shadow-2xl">
+                 <p className="text-dark-text text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16}/> Movendo grupo...</p>
                </div>
             ) : activeDragId && activeDragId.startsWith('task-') ? (
-               <div className="bg-white/5 border border-violet-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-md">
-                 <p className="text-white text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16}/> Movendo tarefa...</p>
+               <div className="bg-dark-card border border-violet-500/50 rounded-xl p-4 shadow-2xl">
+                 <p className="text-dark-text text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16}/> Movendo tarefa...</p>
                </div>
             ) : null}
           </DragOverlay>
@@ -3520,7 +3516,7 @@ export default function ImplementacaoIA() {
                 ref={newGroupRef}
                 value={newGroupLabel}
                 onChange={e => setNewGroupLabel(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleAddGroup(); if (e.key === 'Escape') { setAddingNewGroup(false); setNewGroupLabel(''); } }}
+                data-segura-esc onKeyDown={e => { if (e.key === 'Enter') handleAddGroup(); if (e.key === 'Escape') { setAddingNewGroup(false); setNewGroupLabel(''); } }}
                 onBlur={handleAddGroup}
                 placeholder="Nome da nova etapa..."
                 className="bg-transparent border-b border-violet-500/40 text-dark-text text-xs font-bold uppercase tracking-widest outline-none w-64 py-1 placeholder-slate-600"

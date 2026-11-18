@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
+import { motion, AnimatePresence } from 'motion/react';
+import { Modal } from '../components/ui/Modal';
+import { Abas } from '../components/ui/Abas';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
+import { CarregandoBloco } from '../components/LoadingSpinner';
+import { designSystem } from '../design-system';
 import {
   Phone, Mail, Users, CheckSquare, Calendar, Clock, Filter,
   Plus, RefreshCw, ChevronDown, Circle, CheckCircle2,
@@ -210,16 +216,13 @@ export const NovaAtividadeModal: React.FC<NovaAtividadeModalProps> = ({ onClose,
   const typeButtons = Object.keys(TYPE_CONFIG);
 
   return (
-    <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
-      {/* Backdrop */}
-      <div className="absolute inset-0" onClick={onClose} />
-
-      {/* Modal — segue o padrão de glassmorphism do Design System */}
-      <div className="relative w-full max-w-lg bg-white dark:bg-dark-bg/80 rounded-3xl border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    // Formulário: clique fora não fecha mais (perderia o que foi digitado); Esc e o X fecham.
+    <Modal isOpen onClose={onClose} semCabecalho semPadding fecharAoClicarFora={false} maxWidth="max-w-lg">
+      <div className="relative w-full">
         {/* Header */}
         <div className="flex items-center justify-between px-7 pt-7 pb-5">
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white">{initialTask ? 'Editar Atividade' : 'Nova Atividade'}</h2>
-          <button onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 transition-all">
+          <h2 className="text-lg font-bold text-dark-text">{initialTask ? 'Editar Atividade' : 'Nova Atividade'}</h2>
+          <button onClick={onClose} aria-label="Fechar" className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
             <X size={18} />
           </button>
         </div>
@@ -332,14 +335,13 @@ export const NovaAtividadeModal: React.FC<NovaAtividadeModalProps> = ({ onClose,
           <button
             onClick={handleSave}
             disabled={saving}
-            className="w-full py-3 rounded-xl font-semibold text-white text-sm transition-all duration-200 disabled:opacity-60"
-            style={{ background: 'linear-gradient(135deg, #7c3aed, #6d28d9)' }}
+            className="w-full py-3 rounded-xl font-semibold text-white text-sm bg-violet-600 hover:bg-violet-700 transition-colors disabled:opacity-60"
           >
             {saving ? 'Salvando...' : 'Salvar Atividade'}
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -368,10 +370,10 @@ const ActivityCard = ({
   const dateLabel = formatDateTime(activity.due_date, activity.start_time);
 
   return (
-    <div className={`group flex items-center gap-4 px-5 py-3.5 bg-white dark:bg-slate-800/60 border rounded-xl transition-all duration-200 ${
+    <div className={`group flex items-center gap-4 px-5 py-3.5 bg-dark-card border rounded-xl transition-colors duration-200 ${
       activity.completed
         ? 'border-slate-100 dark:border-white/5 opacity-55'
-        : 'border-slate-200/70 dark:border-white/10 hover:border-violet-300/60 dark:hover:border-violet-500/30 hover:shadow-md hover:shadow-violet-500/5'
+        : 'border-slate-200/70 dark:border-white/10 hover:border-violet-300/60 dark:hover:border-violet-500/30'
     }`}>
       {/* Checkbox */}
       <button
@@ -462,7 +464,7 @@ const TYPE_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
   'Videochamada': { bg: 'bg-pink-100 dark:bg-pink-500/20', text: 'text-pink-700 dark:text-pink-300', dot: 'bg-pink-500' },
   'Instagram':    { bg: 'bg-rose-100 dark:bg-rose-500/20', text: 'text-rose-700 dark:text-rose-300', dot: 'bg-rose-500' },
   'LinkedIn':     { bg: 'bg-blue-100 dark:bg-blue-500/20', text: 'text-blue-700 dark:text-blue-300', dot: 'bg-blue-500' },
-  'Outros':       { bg: 'bg-slate-100 dark:bg-slate-700', text: 'text-slate-600 dark:text-slate-300', dot: 'bg-slate-400' },
+  'Outros':       { bg: 'bg-slate-100 dark:bg-white/10', text: 'text-slate-600 dark:text-slate-300', dot: 'bg-slate-400' },
 };
 
 function getTypeColor(type: string) {
@@ -517,7 +519,7 @@ const CalendarView: React.FC<{ activities: Activity[]; onToggle: (id: number, co
   return (
     <div className="space-y-4">
       {/* Calendar Card */}
-      <div className="bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
+      <div className="bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/[0.06]">
           <button
@@ -569,7 +571,7 @@ const CalendarView: React.FC<{ activities: Activity[]; onToggle: (id: number, co
                 {/* Day number */}
                 <div className={`w-7 h-7 flex items-center justify-center rounded-full text-sm font-semibold mb-1 ${
                   isToday
-                    ? 'bg-violet-600 text-white shadow-md shadow-violet-500/30'
+                    ? 'bg-violet-600 text-white'
                     : cell.isCurrentMonth
                       ? 'text-slate-700 dark:text-slate-200'
                       : 'text-slate-300 dark:text-slate-600'
@@ -611,7 +613,7 @@ const CalendarView: React.FC<{ activities: Activity[]; onToggle: (id: number, co
 
       {/* Day detail panel */}
       {selectedDay && (
-        <div className="bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-white/10 rounded-2xl p-5 shadow-sm">
+        <div className="bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-slate-800 dark:text-white text-sm">
               {new Date(selectedDay + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
@@ -732,72 +734,47 @@ const Atividades: React.FC = () => {
           from { opacity: 0; transform: translateY(-10px); }
           to   { opacity: 1; transform: translateY(0); }
         }
-        @keyframes sectionExpand {
-          from { opacity: 0; max-height: 0; }
-          to   { opacity: 1; max-height: 2000px; }
-        }
       `}</style>
 
       {/* ── Top Bar ── */}
-      <div className="sticky top-0 z-30 bg-white/80 dark:bg-dark-bg/95 border-b border-slate-200/70 dark:border-white/[0.06] backdrop-blur-sm">
-        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between gap-3">
+      {/* Cabeçalho normal, como nas outras páginas: a barra fixa de vidro formava um retângulo
+          mais escuro por cima do degradê do fundo (18/11/2026) */}
+      <div className="relative z-30">
+        <div className="max-w-6xl mx-auto px-6 py-3 flex flex-wrap items-center justify-between gap-3">
 
           {/* Left — título */}
-          <div>
-            <SplitHeadline text="Ativi" highlight="dades" className="text-xl font-black text-slate-900 dark:text-white tracking-tight leading-none" />
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+          <div className="shrink-0 whitespace-nowrap">
+            <SplitHeadline text="Ativi" highlight="dades" />
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               {loading ? 'Carregando...' : `${totalCount} atividade${totalCount !== 1 ? 's' : ''}`}
             </p>
           </div>
 
-          {/* Right — controles */}
-          <div className="flex items-center gap-2">
+          {/* Right — controles (quebram linha em tela estreita em vez de espremer o título) */}
+          <div className="flex flex-wrap items-center justify-end gap-2">
 
             {/* View toggle: Lista / Calendário */}
-            <div className="flex items-center bg-slate-100 dark:bg-white/5 rounded-xl p-0.5 gap-0.5 border border-slate-200/80 dark:border-white/[0.06]">
-              <button
-                onClick={() => setViewMode('list')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                  viewMode === 'list'
-                    ? 'bg-white dark:bg-white/10 text-slate-800 dark:text-white shadow-sm'
-                    : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
-                }`}
-              >
-                <List size={13} /> Lista
-              </button>
-              <button
-                onClick={() => setViewMode('calendar')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                  viewMode === 'calendar'
-                    ? 'bg-white dark:bg-white/10 text-slate-800 dark:text-white shadow-sm'
-                    : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
-                }`}
-              >
-                <Calendar size={13} /> Calendário
-              </button>
-            </div>
+            <Abas<'list' | 'calendar'>
+              variante="segmentado"
+              abas={[
+                { id: 'list', rotulo: 'Lista', Icone: List },
+                { id: 'calendar', rotulo: 'Calendário', Icone: Calendar },
+              ]}
+              ativa={viewMode}
+              onChange={setViewMode}
+            />
 
             {/* Status tabs */}
-            <div className="flex items-center bg-slate-100 dark:bg-white/5 border border-slate-200/80 dark:border-white/[0.06] rounded-xl p-0.5 gap-0.5">
-              {([
-                { key: 'pending',   label: 'Pendentes' },
-                { key: 'completed', label: 'Concluídas' },
-                { key: 'all',       label: 'Todas' },
-              ] as const).map(opt => (
-                <button
-                  key={opt.key}
-                  onClick={() => setStatusFilter(opt.key)}
-                  className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                    statusFilter === opt.key
-                      ? 'text-white shadow-sm'
-                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white'
-                  }`}
-                  style={statusFilter === opt.key ? { background: 'linear-gradient(135deg,#7c3aed,#6d28d9)' } : {}}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+            <Abas<'pending' | 'completed' | 'all'>
+              variante="segmentado"
+              abas={[
+                { id: 'pending',   rotulo: 'Pendentes' },
+                { id: 'completed', rotulo: 'Concluídas' },
+                { id: 'all',       rotulo: 'Todas' },
+              ]}
+              ativa={statusFilter}
+              onChange={setStatusFilter}
+            />
 
             {/* Type filter */}
             <div className="relative" ref={typeDropdownRef}>
@@ -882,8 +859,7 @@ const Atividades: React.FC = () => {
             {/* Nova Atividade */}
             <button
               onClick={() => setShowModal(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all duration-200 hover:opacity-90 hover:shadow-lg hover:shadow-violet-500/25 active:scale-95"
-              style={{ background: 'linear-gradient(135deg, #7c3aed, #6d28d9)' }}
+              className={designSystem.button.principal}
             >
               <Plus size={15} />
               Nova Atividade
@@ -895,30 +871,20 @@ const Atividades: React.FC = () => {
       {/* ── Content ── */}
       <div className="max-w-6xl mx-auto px-6 py-8">
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-24 gap-4">
-            <div className="w-10 h-10 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-            <p className="text-sm text-slate-400">Carregando atividades...</p>
-          </div>
+          <CarregandoBloco className="py-24" />
         ) : activities.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 gap-4">
-            <div className="p-6 rounded-2xl bg-violet-50 dark:bg-violet-500/10">
-              <CheckCircle2 size={40} className="text-violet-400" />
-            </div>
-            <div className="text-center">
-              <p className="text-lg font-bold text-slate-600 dark:text-slate-300">Nenhuma atividade encontrada</p>
-              <p className="text-sm text-slate-400 mt-1">
-                {statusFilter === 'pending' ? 'Nenhuma atividade pendente.' : 'Tente ajustar os filtros.'}
-              </p>
-              <button
-                onClick={() => setShowModal(true)}
-                className="mt-4 flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white mx-auto transition-all hover:opacity-90"
-                style={{ background: 'linear-gradient(135deg, #7c3aed, #6d28d9)' }}
-              >
+          <EstadoVazio
+            Icone={CheckCircle2}
+            className="py-24"
+            titulo="Nenhuma atividade encontrada"
+            descricao={statusFilter === 'pending' ? 'Nenhuma atividade pendente.' : 'Tente ajustar os filtros.'}
+            acao={
+              <button onClick={() => setShowModal(true)} className={designSystem.button.principal}>
                 <Plus size={14} />
                 Criar atividade
               </button>
-            </div>
-          </div>
+            }
+          />
         ) : viewMode === 'calendar' ? (
           <CalendarView activities={activities} onToggle={handleToggle} />
         ) : (
@@ -951,18 +917,21 @@ const Atividades: React.FC = () => {
                     </span>
                   </button>
 
-                  {/* Cards — collapsible with animation */}
-                  <div
-                    className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                      isCollapsed ? 'max-h-0 opacity-0' : 'opacity-100'
-                    }`}
-                    style={!isCollapsed ? { maxHeight: `${group.items.length * 120 + 100}px` } : undefined}
+                  {/* Cards — recolhe com motion (altura automática), sem max-height fixo */}
+                  <AnimatePresence initial={false}>
+                  {!isCollapsed && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+                    className="overflow-hidden"
                   >
                     <div className="space-y-2">
                       {group.items.map((activity, idx) => (
                         <div
                           key={activity.id}
-                          style={{ animation: 'rowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
+                          style={{ animation: 'rowFadeIn 0.3s ease both', animationDelay: `${Math.min(idx, 8) * 0.04}s` }}
                         >
                           <ActivityCard
                             activity={activity}
@@ -973,7 +942,9 @@ const Atividades: React.FC = () => {
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </motion.div>
+                  )}
+                  </AnimatePresence>
                 </div>
               );
             })}

@@ -132,9 +132,10 @@ const ArchiveClientModal: React.FC<ArchiveClientModalProps> = ({ clientId, onClo
                       key={reason.id}
                       type="button"
                       onClick={() => handleToggleReason(reason.label)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                        isSelected 
-                          ? reason.color
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                        isSelected
+                          // 18/11/2026: um só desenho de selecionado (violeta claro), como em Clientes Ativos
+                          ? 'bg-violet-500/10 border-violet-500/40 text-violet-600 dark:text-violet-300'
                           : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-500 hover:border-slate-300 dark:hover:border-white/20'
                       }`}
                     >

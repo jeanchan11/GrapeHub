@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Settings, X, Bell, Loader2, Wallet, Play } from 'lucide-react';
+import { Modal } from './ui/Modal';
+import { CarregandoBloco } from './LoadingSpinner';
 import { EVENTO_TESTE_SALDO } from './AlertaSaldoBaixo';
 import { toast } from '../lib/toast';
 
@@ -79,10 +80,9 @@ const ConfigProjetosModal: React.FC<{ pageId: string; pageLabel?: string; onClos
 
   const campo = 'w-full px-3 py-2 rounded-lg text-sm modal-input focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all';
 
-  return createPortal(
-    <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-[520px] bg-white dark:bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden"
-        onClick={e => e.stopPropagation()}>
+  // Clique fora fecha, como antes (quem chama monta o componente só quando está aberto).
+  return (
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-[520px]">
         <div className="flex items-center gap-3 px-6 py-5 border-b border-black/5 dark:border-white/5">
           <div className="w-9 h-9 rounded-xl bg-violet-500/10 text-violet-500 flex items-center justify-center"><Settings size={18} /></div>
           <div className="flex-1 min-w-0">
@@ -93,7 +93,7 @@ const ConfigProjetosModal: React.FC<{ pageId: string; pageLabel?: string; onClos
         </div>
 
         {!regra ? (
-          <div className="py-16 flex justify-center"><Loader2 size={22} className="animate-spin text-violet-500" /></div>
+          <CarregandoBloco />
         ) : (
           <div className="px-6 py-5 space-y-5">
             {/* Liga/desliga */}
@@ -175,13 +175,11 @@ const ConfigProjetosModal: React.FC<{ pageId: string; pageLabel?: string; onClos
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-black/5 dark:border-white/5">
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5">Cancelar</button>
           <button onClick={salvar} disabled={!regra || salvando}
-            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-violet-600 hover:bg-violet-500 disabled:opacity-50 flex items-center gap-2">
+            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-50 flex items-center gap-2">
             {salvando && <Loader2 size={13} className="animate-spin" />} Salvar
           </button>
         </div>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 };
 

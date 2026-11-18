@@ -14,7 +14,7 @@ const PESO = 0.25;
 const StatCard = ({ icon: Icon, title, value, subtitle, colorClass, highlighted = false, statusLabel }: {
   icon: any; title: string; value: string; subtitle?: string; colorClass: string; highlighted?: boolean; statusLabel?: string;
 }) => (
-  <div className={`p-6 rounded-2xl shadow-sm border transition-all relative overflow-hidden ${highlighted ? 'bg-slate-100 dark:bg-dark-card-hover border-violet-500/30 ring-1 ring-violet-500/20 shadow-lg shadow-violet-500/5' : 'bg-light-card dark:bg-dark-card border-slate-200 dark:border-white/5'}`}>
+  <div className={`p-6 rounded-2xl shadow-sm border transition-all relative overflow-hidden ${highlighted ? 'bg-slate-100 dark:bg-dark-card-hover border-violet-500/30 ring-1 ring-violet-500/20' : 'bg-light-card dark:bg-dark-card border-slate-200 dark:border-white/5'}`}>
     {statusLabel && (
       <div className="absolute top-2 right-2 px-2 py-0.5 bg-violet-600 text-white text-[8px] font-bold rounded-full uppercase tracking-tighter">
         {statusLabel}
@@ -24,7 +24,7 @@ const StatCard = ({ icon: Icon, title, value, subtitle, colorClass, highlighted 
       <Icon size={20} className="text-white" />
     </div>
     <p className={`text-sm font-medium mt-3 ${highlighted ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500 dark:text-slate-400'}`}>{title}</p>
-    <h3 className="text-2xl font-bold text-light-text dark:text-white">{value}</h3>
+    <h3 className="text-2xl font-bold text-dark-text">{value}</h3>
     {subtitle && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{subtitle}</p>}
   </div>
 );
@@ -38,7 +38,7 @@ const InputField = ({ label, value, onChange, prefix, suffix, min = 0, step = 1,
       {helper && (
         <div className="group relative no-print">
           <Info size={14} className="text-slate-400 dark:text-slate-500 cursor-help" />
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 p-2 bg-slate-800 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 p-2 bg-dark-card border border-black/10 dark:border-white/10 text-dark-text text-[10px] rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
             {helper}
           </div>
         </div>
@@ -49,7 +49,7 @@ const InputField = ({ label, value, onChange, prefix, suffix, min = 0, step = 1,
       <input
         type="number" min={min} step={step} value={value}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        className={`w-full bg-slate-100 dark:bg-dark-card-hover border border-slate-200 dark:border-white/5 rounded-xl py-2.5 transition-all focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 outline-none text-light-text dark:text-white font-medium no-print ${prefix ? 'pl-8' : 'pl-4'} ${suffix ? 'pr-20' : 'pr-4'}`}
+        className={`w-full bg-slate-100 dark:bg-dark-card-hover border border-slate-200 dark:border-white/5 rounded-xl py-2.5 transition-all focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 outline-none text-dark-text font-medium no-print ${prefix ? 'pl-8' : 'pl-4'} ${suffix ? 'pr-20' : 'pr-4'}`}
       />
       <div className="hidden print:block font-bold text-slate-800 py-1">{prefix}{value}{suffix}</div>
       {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm no-print">{suffix}</span>}
@@ -85,7 +85,7 @@ const LinhaCriterio = ({ titulo, valor, score, cor }: { titulo: string; valor: s
         {Math.round(score)}%
       </span>
     </div>
-    <p className="text-lg font-black text-light-text dark:text-white">{valor}</p>
+    <p className="text-lg font-black text-dark-text">{valor}</p>
     <div className="mt-2 h-1.5 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
       <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, Math.max(0, score))}%`, background: cor }} />
     </div>
@@ -163,7 +163,7 @@ const HeadCalculator: React.FC<{ activePage?: string }> = ({ activePage }) => {
   const pctDoMaximo = data.maxBonus > 0 ? (results.totalBonus / data.maxBonus) * 100 : 0;
 
   const chartData = [
-    { name: 'Salário Fixo', value: data.baseSalary, color: '#7c4dff' },
+    { name: 'Salário Fixo', value: data.baseSalary, color: '#8b5cf6' },
     { name: 'Resultado', value: results.bonusResultado, color: '#10b981' },
     { name: 'Churn', value: results.bonusChurn, color: '#f59e0b' },
     { name: 'GrapeHub', value: results.bonusGrapehub, color: '#38bdf8' },
@@ -188,7 +188,7 @@ const HeadCalculator: React.FC<{ activePage?: string }> = ({ activePage }) => {
     <div className="min-h-screen bg-light-bg dark:bg-dark-bg p-8" ref={reportRef}>
       <div className="flex items-start justify-between gap-4 flex-wrap mb-8">
         <div>
-          <SplitHeadline text="Calculadora de " highlight="Bonificação" className="text-4xl font-black text-slate-900 dark:text-white tracking-tight" />
+          <SplitHeadline text="Calculadora de " highlight="Bonificação" />
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
             Head de Operação — quatro critérios com <span className="text-violet-500 font-bold">peso igual (25% cada)</span>.
           </p>
@@ -205,7 +205,7 @@ const HeadCalculator: React.FC<{ activePage?: string }> = ({ activePage }) => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Parâmetros */}
         <div className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/5 rounded-2xl p-6 space-y-6">
-          <h2 className="text-lg font-bold text-light-text dark:text-white">Parâmetros de Cálculo</h2>
+          <h2 className="text-lg font-bold text-dark-text">Parâmetros de Cálculo</h2>
 
           <InputField label="Salário Fixo" value={data.baseSalary} prefix="R$ " step={100}
             onChange={v => setData({ ...data, baseSalary: v })} />
@@ -249,7 +249,7 @@ const HeadCalculator: React.FC<{ activePage?: string }> = ({ activePage }) => {
           </div>
 
           <button onClick={handleExportPNG}
-            className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-xl transition-all no-print">
+            className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl transition-colors no-print">
             <FileDown size={16} /> Exportar PNG
           </button>
         </div>
@@ -271,7 +271,7 @@ const HeadCalculator: React.FC<{ activePage?: string }> = ({ activePage }) => {
             <div className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/5 rounded-2xl p-6 flex flex-col">
               <div className="flex items-center gap-2 mb-4 shrink-0">
                 <TrendingUp size={18} className="text-violet-500" />
-                <h2 className="text-lg font-bold text-light-text dark:text-white">Composição da Renda</h2>
+                <h2 className="text-lg font-bold text-dark-text">Composição da Renda</h2>
               </div>
               <div className="flex-1 min-h-[260px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -293,7 +293,7 @@ const HeadCalculator: React.FC<{ activePage?: string }> = ({ activePage }) => {
             <div className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/5 rounded-2xl p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Award size={18} className="text-violet-500" />
-                <h2 className="text-lg font-bold text-light-text dark:text-white">Detalhamento dos Critérios</h2>
+                <h2 className="text-lg font-bold text-dark-text">Detalhamento dos Critérios</h2>
               </div>
               <div className="space-y-3">
                 <LinhaCriterio titulo="Resultado de Projetos" valor={fmt(results.bonusResultado)} score={results.scoreResultado} cor="#10b981" />

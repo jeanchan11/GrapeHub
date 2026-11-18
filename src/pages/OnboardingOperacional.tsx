@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
+import { Modal } from '../components/ui/Modal';
+import { CarregandoBloco } from '../components/LoadingSpinner';
 import SplitHeadline from '../components/SplitHeadline';
 import OptionPicker, { PilulaTag } from '../components/ui/OptionPicker';
 import { createPortal } from 'react-dom';
-import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Edit2, Palette, Layers, FileVideo, Globe, MessageCircle, PlaySquare, FileSignature, MonitorPlay, ShoppingBag } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Edit2, Palette, Layers, FileVideo, Globe, MessageCircle, PlaySquare, FileSignature, MonitorPlay, ShoppingBag, Info } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import {
   DndContext,
@@ -142,7 +144,7 @@ const formatDate = (iso: string | null) => {
 const SQUAD_OPTIONS = ['Squad Able', 'Squad Baker'];
 
 const STATUS_GROUPS: Omit<StatusGroup, 'tasks'>[] = [
-  { id: 'subir-campanha',         label: '⬆️📢 SUBIR CAMPANHA',         color: '#f97316', emoji: '📢' },
+  { id: 'subir-campanha',         label: 'SUBIR CAMPANHA',               color: '#f97316', emoji: '📢' },
   { id: 'treinamento-comercial',  label: 'TREINAMENTO COMERCIAL',       color: '#8b5cf6', emoji: '🧠💰' },
   { id: 'reuniao-coleta-acessos', label: 'REUNIÃO - COLETA DE ACESSOS', color: '#3b82f6', emoji: '🗓️' },
   { id: 'briefing-realizado',     label: 'REUNIÃO - BRIEFING',          color: '#10b981', emoji: '🗓️' },
@@ -175,7 +177,7 @@ const Avatar = ({ url, name, size = 6 }: { url?: string; name?: string; size?: n
   const initials = (name || '??').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
   const sz = `w-${size} h-${size}`;
   if (url && !error) {
-    return <img src={url} alt={name || ''} onError={() => setError(true)} className={`${sz} rounded-full object-cover border border-white/10`} />;
+    return <img src={url} alt={name || ''} onError={() => setError(true)} className={`${sz} rounded-full object-cover border border-black/10 dark:border-white/10`} />;
   }
   return (
     <div className={`${sz} rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-[9px] font-bold text-violet-300`}>
@@ -276,11 +278,11 @@ function SingleDatePicker({ value, onChange, placeholder = '—', align = 'right
         )}
       </p>
       <div className="flex items-center justify-between mb-3">
-        <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+        <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors">
           <ChevronDown size={13} className="text-slate-400 rotate-90" />
         </button>
         <span className="text-sm font-bold text-dark-text">{MESES_FULL[viewMonth - 1]} {viewYear}</span>
-        <button onClick={() => stepMonth(1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+        <button onClick={() => stepMonth(1)} className="w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors">
           <ChevronDown size={13} className="text-slate-400 -rotate-90" />
         </button>
       </div>
@@ -296,7 +298,7 @@ function SingleDatePicker({ value, onChange, placeholder = '—', align = 'right
             <button key={iso}
               onClick={() => { onChange(iso); setOpen(false); }}
               className={`relative h-8 w-full text-xs font-semibold transition-all rounded-full
-                ${isSelected ? 'text-white' : 'text-dark-text hover:text-violet-600 hover:bg-white/5'}`}
+                ${isSelected ? 'text-white' : 'text-dark-text hover:text-violet-600 hover:bg-black/5 dark:hover:bg-white/5'}`}
             >
               <span className={`absolute inset-0.5 flex items-center justify-center rounded-full text-xs
                 ${isSelected ? 'bg-violet-600 shadow-md shadow-violet-500/30' : ''}
@@ -412,11 +414,11 @@ const SortableSubtaskRow = ({
             style={{ position: 'fixed', top: subtaskRespPos.top, left: subtaskRespPos.left, zIndex: 9999, width: 192 }}
             className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto"
           >
-            <div className="px-2 py-1.5 border-b border-white/5 mb-1">
+            <div className="px-2 py-1.5 border-b border-black/5 dark:border-white/5 mb-1">
               <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
             </div>
             {cachedUsers.map((u: any) => (
-              <button key={u.id} onClick={() => handleSubtaskResponsible(sub.id, u.id, u.name, u.picture)} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
+              <button key={u.id} onClick={() => handleSubtaskResponsible(sub.id, u.id, u.name, u.picture)} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-left transition-colors">
                 <Avatar name={u.name} url={u.picture} size={5} />
                 <span className="text-xs text-dark-text truncate">{u.name}</span>
               </button>
@@ -693,7 +695,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
         <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
           <span onClick={() => onOpenDetail(task)} className="text-sm font-semibold text-dark-text truncate cursor-pointer hover:text-violet-400 transition-colors">{task.client_name}</span>
           {task.subtask_count > 0 && (
-            <span className="text-[10px] text-slate-500 font-mono bg-white/5 px-1.5 py-0.5 rounded">
+            <span className="text-[10px] text-slate-500 font-mono bg-black/[0.03] dark:bg-white/5 px-1.5 py-0.5 rounded">
               ↳ {task.subtask_count}
             </span>
           )}
@@ -777,11 +779,11 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
               style={{ position: 'fixed', top: taskRespPos.top, left: taskRespPos.left, zIndex: 9999, width: 192 }}
               className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto"
             >
-              <div className="px-2 py-1.5 border-b border-white/5 mb-1">
+              <div className="px-2 py-1.5 border-b border-black/5 dark:border-white/5 mb-1">
                 <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
               </div>
               {cachedUsers.map(u => (
-                <button key={u.id} onClick={(e) => { e.stopPropagation(); handleTaskResponsible(u.id, u.name, u.picture); }} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
+                <button key={u.id} onClick={(e) => { e.stopPropagation(); handleTaskResponsible(u.id, u.name, u.picture); }} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-left transition-colors">
                   <Avatar name={u.name} url={u.picture} size={5} />
                   <span className="text-xs text-dark-text truncate">{u.name}</span>
                 </button>
@@ -805,7 +807,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
         <div className="relative shrink-0" ref={menuRef}>
           <button
             onClick={() => setShowMenu(v => !v)}
-            className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-white/10"
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-500 hover:text-slate-300 p-1 rounded hover:bg-black/5 dark:hover:bg-white/10"
           >
             <MoreHorizontal size={14} />
           </button>
@@ -934,16 +936,16 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
       <div className="mb-1">
         <button
           onClick={() => setExpanded(true)}
-          className="w-full flex items-center gap-2.5 px-4 py-2 rounded-xl hover:bg-white/[0.03] transition-colors group"
+          className="w-full flex items-center gap-2.5 px-4 py-2 rounded-xl hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors group"
         >
-          <ChevronRight size={12} className="text-slate-700 group-hover:text-slate-500 transition-colors shrink-0" />
+          <ChevronRight size={12} className="text-slate-400 group-hover:text-slate-500 transition-colors shrink-0" />
           <div
             className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5"
             style={{ background: `${group.color}10`, color: `${group.color}80`, border: `1px solid ${group.color}15` }}
           >
-            <span>{group.emoji}</span>
+            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: group.color }} />
             <span>{group.label}</span>
-            <span className="ml-0.5 px-1 py-0 rounded bg-white/5 text-[9px]">0</span>
+            <span className="ml-0.5 px-1 py-0 rounded bg-black/5 dark:bg-white/5 text-[9px]">0</span>
           </div>
         </button>
       </div>
@@ -959,9 +961,9 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
             className="px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest flex items-center gap-2 transition-transform group-hover:scale-105"
             style={{ background: `${group.color}15`, color: group.color, border: `1px solid ${group.color}30` }}
           >
-            <span>{group.emoji}</span>
+            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: group.color }} />
             <span>{group.label}</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-md bg-white/10">{group.tasks.length}</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-md bg-black/5 dark:bg-white/10">{group.tasks.length}</span>
           </div>
           {expanded
             ? <ChevronDown size={14} className="text-slate-500 ml-2" />
@@ -973,7 +975,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
       {/* Column headers */}
       {expanded && (
         <>
-          <div className="flex items-center gap-2 px-8 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5">
+          <div className="flex items-center gap-2 px-8 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-black/5 dark:border-white/5">
             <div className="w-[14px] shrink-0" />
             <div className="w-4 shrink-0" />
             <div className="flex-1">Nome</div>
@@ -998,7 +1000,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       transition={{
                         duration: 0.35,
-                        delay: idx * 0.06,
+                        delay: Math.min(idx, 8) * 0.04,
                         ease: [0.32, 0.72, 0, 1],
                       }}
                     >
@@ -1047,14 +1049,14 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-md" fecharAoClicarFora={false}>
+      <div className="w-full p-6">
         <h3 className="text-sm font-bold text-dark-text mb-4">Adicionar Cliente ao Onboarding</h3>
         <div className="space-y-3">
           <input
             value={clientName} onChange={e => setClientName(e.target.value)}
             placeholder="Nome do cliente *"
-            className="w-full bg-dark-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50"
+            className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-slate-500 focus:outline-none focus:border-violet-500/50"
           />
           <OptionPicker
             value={squad || null}
@@ -1071,25 +1073,25 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
             <div>
               <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1 block">Data Inicial</label>
               <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
+                className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
             </div>
             <div>
               <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1 block">Vencimento</label>
               <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
-                className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
+                className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
             </div>
           </div>
         </div>
         <div className="flex gap-3 mt-5">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm text-slate-400 hover:bg-white/5 transition-colors">Cancelar</button>
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-black/10 dark:border-white/10 text-sm text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">Cancelar</button>
           <button onClick={handleSave} disabled={saving || !clientName.trim()}
-            className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-sm font-bold text-white transition-colors flex items-center justify-center gap-2">
+            className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-40 text-sm font-bold text-white transition-colors flex items-center justify-center gap-2">
             {saving ? <Loader2 size={14} className="animate-spin" /> : null}
             Salvar
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -1195,8 +1197,8 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-lg" fecharAoClicarFora={false} fecharComEsc={!selectedItem}>
+      <div className="w-full max-h-[85vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-black/5 dark:border-white/5">
           <div>
@@ -1206,7 +1208,7 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
             </h2>
             <p className="text-[10px] text-slate-500 mt-0.5">Subtarefas criadas automaticamente para cada novo cliente</p>
           </div>
-          <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+          <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -1214,9 +1216,7 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
         {/* Items list */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {loading ? (
-            <div className="flex justify-center py-8">
-              <div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-            </div>
+            <CarregandoBloco className="py-8" />
           ) : items.length === 0 ? (
             <p className="text-center text-slate-600 text-sm py-8">Nenhuma subtarefa no modelo ainda.</p>
           ) : (
@@ -1248,7 +1248,7 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
               className="flex-1 bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors"
             />
             <button onClick={addItem} disabled={!newTitle.trim()}
-              className="px-4 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white text-sm font-semibold rounded-xl transition-colors flex items-center gap-1.5">
+              className="px-4 py-2.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-30 text-white text-sm font-semibold rounded-xl transition-colors flex items-center gap-1.5">
               <Plus size={14} /> Adicionar
             </button>
           </div>
@@ -1262,7 +1262,7 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
               Cancelar
             </button>
             <button onClick={handleSave} disabled={saving}
-              className="px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-sm font-bold text-white transition-colors flex items-center gap-2">
+              className="px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-40 text-sm font-bold text-white transition-colors flex items-center gap-2">
               {saving ? <Loader2 size={14} className="animate-spin" /> : null}
               Salvar Modelo
             </button>
@@ -1275,17 +1275,17 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
         const itemIdx = items.findIndex(i => i.id === selectedItem.id);
         if (itemIdx === -1) return null;
         return (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setSelectedItem(null)}>
-            <div className="bg-dark-card border border-white/10 rounded-2xl shadow-2xl w-full max-w-7xl h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <Modal isOpen onClose={() => setSelectedItem(null)} semCabecalho semPadding maxWidth="max-w-7xl">
+            <div className="w-full h-[92vh] flex flex-col">
               {/* Header */}
-              <div className="flex items-center justify-between px-6 py-5 border-b border-white/5">
+              <div className="flex items-center justify-between px-6 py-5 border-b border-black/5 dark:border-white/5">
                 <div>
                   <h2 className="text-lg font-bold text-dark-text">{selectedItem.title}</h2>
                   <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-widest">
                     Modelo de subtarefa — o conteúdo aqui será copiado para cada novo cliente
                   </p>
                 </div>
-                <button onClick={() => setSelectedItem(null)} className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-xl transition-colors">
+                <button onClick={() => setSelectedItem(null)} className="p-2 text-slate-500 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-xl transition-colors">
                   <X size={18} />
                 </button>
               </div>
@@ -1314,7 +1314,7 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
                 {/* Right column - Info */}
                 <div className="space-y-4">
                   <div className="p-4 bg-violet-500/5 border border-violet-500/20 rounded-xl">
-                    <h4 className="text-[10px] font-bold text-violet-400 uppercase tracking-widest mb-2">ℹ️ Sobre o modelo</h4>
+                    <h4 className="text-[10px] font-bold text-violet-400 uppercase tracking-widest mb-2 flex items-center gap-1.5"><Info size={12} /> Sobre o modelo</h4>
                     <p className="text-xs text-slate-400 leading-relaxed">
                       O conteúdo adicionado aqui (documento interno) será automaticamente copiado para cada subtarefa quando um novo cliente for criado.
                     </p>
@@ -1323,17 +1323,17 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-4 border-t border-white/5 flex items-center justify-end gap-3">
+              <div className="px-6 py-4 border-t border-black/5 dark:border-white/5 flex items-center justify-end gap-3">
                 <button onClick={() => setSelectedItem(null)}
-                  className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-sm font-bold text-white transition-colors">
+                  className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-sm font-bold text-white transition-colors">
                   Fechar
                 </button>
               </div>
             </div>
-          </div>
+          </Modal>
         );
       })()}
-    </div>
+    </Modal>
   );
 };// ── Task Detail Modal ─────────────────────────────────────
 const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; onClose: () => void; onUpdate: () => void }) => {
@@ -1418,8 +1418,8 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-6xl" fecharAoClicarFora={false}>
+      <div className="w-full max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-black/5 dark:border-white/5">
           <div>
@@ -1594,7 +1594,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                   className="flex-1 bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-4 py-2 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors"
                 />
                 <button onClick={addComment} disabled={!newComment.trim()}
-                  className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white text-xs font-bold rounded-xl transition-colors">
+                  className="px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-30 text-white text-xs font-bold rounded-xl transition-colors">
                   Enviar
                 </button>
               </div>
@@ -1628,7 +1628,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
 
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -1644,8 +1644,8 @@ const DocEditorModal = ({ file, onSave, onClose }: { file: any; onSave: (id: num
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-3xl h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-3xl" fecharAoClicarFora={false} fecharComEsc={false}>
+      <div className="w-full h-[85vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-black/5 dark:border-white/5">
           <div>
             <h2 className="text-base font-bold text-dark-text flex items-center gap-2">
@@ -1655,7 +1655,7 @@ const DocEditorModal = ({ file, onSave, onClose }: { file: any; onSave: (id: num
             <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-widest">Editor de Documento</p>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition-colors">
+            <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition-colors">
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
               Salvar
             </button>
@@ -1673,7 +1673,7 @@ const DocEditorModal = ({ file, onSave, onClose }: { file: any; onSave: (id: num
           />
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -1898,8 +1898,8 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-7xl h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-7xl" fecharComEsc={!editingDoc}>
+      <div className="w-full h-[92vh] flex flex-col">
         
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-black/5 dark:border-white/5">
@@ -1985,7 +1985,7 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
                       {newFileType !== 'doc' && (
                         <input value={newFileUrl} onChange={e => setNewFileUrl(e.target.value)} placeholder="URL / Link Externo" className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-dark-text" />
                       )}
-                      <button onClick={addFile} disabled={!newFileName || addingFile} className="w-full py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-colors">
+                      <button onClick={addFile} disabled={!newFileName || addingFile} className="w-full py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-colors">
                         Adicionar {newFileType.toUpperCase()}
                       </button>
                     </div>
@@ -2022,7 +2022,7 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
       {editingDoc && (
         <DocEditorModal file={editingDoc} onSave={handleSaveDocContent} onClose={() => setEditingDoc(null)} />
       )}
-    </div>
+    </Modal>
   );
 };
 
@@ -2161,7 +2161,7 @@ export default function OnboardingOperacional() {
       {/* ── Header ── */}
       <div className="px-8 pt-8 pb-4 flex items-start justify-between">
         <div>
-          <SplitHeadline text="Onboarding " highlight="Operacional" className="text-2xl font-black tracking-tight text-dark-text" />
+          <SplitHeadline text="Onboarding " highlight="Operacional" />
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
             Gestão de onboarding de clientes
           </p>
@@ -2190,9 +2190,7 @@ export default function OnboardingOperacional() {
 
       {/* ── Content ── */}
       {loading ? (
-        <div className="flex items-center justify-center py-32">
-          <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-        </div>
+        <CarregandoBloco className="py-32" />
       ) : (
         <div className="px-8 pb-12">
           <DndContext sensors={dndSensors} collisionDetection={closestCorners} onDragStart={handleDndStart} onDragOver={handleDndOver} onDragEnd={handleDndEnd}>
@@ -2204,7 +2202,7 @@ export default function OnboardingOperacional() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{
                 duration: 0.4,
-                delay: gIdx * 0.08,
+                delay: Math.min(gIdx, 8) * 0.04,
                 ease: [0.32, 0.72, 0, 1],
               }}
             >
@@ -2220,18 +2218,13 @@ export default function OnboardingOperacional() {
           </div>
           <DragOverlay dropAnimation={null}>
             {activeDragId && activeDragId.startsWith('task-') ? (
-               <div className="bg-white/5 border border-violet-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-md">
-                 <p className="text-white text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16}/> Movendo tarefa...</p>
+               <div className="bg-dark-card border border-violet-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-md">
+                 <p className="text-dark-text text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16}/> Movendo tarefa...</p>
                </div>
             ) : null}
           </DragOverlay>
           </DndContext>
 
-          {/* New status button */}
-          <button className="flex items-center gap-2 text-xs text-slate-600 hover:text-slate-400 transition-colors mt-4 px-4 py-2">
-            <Plus size={14} />
-            Novo status
-          </button>
         </div>
       )}
 

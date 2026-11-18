@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Loader2, ChevronLeft, ChevronRight, FileBarChart, Columns3, Check, Eye, Repeat, Percent, Wallet, AlertTriangle, Target, Users } from 'lucide-react';
 import ThemedDropdown from '@/src/components/ui/ThemedDropdown';
+import { CartaoKpi } from '@/src/components/graficos';
+import { CarregandoBloco } from '@/src/components/LoadingSpinner';
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -25,21 +27,17 @@ const APRESENTACOES: { key: Apresentacao; label: string }[] = [
   { key: 'detalhado', label: 'Detalhado' },
 ];
 
-// Cor do ícone por acento. `rose` é o estado de alerta: o card inteiro fica rosado
-// (padrão aprovado no Fluxo de Caixa, visual refeito em 09/10/2026).
-const ACCENTS: Record<string, string> = { emerald: '#10b981', rose: '#f43f5e', amber: '#f59e0b', violet: '#7c3aed' };
-const KpiCard = ({ label, value, sub, accent = 'violet', icone: Icone }: { label: string; value: string; sub: string; accent?: string; icone: any }) => {
-  const cor = ACCENTS[accent] || ACCENTS.violet;
+// 18/11/2026: desenho do CartaoKpi (graficos.tsx). `accent="rose"` continua sendo o estado
+// de alerta (cartão destacado + valor em rosa); as outras cores eram só do ícone, que saiu.
+const KpiCard = ({ label, value, sub, accent = 'violet', icone: _Icone }: { label: string; value: string; sub: string; accent?: string; icone: any }) => {
   const alerta = accent === 'rose';
   return (
-    <div className={`px-5 py-4 rounded-2xl border min-w-0 ${alerta ? 'bg-rose-500/[0.06] border-rose-500/20' : 'bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5'}`}>
-      <div className="flex items-center gap-2 mb-2">
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${cor}1a`, color: cor }}><Icone size={14} /></div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">{label}</p>
-      </div>
-      <p className={`text-2xl font-bold tabular-nums truncate ${alerta ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>{value}</p>
-      <p className={`text-[11px] mt-0.5 leading-snug ${alerta ? 'text-rose-400' : 'text-slate-500'}`}>{sub}</p>
-    </div>
+    <CartaoKpi
+      titulo={label}
+      alerta={alerta}
+      valor={<span className={`${value.includes('R$') ? 'text-[clamp(20px,1.7vw,30px)]' : ''} ${alerta ? 'text-rose-500' : ''}`}>{value}</span>}
+      apoio={<span className="block whitespace-normal leading-snug">{sub}</span>}
+    />
   );
 };
 
@@ -254,7 +252,7 @@ const DrePanel: React.FC = () => {
                 <span>Meses{hiddenMonths.size > 0 ? ` (${visibleCount}/${months.length})` : ''}</span>
               </button>
               {colMenuOpen && (
-                <div className="absolute right-0 top-full mt-1.5 z-30 w-52 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[rgb(var(--dark-card))] shadow-xl shadow-black/20 p-1.5">
+                <div className="absolute right-0 top-full mt-1.5 z-50 w-52 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[rgb(var(--dark-card))] shadow-xl shadow-black/20 p-1.5">
                   <div className="flex items-center justify-between px-2 py-1.5">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Exibir meses</span>
                     {hiddenMonths.size > 0 && (
@@ -302,7 +300,7 @@ const DrePanel: React.FC = () => {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-16"><Loader2 size={20} className="animate-spin text-violet-500" /></div>
+        <CarregandoBloco />
       ) : !data || data.rows.length === 0 ? (
         <div className="py-16 text-center text-sm text-slate-500">Sem dados de DRE para {year}.</div>
       ) : (

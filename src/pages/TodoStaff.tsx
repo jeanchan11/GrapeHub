@@ -3,14 +3,19 @@ import OptionPicker from '../components/ui/OptionPicker';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import SplitHeadline from '../components/SplitHeadline';
+import { Modal } from '../components/ui/Modal';
+import { Abas } from '../components/ui/Abas';
+import { CarregandoBloco } from '../components/LoadingSpinner';
+import { CartaoKpi } from '../components/graficos';
+import MediaLightbox from '../components/MediaLightbox';
 import {
   Plus, X, Check, Clock, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
   Trash2, Edit3, MoreHorizontal, Search, RefreshCw, Repeat, Filter, ArrowUpDown,
   Circle, CheckCircle2, Tag, CalendarDays, MessageSquare, ListChecks, Send, GripVertical,
   Lightbulb, Star, Sparkles, LayoutGrid, AlignJustify, FileText, Loader2, Save,
-  Folder as FolderIcon, FolderOpen, FolderPlus, CornerDownLeft, FlaskConical
+  Folder as FolderIcon, FolderOpen, FolderPlus, CornerDownLeft, FlaskConical, ClipboardList
 } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { confirmDialog } from '@/src/lib/confirm';
@@ -81,9 +86,9 @@ interface RecurringItem {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const COLUMNS: { id: Status; label: string; color: string; icon: React.ReactNode }[] = [
-  { id: 'todo',        label: 'A Fazer',      color: 'from-slate-500/20 to-slate-600/10',     icon: <Clock size={13} />       },
-  { id: 'in_progress', label: 'Em Progresso',  color: 'from-violet-500/20 to-violet-600/10',   icon: <AlertCircle size={13} /> },
-  { id: 'done',        label: 'Concluído',     color: 'from-emerald-500/20 to-emerald-600/10', icon: <Check size={13} />       },
+  { id: 'todo',        label: 'A Fazer',      color: 'bg-slate-500/10',     icon: <Clock size={13} />       },
+  { id: 'in_progress', label: 'Em Progresso',  color: 'bg-violet-500/10',   icon: <AlertCircle size={13} /> },
+  { id: 'done',        label: 'Concluído',     color: 'bg-emerald-500/10', icon: <Check size={13} />       },
 ];
 
 const PRIORITY_CONFIG: Record<Priority, { label: string; color: string; dot: string }> = {
@@ -125,7 +130,7 @@ const AnimatedBar = ({ progress, isDone }: { progress: number; isDone: boolean }
   return (
     <div ref={ref} className="w-full h-1.5 bg-dark-text/10 rounded-full mt-1.5 overflow-hidden">
       <div
-        className={`h-full rounded-full transition-all duration-1000 ease-out ${isDone ? 'bg-emerald-500' : 'bg-violet-500'}`}
+        className={`h-full rounded-full transition-[width] duration-300 ease-out ${isDone ? 'bg-emerald-500' : 'bg-violet-500'}`}
         style={{ width: `${width}%` }}
       />
     </div>
@@ -182,10 +187,10 @@ interface IdeaItem {
 }
 
 const IDEA_COLUMNS: { id: IdeaStatus; label: string; color: string; icon: React.ReactNode; accent: string }[] = [
-  { id: 'nova',     label: 'Novas Ideias', color: 'from-violet-500/20 to-violet-600/10',  icon: <Lightbulb size={13} />,  accent: 'hover:text-violet-500 hover:bg-violet-500/10'   },
-  { id: 'analise',  label: 'Em Análise',   color: 'from-amber-500/20 to-amber-600/10',    icon: <Search size={13} />,     accent: 'hover:text-amber-400 hover:bg-amber-500/10'     },
-  { id: 'aprovada', label: 'Aprovadas',    color: 'from-emerald-500/20 to-emerald-600/10',icon: <Check size={13} />,      accent: 'hover:text-emerald-400 hover:bg-emerald-500/10' },
-  { id: 'favorita', label: 'Favoritas',    color: 'from-pink-500/20 to-pink-600/10',      icon: <Star size={13} />,       accent: 'hover:text-pink-400 hover:bg-pink-500/10'       },
+  { id: 'nova',     label: 'Novas Ideias', color: 'bg-violet-500/10',  icon: <Lightbulb size={13} />,  accent: 'hover:text-violet-500 hover:bg-violet-500/10'   },
+  { id: 'analise',  label: 'Em Análise',   color: 'bg-amber-500/10',    icon: <Search size={13} />,     accent: 'hover:text-amber-400 hover:bg-amber-500/10'     },
+  { id: 'aprovada', label: 'Aprovadas',    color: 'bg-emerald-500/10',icon: <Check size={13} />,      accent: 'hover:text-emerald-400 hover:bg-emerald-500/10' },
+  { id: 'favorita', label: 'Favoritas',    color: 'bg-pink-500/10',      icon: <Star size={13} />,       accent: 'hover:text-pink-400 hover:bg-pink-500/10'       },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -295,7 +300,7 @@ const DatePickerCalendar: React.FC<DatePickerProps> = ({ value, onChange, placeh
       <button
         type="button"
         onClick={() => setOpen(p => !p)}
-        className={`w-full flex items-center gap-2 bg-dark-card border rounded-xl px-3 py-2.5 text-sm transition-all ${
+        className={`w-full flex items-center gap-2 bg-dark-card border rounded-xl px-3 py-2.5 text-sm transition-colors ${
           open ? 'border-violet-500/50 bg-violet-500/5' : 'border-dark-text/10 hover:border-dark-text/20'
         }`}
       >
@@ -328,7 +333,7 @@ const DatePickerCalendar: React.FC<DatePickerProps> = ({ value, onChange, placeh
                 <button
                   key={s.label}
                   onMouseDown={e => { e.preventDefault(); shortcut(s.offset); }}
-                  className="px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-dark-text/5 text-dark-text/50 hover:bg-violet-500/15 hover:text-violet-500 border border-dark-text/5 transition-all"
+                  className="px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-dark-text/5 text-dark-text/50 hover:bg-violet-500/15 hover:text-violet-500 border border-dark-text/5 transition-colors"
                 >
                   {s.label}
                 </button>
@@ -338,11 +343,11 @@ const DatePickerCalendar: React.FC<DatePickerProps> = ({ value, onChange, placeh
 
           {/* Month nav */}
           <div className="flex items-center justify-between px-4 py-2.5">
-            <button onMouseDown={e => { e.preventDefault(); prevMonth(); }} className="w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-all">
+            <button onMouseDown={e => { e.preventDefault(); prevMonth(); }} className="w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors">
               <ChevronLeft size={13} />
             </button>
             <span className="text-xs font-bold text-dark-text">{MONTHS_PT[viewMonth]} {viewYear}</span>
-            <button onMouseDown={e => { e.preventDefault(); nextMonth(); }} className="w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-all">
+            <button onMouseDown={e => { e.preventDefault(); nextMonth(); }} className="w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors">
               <ChevronRight size={13} />
             </button>
           </div>
@@ -366,7 +371,7 @@ const DatePickerCalendar: React.FC<DatePickerProps> = ({ value, onChange, placeh
                 <button
                   key={i}
                   onMouseDown={e => { e.preventDefault(); select(day); }}
-                  className={`w-full aspect-square rounded-full text-xs font-semibold transition-all ${
+                  className={`w-full aspect-square rounded-full text-xs font-semibold transition-colors ${
                     isSelected
                       ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/30'
                       : isToday
@@ -442,11 +447,11 @@ const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onC
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-sm bg-dark-bg rounded-3xl border border-dark-text/10 shadow-2xl p-6 space-y-4">
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-sm" fecharAoClicarFora={false}>
+      <div className="p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-black text-dark-text">Gerenciar <span className="text-violet-500">Tags</span></h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-all"><X size={16} /></button>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors"><X size={16} /></button>
         </div>
 
         {/* Create new tag */}
@@ -457,7 +462,7 @@ const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onC
             onChange={e => setNewName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && add()}
             placeholder="Nome da tag..."
-            className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all"
+            className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-colors"
           />
           <div className="flex flex-wrap gap-2">
             {TAG_COLORS.map(c => (
@@ -504,8 +509,8 @@ const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onC
                       ))}
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={saveEdit} className="flex-1 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-[11px] font-bold text-white transition-all">Salvar</button>
-                      <button onClick={() => setEditId(null)} className="flex-1 py-1 rounded-lg border border-dark-text/10 text-[11px] text-dark-text/50 hover:bg-dark-text/5 transition-all">Cancelar</button>
+                      <button onClick={saveEdit} className="flex-1 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-[11px] font-bold text-white transition-colors">Salvar</button>
+                      <button onClick={() => setEditId(null)} className="flex-1 py-1 rounded-lg border border-dark-text/10 text-[11px] text-dark-text/50 hover:bg-dark-text/5 transition-colors">Cancelar</button>
                     </div>
                   </div>
                 ) : (
@@ -521,7 +526,7 @@ const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onC
           </div>
         )}
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -614,7 +619,7 @@ const RichTextArea: React.FC<RichTextAreaProps> = ({ value, onChange, placeholde
         onInput={emit}
         onPaste={handlePaste}
         style={{ minHeight: `${rows * 1.6}em` }}
-        className={`w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50 transition-all overflow-auto rich-text-content break-words`}
+        className={`w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50 transition-colors overflow-auto rich-text-content break-words`}
       />
       {isEmpty && (
         <span className="absolute top-2.5 left-4 text-sm text-dark-text/30 pointer-events-none select-none">{placeholder}</span>
@@ -624,7 +629,7 @@ const RichTextArea: React.FC<RichTextAreaProps> = ({ value, onChange, placeholde
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="absolute bottom-2 right-2 w-6 h-6 flex items-center justify-center rounded-lg text-dark-text/30 hover:text-violet-400 hover:bg-violet-500/10 transition-all"
+            className="absolute bottom-2 right-2 w-6 h-6 flex items-center justify-center rounded-lg text-dark-text/30 hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
             title="Anexar imagem"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -720,18 +725,18 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
-      <div className="w-full max-w-lg bg-dark-bg rounded-3xl border border-dark-text/10 shadow-2xl p-6 space-y-4">
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-lg" fecharAoClicarFora={false} fecharComEsc={false}>
+      <div className="p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-black text-dark-text">{initial?.id ? 'Editar ' : 'Nova '}<span className="text-violet-500">Tarefa</span></h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-all"><X size={16} /></button>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors"><X size={16} /></button>
         </div>
 
         <div>
           <label className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest mb-1 block">Título *</label>
           <input autoFocus value={title} onChange={e => setTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSave()}
             placeholder="O que precisa ser feito?"
-            className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all" />
+            className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-colors" />
         </div>
 
         <div>
@@ -746,7 +751,7 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
             />
           ) : (
             <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Detalhes opcionais..." rows={2}
-              className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all resize-none" />
+              className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-colors resize-none" />
           )}
         </div>
 
@@ -797,7 +802,7 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
 
           {/* Input trigger */}
           <div
-            className="flex items-center gap-2 bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2 cursor-text focus-within:border-violet-500/50 transition-all"
+            className="flex items-center gap-2 bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2 cursor-text focus-within:border-violet-500/50 transition-colors"
             onClick={() => setTagDropOpen(true)}
           >
             <Tag size={13} className="text-dark-text/40 flex-shrink-0" />
@@ -913,7 +918,7 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
                 >
                   <span className="text-dark-text/20 cursor-grab active:cursor-grabbing flex-shrink-0 mt-[3px]"><GripVertical size={12} /></span>
                   <button type="button" onClick={() => setSubtasks(p => p.map((x, j) => j === i ? { ...x, done: !x.done } : x))}
-                    className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-all mt-[2px] ${
+                    className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors mt-[2px] ${
                       s.done ? 'bg-emerald-500 border-emerald-500' : 'border-dark-text/20 hover:border-violet-400'
                     }`}>
                     {s.done && <Check size={9} className="text-white" />}
@@ -981,25 +986,23 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
               onPaste={handleSubtaskPaste}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSubtask(); } }}
               placeholder="Adicionar subtarefa... (cole imagem com Ctrl+V)"
-              className="flex-1 bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all"
+              className="flex-1 bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-colors"
             />
           </div>
         </div>
 
         {subPreview && (
-          <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-8" onClick={() => setSubPreview(null)}>
-            <img src={subPreview} alt="" className="max-w-full max-h-full rounded-lg object-contain" />
-          </div>
+          <MediaLightbox files={[{ url: subPreview, name: 'imagem', type: 'image/jpeg' }]} index={0} onIndex={() => {}} onClose={() => setSubPreview(null)} />
         )}
 
         <div className="flex gap-3 pt-1">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-dark-text/10 text-sm font-semibold text-dark-text/50 hover:bg-dark-text/5 transition-all">Cancelar</button>
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-dark-text/10 text-sm font-semibold text-dark-text/50 hover:bg-dark-text/5 transition-colors">Cancelar</button>
           <button onClick={handleSave} disabled={!title.trim()} className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold text-white transition-all">
             {initial?.id ? 'Salvar' : 'Criar Tarefa'}
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -1036,9 +1039,9 @@ const SortableSubtaskItem: React.FC<{ subtask: Subtask; onToggle: () => void; on
       >
         <GripVertical size={12} />
       </span>
-      <div className="w-full flex items-start gap-3 px-3 py-2 rounded-xl bg-dark-card border border-dark-text/[0.06] hover:border-violet-500/20 transition-all flex-1 min-w-0">
+      <div className="w-full flex items-start gap-3 px-3 py-2 rounded-xl bg-dark-card border border-dark-text/[0.06] hover:border-violet-500/20 transition-colors flex-1 min-w-0">
         <button onClick={onToggle} className="group/check flex-shrink-0 mt-0.5" title="Marcar como concluída">
-          <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
+          <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
             subtask.done ? 'bg-emerald-500 border-emerald-500' : 'border-dark-text/20 group-hover/check:border-violet-400'
           }`}>
             {subtask.done && <Check size={9} className="text-white" />}
@@ -1058,7 +1061,7 @@ const SortableSubtaskItem: React.FC<{ subtask: Subtask; onToggle: () => void; on
                   src={src}
                   alt=""
                   onClick={() => onImageClick?.(src)}
-                  className="h-20 w-20 object-cover rounded-lg border border-dark-text/10 cursor-zoom-in hover:border-violet-500/40 transition-all"
+                  className="h-20 w-20 object-cover rounded-lg border border-dark-text/10 cursor-zoom-in hover:border-violet-500/40 transition-colors"
                 />
               ))}
             </div>
@@ -1132,11 +1135,8 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
   const doneCount = item.subtasks.filter(s => s.done).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="w-full max-w-xl bg-dark-bg rounded-3xl border border-dark-text/10 shadow-2xl overflow-hidden"
-        onClick={e => e.stopPropagation()}
-      >
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-xl" fecharComEsc={!previewImage}>
+      <div>
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-dark-text/[0.06]">
           <div className="flex items-center gap-2">
@@ -1146,11 +1146,11 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
           <div className="flex items-center gap-1.5 ml-3">
             <button
               onClick={onEdit}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600/15 hover:bg-violet-600/25 text-violet-500 text-xs font-bold border border-violet-500/20 transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600/15 hover:bg-violet-600/25 text-violet-500 text-xs font-bold border border-violet-500/20 transition-colors"
             >
               <Edit3 size={11} /> Editar
             </button>
-            <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-all">
+            <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors">
               <X size={15} />
             </button>
           </div>
@@ -1212,7 +1212,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
               {/* Progress bar */}
               <div className="h-1 bg-dark-card rounded-full mb-3 overflow-hidden">
                 <div
-                  className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                  className="h-full bg-emerald-500 rounded-full transition-colors duration-300"
                   style={{ width: `${item.subtasks.length > 0 ? (doneCount / item.subtasks.length) * 100 : 0}%` }}
                 />
               </div>
@@ -1253,7 +1253,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
                 onPaste={handleSubtaskPaste}
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitNewSubtask(); } }}
                 placeholder="Adicionar subtarefa... (cole imagem com Ctrl+V)"
-                className="w-full bg-dark-bg border border-dark-text/10 rounded-xl px-3 py-2 text-xs text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all"
+                className="w-full bg-dark-bg border border-dark-text/10 rounded-xl px-3 py-2 text-xs text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-colors"
               />
               {(newSubtask.trim() || newSubImages.length > 0) && (
                 <button
@@ -1305,7 +1305,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
                   onChange={e => setNewComment(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitComment(); } }}
                   placeholder="Adicionar um comentário..."
-                  className="flex-1 bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all"
+                  className="flex-1 bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-colors"
                 />
               )}
               <button
@@ -1322,19 +1322,9 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
 
       {/* Image Preview Modal */}
       {previewImage && (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
-          <div 
-            onClick={() => setPreviewImage(null)}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm cursor-pointer"
-          />
-          <img 
-            src={previewImage}
-            alt="Preview"
-            className="relative max-w-[90vw] max-h-[90vh] rounded-xl shadow-2xl object-contain z-[2001]"
-          />
-        </div>
+        <MediaLightbox files={[{ url: previewImage, name: 'imagem', type: 'image/jpeg' }]} index={0} onIndex={() => {}} onClose={() => setPreviewImage(null)} />
       )}
-    </div>
+    </Modal>
   );
 };
 
@@ -1365,18 +1355,18 @@ const RecModal: React.FC<RecModalProps> = ({ initial, onSave, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
-      <div className="w-full max-w-md bg-dark-bg rounded-3xl border border-dark-text/10 shadow-2xl p-6 space-y-4">
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-md" fecharAoClicarFora={false} fecharComEsc={false}>
+      <div className="p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-black text-dark-text">Nova <span className="text-blue-500">Recorrente</span></h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-all"><X size={16} /></button>
+          <h2 className="text-lg font-black text-dark-text">Nova <span className="text-violet-500">Recorrente</span></h2>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors"><X size={16} /></button>
         </div>
 
         <div>
           <label className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest mb-1 block">Título *</label>
           <input autoFocus value={title} onChange={e => setTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSave()}
             placeholder="Ex: Relatório semanal de métricas"
-            className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-blue-400/50 transition-all" />
+            className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-blue-400/50 transition-colors" />
         </div>
 
         <div>
@@ -1402,7 +1392,7 @@ const RecModal: React.FC<RecModalProps> = ({ initial, onSave, onClose }) => {
                   key={d}
                   type="button"
                   onClick={() => setDayOfWeek(prev => prev === d ? '' : d)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
                     dayOfWeek === d
                       ? 'bg-blue-600 border-blue-500 text-white'
                       : 'bg-dark-text/5 border-dark-text/10 text-dark-text/50 hover:border-blue-400/40 hover:text-blue-500'
@@ -1420,18 +1410,18 @@ const RecModal: React.FC<RecModalProps> = ({ initial, onSave, onClose }) => {
           <div className="flex flex-wrap gap-1 mb-2">{tags.map(t => <TagPill key={t} label={t} onRemove={() => setTags(p => p.filter(x => x !== t))} />)}</div>
           <div className="flex gap-2">
             <input value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); } }}
-              placeholder="Digite e Enter" className="flex-1 bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-blue-400/50 transition-all" />
+              placeholder="Digite e Enter" className="flex-1 bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-blue-400/50 transition-colors" />
           </div>
         </div>
 
         <div className="flex gap-3 pt-1">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-dark-text/10 text-sm font-semibold text-dark-text/50 hover:bg-dark-text/5 transition-all">Cancelar</button>
-          <button onClick={handleSave} disabled={!title.trim()} className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold text-white transition-all">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-dark-text/10 text-sm font-semibold text-dark-text/50 hover:bg-dark-text/5 transition-colors">Cancelar</button>
+          <button onClick={handleSave} disabled={!title.trim()} className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold text-white transition-colors">
             {initial?.id ? 'Salvar' : 'Criar'}
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -1476,24 +1466,24 @@ const IdeaModal: React.FC<IdeaModalProps> = ({ initial, globalTags, onTagCreated
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
-      <div className="w-full max-w-lg bg-dark-bg rounded-3xl border border-dark-text/10 shadow-2xl p-6 space-y-4">
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-lg" fecharAoClicarFora={false} fecharComEsc={false}>
+      <div className="p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-black text-dark-text">{initial?.id ? 'Editar ' : 'Nova '}<span className="text-violet-500">Ideia</span></h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-all"><X size={16} /></button>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors"><X size={16} /></button>
         </div>
 
         <div>
           <label className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest mb-1 block">Título *</label>
           <input autoFocus value={title} onChange={e => setTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSave()}
             placeholder="Qual é a ideia?"
-            className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all" />
+            className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-colors" />
         </div>
 
         <div>
           <label className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest mb-1 block">Descrição</label>
           <textarea value={description} onChange={e => setDesc(e.target.value)} placeholder="Descreva a ideia com mais detalhes..." rows={3}
-            className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all resize-none" />
+            className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-colors resize-none" />
         </div>
 
         <div>
@@ -1517,7 +1507,7 @@ const IdeaModal: React.FC<IdeaModalProps> = ({ initial, globalTags, onTagCreated
               {tags.map(t => <TagPill key={t} label={t} onRemove={() => toggleTag(t)} />)}
             </div>
           )}
-          <div className="flex items-center gap-2 bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2 cursor-text focus-within:border-violet-500/50 transition-all" onClick={() => setTagDropOpen(true)}>
+          <div className="flex items-center gap-2 bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2 cursor-text focus-within:border-violet-500/50 transition-colors" onClick={() => setTagDropOpen(true)}>
             <Tag size={13} className="text-dark-text/40 flex-shrink-0" />
             <input value={tagSearch} onChange={e => { setTagSearch(e.target.value); setTagDropOpen(true); }}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); createAndAddTag(); } }}
@@ -1551,13 +1541,13 @@ const IdeaModal: React.FC<IdeaModalProps> = ({ initial, globalTags, onTagCreated
         </div>
 
         <div className="flex gap-3 pt-1">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-dark-text/10 text-sm font-semibold text-dark-text/50 hover:bg-dark-text/5 transition-all">Cancelar</button>
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-dark-text/10 text-sm font-semibold text-dark-text/50 hover:bg-dark-text/5 transition-colors">Cancelar</button>
           <button onClick={handleSave} disabled={!title.trim()} className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-sm font-bold text-white transition-all">
             {initial?.id ? 'Salvar' : 'Criar Ideia'}
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -1583,7 +1573,7 @@ const IdeaCard: React.FC<IdeaCardProps> = ({ idea, onView, onEdit, onDelete, onS
   const col = IDEA_COLUMNS.find(c => c.id === idea.status);
 
   return (
-    <div className="group bg-dark-card border border-white/[0.06] rounded-xl px-3 py-2.5 hover:border-violet-500/25 transition-all duration-150">
+    <div className="group bg-dark-card border border-black/10 dark:border-white/[0.06] rounded-xl px-3 py-2.5 hover:border-violet-500/25 transition-colors duration-150">
       {/* Title row */}
       <div className="flex items-start gap-2">
         <Lightbulb size={13} className="mt-0.5 text-violet-400/60 flex-shrink-0" />
@@ -1660,8 +1650,8 @@ const IdeaDetailModal: React.FC<IdeaDetailModalProps> = ({ idea, onEdit, onClose
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-xl bg-dark-bg rounded-3xl border border-dark-text/10 shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-xl">
+      <div>
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-dark-text/[0.06]">
           <div className="flex items-center gap-2">
@@ -1669,10 +1659,10 @@ const IdeaDetailModal: React.FC<IdeaDetailModalProps> = ({ idea, onEdit, onClose
             <h2 className="text-base font-bold text-dark-text leading-tight">{idea.title}</h2>
           </div>
           <div className="flex items-center gap-1.5">
-            <button onClick={onEdit} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600/15 hover:bg-violet-600/25 text-violet-500 text-xs font-bold border border-violet-500/20 transition-all">
+            <button onClick={onEdit} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600/15 hover:bg-violet-600/25 text-violet-500 text-xs font-bold border border-violet-500/20 transition-colors">
               <Edit3 size={11} /> Editar
             </button>
-            <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-all"><X size={15} /></button>
+            <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors"><X size={15} /></button>
           </div>
         </div>
 
@@ -1713,7 +1703,7 @@ const IdeaDetailModal: React.FC<IdeaDetailModalProps> = ({ idea, onEdit, onClose
               <input value={newComment} onChange={e => setNewComment(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }}
                 placeholder="Adicionar um comentário..."
-                className="flex-1 bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all" />
+                className="flex-1 bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-colors" />
               <button onClick={submit} disabled={!newComment.trim()}
                 className="px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white transition-all">
                 <Send size={13} />
@@ -1722,7 +1712,7 @@ const IdeaDetailModal: React.FC<IdeaDetailModalProps> = ({ idea, onEdit, onClose
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -1802,7 +1792,7 @@ const TodoRow: React.FC<RowProps> = ({ item, allColumns, coloredTagDefs, onView,
       {/* Check circle */}
       <button
         onClick={e => { e.stopPropagation(); onStatusChange(item.id, item.status === 'done' ? 'todo' : 'done'); }}
-        className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center transition-all ${
+        className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center transition-colors ${
           item.status === 'done'
             ? 'bg-emerald-500 border-emerald-500'
             : 'border-slate-300 dark:border-dark-text/20 hover:border-violet-500 dark:hover:border-violet-400'
@@ -1932,10 +1922,10 @@ const RecRow: React.FC<RecRowProps> = ({ item, onEdit, onDelete, onToggle }) => 
   return (
     <div
       onClick={() => onEdit(item)}
-      className={`group flex items-center gap-3 px-3 py-2 rounded-xl border transition-all duration-150 cursor-pointer ${
+      className={`group flex items-center gap-3 px-3 py-2 rounded-xl border transition-colors duration-150 cursor-pointer ${
         isCompletedToday
-          ? 'bg-dark-card/50 border-white/[0.02] opacity-50'
-          : 'bg-dark-card border-white/[0.06] hover:border-blue-400/25'
+          ? 'bg-dark-card/50 border-black/10 dark:border-white/[0.02] opacity-50'
+          : 'bg-dark-card border-black/10 dark:border-white/[0.06] hover:border-blue-400/25'
       }`}
     >
       {/* Checkbox */}
@@ -2007,15 +1997,15 @@ interface ColHeaderProps {
 }
 
 const ColHeader: React.FC<ColHeaderProps> = ({ label, count, color, icon, collapsed, onToggle, onAdd, accentClass = 'hover:text-violet-500 hover:bg-violet-500/10' }) => (
-  <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl bg-gradient-to-r ${color} border border-white/[0.06]`}>
+  <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl ${color} border border-black/10 dark:border-white/[0.06]`}>
     <div className="flex items-center gap-2">
       <span className="text-dark-text/40">{icon}</span>
       <span className="text-[11px] font-bold text-dark-text uppercase tracking-widest">{label}</span>
       <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-dark-text/10 flex items-center justify-center text-[10px] font-black text-dark-text/50">{count}</span>
     </div>
     <div className="flex items-center gap-0.5">
-      <button onClick={onAdd} className={`w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 ${accentClass} transition-all`}><Plus size={13} /></button>
-      <button onClick={onToggle} className="w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-all">
+      <button onClick={onAdd} className={`w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 ${accentClass} transition-colors`}><Plus size={13} /></button>
+      <button onClick={onToggle} className="w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors">
         {collapsed ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
       </button>
     </div>
@@ -2026,7 +2016,7 @@ const ColHeader: React.FC<ColHeaderProps> = ({ label, count, color, icon, collap
 
 const EmptyCol = ({ onAdd, label }: { onAdd: () => void; label: string }) => (
   <div className="flex flex-col items-center justify-center py-6 rounded-xl border border-dashed border-dark-text/10 text-dark-text/40 gap-1.5">
-    <span className="text-xl opacity-25">📋</span>
+    <ClipboardList size={18} className="text-slate-400" />
     <span className="text-[11px]">Nenhum item</span>
     <button onClick={onAdd} className="text-[11px] text-violet-500 hover:text-violet-600 font-semibold transition-colors">+ {label}</button>
   </div>
@@ -2055,7 +2045,7 @@ const SortableFolderTaskRow: React.FC<{
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
   const done = task.status === 'done';
   return (
-    <div ref={setNodeRef} style={style} className="group flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-white/[0.03] transition-colors">
+    <div ref={setNodeRef} style={style} className="group flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors">
       <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-dark-text/20 hover:text-violet-400 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 -ml-0.5" title="Arrastar">
         <GripVertical size={13} />
       </div>
@@ -2124,7 +2114,7 @@ const SortableSectionBlock: React.FC<{
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitle?: string; hideRecurring?: boolean; hideDocument?: boolean; hideIdeas?: boolean; todoLabel?: string; enableColoredTags?: boolean; enableImageUpload?: boolean; enableTestColumn?: boolean }> = ({ activePage, pageTitle, pageSubtitle, hideRecurring = false, hideDocument = false, hideIdeas = false, todoLabel, enableColoredTags = false, enableImageUpload = false, enableTestColumn = false }) => {
+const TodoStaff: React.FC<{ activePage?: string; pageLabel?: string; pageTitle?: string; pageSubtitle?: string; hideRecurring?: boolean; hideDocument?: boolean; hideIdeas?: boolean; todoLabel?: string; enableColoredTags?: boolean; enableImageUpload?: boolean; enableTestColumn?: boolean }> = ({ activePage, pageLabel, pageTitle, pageSubtitle, hideRecurring = false, hideDocument = false, hideIdeas = false, todoLabel, enableColoredTags = false, enableImageUpload = false, enableTestColumn = false }) => {
   const [todos,      setTodos]      = useState<TodoItem[]>([]);
   const [recurring,  setRecurring]  = useState<RecurringItem[]>([]);
   const [ideas,      setIdeas]      = useState<IdeaItem[]>([]);
@@ -2189,7 +2179,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
   const derivedColumns = useMemo(() => {
     const base = COLUMNS.map(c => c.id === 'todo' && todoLabel ? { ...c, label: todoLabel } : c);
     if (!enableTestColumn) return base;
-    const testCol = { id: 'teste' as Status, label: 'Em Teste', color: 'from-amber-500/20 to-amber-600/10', icon: <FlaskConical size={13} /> };
+    const testCol = { id: 'teste' as Status, label: 'Em Teste', color: 'bg-amber-500/10', icon: <FlaskConical size={13} /> };
     const doneIdx = base.findIndex(c => c.id === 'done');
     if (doneIdx === -1) return [...base, testCol];
     return [...base.slice(0, doneIdx), testCol, ...base.slice(doneIdx)];
@@ -2700,28 +2690,31 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
       {/* ── Header ─── */}
       <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4">
         <div>
-          <SplitHeadline text={(pageTitle ? pageTitle.replace(/\s+(\S+)$/, '') : 'TODO') + ' '} highlight={pageTitle ? pageTitle.match(/\S+$/)?.[0] || 'Staff' : 'Staff'} className="text-2xl font-black tracking-tight text-dark-text" />
-          <p className="text-[10px] font-bold text-dark-text/30 uppercase tracking-widest mt-0.5">{pageSubtitle || 'Organização interna do time · seção grape'}</p>
+          {(() => {
+            const nome = (pageTitle || pageLabel || 'TODO Staff').trim();
+            const i = nome.lastIndexOf(' ');
+            return <SplitHeadline text={nome.slice(0, i + 1)} highlight={nome.slice(i + 1)} subtitle={pageSubtitle || 'Organização interna do time · seção grape'} />;
+          })()}
         </div>
         <div className="flex items-center gap-2">
           {activeTab === 'tarefas' ? (
             <>
               {!hideRecurring && (
-                <button onClick={openNewRec} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600/15 hover:bg-blue-600/25 text-blue-500 text-xs font-bold border border-blue-500/20 transition-all">
+                <button onClick={openNewRec} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-dark-card text-dark-text/60 hover:text-dark-text text-xs font-bold border border-black/10 dark:border-white/10 hover:border-violet-500/40 transition-colors">
                   <RefreshCw size={13} /> Recorrente
                 </button>
               )}
               {enableColoredTags && (
-                <button onClick={() => setTagsModal(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-dark-card hover:bg-dark-card/80 text-dark-text/60 hover:text-dark-text text-xs font-bold border border-white/[0.07] transition-all">
+                <button onClick={() => setTagsModal(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-dark-card hover:bg-dark-card/80 text-dark-text/60 hover:text-dark-text text-xs font-bold border border-black/10 dark:border-white/[0.07] transition-colors">
                   <Tag size={13} /> Tags
                 </button>
               )}
-              <button onClick={() => { setEditing(undefined); setDefaultStatus('todo'); setTodoModal(true); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all shadow-lg shadow-violet-500/20">
+              <button onClick={() => { setEditing(undefined); setDefaultStatus('todo'); setTodoModal(true); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition-colors">
                 <Plus size={13} /> Nova Tarefa
               </button>
             </>
           ) : (
-            <button onClick={() => { setEditingIdea(undefined); setIdeaModal(true); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all shadow-lg shadow-violet-500/20">
+            <button onClick={() => { setEditingIdea(undefined); setIdeaModal(true); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition-colors">
               <Plus size={13} /> Nova Ideia
             </button>
           )}
@@ -2730,55 +2723,30 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
 
       {/* ── Tab switcher ─── */}
       <div className="px-6 md:px-8 mb-5">
-        <div className="inline-flex items-center gap-1 bg-dark-card border border-white/[0.06] rounded-2xl p-1">
-          <button
-            onClick={() => setActiveTab('tarefas')}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              activeTab === 'tarefas'
-                ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/20'
-                : 'text-dark-text/50 hover:text-dark-text/80'
-            }`}
-          >
-            <ListChecks size={13} /> Tarefas
-          </button>
-          {!hideIdeas && (
-            <button
-              onClick={() => setActiveTab('ideias')}
-              className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'ideias'
-                  ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/20'
-                  : 'text-dark-text/50 hover:text-dark-text/80'
-              }`}
-            >
-              <Lightbulb size={13} /> Ideias
-            </button>
-          )}
-        </div>
+        <Abas
+          abas={[
+            { id: 'tarefas' as const, rotulo: 'Tarefas', Icone: ListChecks },
+            ...(!hideIdeas ? [{ id: 'ideias' as const, rotulo: 'Ideias', Icone: Lightbulb }] : []),
+          ]}
+          ativa={activeTab}
+          onChange={id => setActiveTab(id as 'tarefas' | 'ideias')}
+        />
       </div>
 
+      {!dbLoaded ? <CarregandoBloco className="py-32" /> : <>
       {/* ── Tarefas tab content ─── */}
       {activeTab === 'tarefas' && (<>
       <div className="px-6 md:px-8 mb-5">
         <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: 'Total', value: stats.total, sub: 'tarefas', valueClass: 'text-dark-text' },
-            { label: 'Concluídas', value: stats.done, sub: stats.total > 0 ? `${Math.round((stats.done / stats.total) * 100)}%` : '—', valueClass: 'text-emerald-400' },
-            { label: 'Urgentes', value: stats.urgent, sub: 'pendentes', valueClass: stats.urgent > 0 ? 'text-red-400' : 'text-dark-text' },
-          ].map(k => (
-            <div key={k.label} className="bg-dark-card border border-white/[0.07] rounded-2xl px-4 py-3 flex items-center gap-4 transition-colors duration-200">
-              <div>
-                <span className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest block">{k.label}</span>
-                <span className={`text-xl font-black ${k.valueClass}`}>{k.value}</span>
-              </div>
-              <span className="text-xs text-dark-text/40">{k.sub}</span>
-            </div>
-          ))}
+          <CartaoKpi titulo="Total" valor={stats.total} apoio="tarefas" />
+          <CartaoKpi titulo="Concluídas" valor={stats.done} apoio={stats.total > 0 ? `${Math.round((stats.done / stats.total) * 100)}% do total` : '—'} />
+          <CartaoKpi titulo="Urgentes" valor={stats.urgent} apoio="pendentes" alerta={stats.urgent > 0} />
         </div>
       </div>
 
       {/* ── Search + Tag filters ─── */}
       <div className="px-6 md:px-8 mb-5 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2 bg-dark-card border border-white/[0.07] rounded-xl px-3 py-2">
+        <div className="flex items-center gap-2 bg-dark-card border border-black/10 dark:border-white/[0.07] rounded-xl px-3 py-2">
           <Search size={13} className="text-dark-text/40" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar tarefas..."
             className="bg-transparent text-sm text-dark-text placeholder-dark-text/30 focus:outline-none w-44" />
@@ -2788,10 +2756,10 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
         <div className="relative" ref={tagFilterRef}>
           <button
             onClick={() => setTagFilterOpen(p => !p)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-colors ${
               tagFilterOpen || activeTag || activePriority || activeDate
                 ? 'bg-violet-600/15 border-violet-500/40 text-violet-500'
-                : 'bg-dark-card border-white/[0.07] text-dark-text/60 hover:border-violet-400/30 hover:text-violet-500'
+                : 'bg-dark-card border-black/10 dark:border-white/[0.07] text-dark-text/60 hover:border-violet-400/30 hover:text-violet-500'
             }`}
           >
             <Filter size={12} />
@@ -2812,7 +2780,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                 <div className="flex flex-wrap gap-1 px-1">
                   {(Object.keys(PRIORITY_CONFIG) as Priority[]).map(p => (
                     <button key={p} onClick={() => setActivePriority(prev => prev === p ? '' : p)}
-                      className={`px-2 py-1 rounded-md text-[10px] font-bold border transition-all ${
+                      className={`px-2 py-1 rounded-md text-[10px] font-bold border transition-colors ${
                         activePriority === p
                           ? 'bg-violet-500 text-white border-violet-500'
                           : 'bg-dark-text/5 text-dark-text/60 border-transparent hover:bg-dark-text/10'
@@ -2875,68 +2843,36 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
           )}
         </div>
 
-        <div className="ml-auto inline-flex items-center gap-1 bg-dark-card border border-white/[0.06] rounded-xl p-1">
-          <button
-            onClick={() => setViewMode('kanban')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              viewMode === 'kanban'
-                ? 'bg-violet-600/15 text-violet-500'
-                : 'text-dark-text/50 hover:text-dark-text/80'
-            }`}
-          >
-            <LayoutGrid size={13} /> Kanban
-          </button>
-          <button
-            onClick={() => setViewMode('list')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              viewMode === 'list'
-                ? 'bg-violet-600/15 text-violet-500'
-                : 'text-dark-text/50 hover:text-dark-text/80'
-            }`}
-          >
-            <AlignJustify size={13} /> Lista
-          </button>
-          <button
-            onClick={() => setViewMode('pastas')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              viewMode === 'pastas'
-                ? 'bg-violet-600/15 text-violet-500'
-                : 'text-dark-text/50 hover:text-dark-text/80'
-            }`}
-          >
-            <FolderIcon size={13} /> Pastas
-          </button>
-          {!hideDocument && (
-            <button
-              onClick={() => setViewMode('document')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                viewMode === 'document'
-                  ? 'bg-violet-600/15 text-violet-500'
-                  : 'text-dark-text/50 hover:text-dark-text/80'
-              }`}
-            >
-              <FileText size={13} /> Documento
-            </button>
-          )}
-        </div>
+        <Abas
+          variante="segmentado"
+          className="ml-auto"
+          abas={[
+            { id: 'kanban' as const, rotulo: 'Kanban', Icone: LayoutGrid },
+            { id: 'list' as const, rotulo: 'Lista', Icone: AlignJustify },
+            { id: 'pastas' as const, rotulo: 'Pastas', Icone: FolderIcon },
+            ...(!hideDocument ? [{ id: 'document' as const, rotulo: 'Documento', Icone: FileText }] : []),
+          ]}
+          ativa={viewMode}
+          onChange={id => setViewMode(id as 'kanban' | 'list' | 'document' | 'pastas')}
+        />
       </div>
 
       {viewMode === 'document' ? (
         <div className="px-6 md:px-8 pb-10">
-          <div className="flex gap-0 bg-dark-card border border-white/[0.06] rounded-2xl overflow-hidden shadow-xl" style={{ minHeight: '70vh' }}>
+          <div className="flex gap-0 bg-dark-card border border-black/10 dark:border-white/[0.06] rounded-2xl overflow-hidden shadow-xl" style={{ minHeight: '70vh' }}>
             {/* Sidebar */}
-            <div className="w-56 flex-shrink-0 border-r border-white/[0.06] flex flex-col">
-              <div className="px-4 py-4 border-b border-white/[0.06]">
+            <div className="w-56 flex-shrink-0 border-r border-black/10 dark:border-white/[0.06] flex flex-col">
+              <div className="px-4 py-4 border-b border-black/10 dark:border-white/[0.06]">
                 <p className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest">Páginas</p>
               </div>
               <div className="flex-1 overflow-y-auto custom-scrollbar py-2 px-2 space-y-0.5">
                 {docPages.map(page => (
                   <div
                     key={page.id}
-                    className={`group flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all ${
+                    className={`group flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-colors ${
                       activeDocPageId === page.id
                         ? 'bg-violet-600/15 text-violet-400'
-                        : 'text-dark-text/60 hover:bg-white/[0.04] hover:text-dark-text'
+                        : 'text-dark-text/60 hover:bg-black/[0.03] dark:hover:bg-white/[0.04] hover:text-dark-text'
                     }`}
                     onClick={() => {
                       // Save current page before switching
@@ -2999,7 +2935,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                   </div>
                 ))}
               </div>
-              <div className="px-2 py-3 border-t border-white/[0.06]">
+              <div className="px-2 py-3 border-t border-black/10 dark:border-white/[0.06]">
                 <button
                   onClick={() => {
                     const newId = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -3019,7 +2955,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                     setDocPageDirty(false);
                     apiCall('POST', '/api/todo-staff/doc-pages', newPage);
                   }}
-                  className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-xs font-medium text-dark-text/40 hover:text-violet-400 hover:bg-violet-500/10 transition-all"
+                  className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-xs font-medium text-dark-text/40 hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
                 >
                   <Plus size={13} />
                   Adicionar página
@@ -3032,7 +2968,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
               {activeDocPageId && docPages.find(p => p.id === activeDocPageId) ? (
                 <>
                   {/* Page Header */}
-                  <div className="px-8 pt-6 pb-4 border-b border-white/[0.06]">
+                  <div className="px-8 pt-6 pb-4 border-b border-black/10 dark:border-white/[0.06]">
                     <input
                       value={docPages.find(p => p.id === activeDocPageId)?.title || ''}
                       onChange={e => {
@@ -3102,7 +3038,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                       setActiveDocPageId(newId);
                       apiCall('POST', '/api/todo-staff/doc-pages', newPage);
                     }}
-                    className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-bold transition-all"
+                    className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-bold transition-colors"
                   >
                     <Plus size={13} /> Criar primeira página
                   </button>
@@ -3122,7 +3058,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                 onChange={e => setNewFolderInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') { createFolder(newFolderInput); setNewFolderInput(''); } }}
                 placeholder="Nova pasta..."
-                className="w-full bg-dark-card border border-white/[0.06] rounded-xl pl-9 pr-3 py-2.5 text-sm text-dark-text placeholder:text-dark-text/30 outline-none focus:border-violet-500/40 transition-colors"
+                className="w-full bg-dark-card border border-black/10 dark:border-white/[0.06] rounded-xl pl-9 pr-3 py-2.5 text-sm text-dark-text placeholder:text-dark-text/30 outline-none focus:border-violet-500/40 transition-colors"
               />
             </div>
             <button
@@ -3157,7 +3093,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                 const isExpanded = !!expandedFolders[folder.id];
                 const isRenaming = renamingFolderId === folder.id;
                 return (
-                  <div key={folder.id} className={`bg-dark-card border rounded-2xl overflow-hidden flex flex-col transition-colors ${isExpanded ? 'border-violet-500/30' : 'border-white/[0.06] hover:border-white/[0.12]'}`}>
+                  <div key={folder.id} className={`bg-dark-card border rounded-2xl overflow-hidden flex flex-col transition-colors ${isExpanded ? 'border-violet-500/30' : 'border-black/10 dark:border-white/[0.06] hover:border-black/10 dark:hover:border-white/[0.12]'}`}>
                     {/* Cabeçalho da pasta — clique para expandir/recolher */}
                     <div
                       className="flex items-start gap-2.5 px-4 py-3 cursor-pointer select-none"
@@ -3182,21 +3118,21 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                                 if (e.key === 'Escape') setRenamingFolderId(null);
                               }}
                               onBlur={() => { renameFolder(folder.id, renameFolderInput); setRenamingFolderId(null); }}
-                              className="flex-1 min-w-0 bg-white/[0.04] border border-violet-500/40 rounded-lg px-2 py-0.5 text-sm font-semibold text-dark-text outline-none"
+                              className="flex-1 min-w-0 bg-black/[0.03] dark:bg-white/[0.04] border border-violet-500/40 rounded-lg px-2 py-0.5 text-sm font-semibold text-dark-text outline-none"
                             />
                           ) : (
                             <h4 className="flex-1 text-sm font-semibold text-dark-text truncate pr-1">{folder.name}</h4>
                           )}
                           <button
                             onClick={e => { e.stopPropagation(); setRenamingFolderId(folder.id); setRenameFolderInput(folder.name); }}
-                            className="w-6 h-6 flex items-center justify-center rounded-lg text-dark-text/30 hover:text-violet-400 hover:bg-violet-500/10 transition-all flex-shrink-0"
+                            className="w-6 h-6 flex items-center justify-center rounded-lg text-dark-text/30 hover:text-violet-400 hover:bg-violet-500/10 transition-colors flex-shrink-0"
                             title="Renomear"
                           >
                             <Edit3 size={12} />
                           </button>
                           <button
                             onClick={async e => { e.stopPropagation(); if (await confirmDialog({ message: `Excluir a pasta "${folder.name}"? As tarefas dela voltam a ficar sem pasta.`, danger: true })) deleteFolder(folder.id); }}
-                            className="w-6 h-6 flex items-center justify-center rounded-lg text-dark-text/30 hover:text-red-400 hover:bg-red-500/10 transition-all flex-shrink-0"
+                            className="w-6 h-6 flex items-center justify-center rounded-lg text-dark-text/30 hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0"
                             title="Excluir pasta"
                           >
                             <Trash2 size={13} />
@@ -3218,7 +3154,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                           animate={{ height: 'auto', opacity: 1 }}
                           exit={{ height: 0, opacity: 0 }}
                           transition={{ duration: 0.2, ease: 'easeInOut' }}
-                          className="overflow-hidden border-t border-white/[0.06] bg-dark-bg/40"
+                          className="overflow-hidden border-t border-black/10 dark:border-white/[0.06] bg-dark-bg/40"
                         >
                           {/* Subseções + tarefas (drag&drop) */}
                           <DndContext
@@ -3269,7 +3205,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                                           onChange={e => setSectionTaskInput(p => ({ ...p, [section.id]: e.target.value }))}
                                           onKeyDown={e => { if (e.key === 'Enter') { addTaskToSection(folder.id, section.id, sectionTaskInput[section.id] || ''); setSectionTaskInput(p => ({ ...p, [section.id]: '' })); } }}
                                           placeholder="Adicionar tarefa..."
-                                          className="w-full bg-white/[0.02] border border-white/[0.05] rounded-lg pl-7 pr-3 py-1.5 text-[11px] text-dark-text placeholder:text-dark-text/25 outline-none focus:border-violet-500/40 transition-colors"
+                                          className="w-full bg-black/[0.02] dark:bg-white/[0.02] border border-black/5 dark:border-white/[0.05] rounded-lg pl-7 pr-3 py-1.5 text-[11px] text-dark-text placeholder:text-dark-text/25 outline-none focus:border-violet-500/40 transition-colors"
                                         />
                                       </div>
                                     </SortableSectionBlock>
@@ -3321,7 +3257,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                           </DndContext>
 
                           {/* Adicionar tarefa direto na pasta + nova subseção */}
-                          <div className="px-3 py-2.5 border-t border-white/[0.06] space-y-2">
+                          <div className="px-3 py-2.5 border-t border-black/10 dark:border-white/[0.06] space-y-2">
                             <div className="relative">
                               <Plus size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-dark-text/30" />
                               <input
@@ -3334,7 +3270,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                                   }
                                 }}
                                 placeholder="Adicionar tarefa..."
-                                className="w-full bg-white/[0.03] border border-white/[0.06] rounded-lg pl-8 pr-8 py-2 text-xs text-dark-text placeholder:text-dark-text/30 outline-none focus:border-violet-500/40 transition-colors"
+                                className="w-full bg-black/[0.03] dark:bg-white/[0.03] border border-black/10 dark:border-white/[0.06] rounded-lg pl-8 pr-8 py-2 text-xs text-dark-text placeholder:text-dark-text/30 outline-none focus:border-violet-500/40 transition-colors"
                               />
                               {(folderTaskInput[folder.id] || '').trim() && (
                                 <CornerDownLeft size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-dark-text/30" />
@@ -3356,7 +3292,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                             ) : (
                               <button
                                 onClick={() => { setAddingSectionFolder(folder.id); setNewSectionInput(''); }}
-                                className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-white/[0.08] text-[11px] font-semibold text-dark-text/40 hover:text-violet-400 hover:border-violet-500/30 transition-all"
+                                className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-black/10 dark:border-white/[0.08] text-[11px] font-semibold text-dark-text/40 hover:text-violet-400 hover:border-violet-500/30 transition-colors"
                               >
                                 <FolderPlus size={13} /> Nova subseção
                               </button>
@@ -3418,7 +3354,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
             const isCollapsed = collapsed[col.id];
             return (
               <div key={col.id} className="flex flex-col gap-2">
-                <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl bg-gradient-to-r ${col.color} border border-white/[0.06]`}>
+                <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl ${col.color} border border-black/10 dark:border-white/[0.06]`}>
                   <div className="flex items-center gap-2">
                     <span className="text-dark-text/40">{col.icon}</span>
                     <span className="text-[11px] font-bold text-dark-text uppercase tracking-widest">{col.label}</span>
@@ -3429,7 +3365,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                       <div className="relative">
                         <button 
                           onClick={() => setSortDropdownOpen(p => !p)}
-                          className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${todoSort !== 'manual' ? 'text-violet-400 bg-violet-500/15' : 'text-dark-text/40 hover:text-violet-500 hover:bg-violet-500/10'}`}
+                          className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${todoSort !== 'manual' ? 'text-violet-400 bg-violet-500/15' : 'text-dark-text/40 hover:text-violet-500 hover:bg-violet-500/10'}`}
                         >
                           <ArrowUpDown size={12} />
                         </button>
@@ -3450,8 +3386,8 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                         )}
                       </div>
                     )}
-                    <button onClick={() => openNewTodo(col.id)} className="w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 hover:text-violet-500 hover:bg-violet-500/10 transition-all"><Plus size={13} /></button>
-                    <button onClick={() => toggleCol(col.id)} className="w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-all">
+                    <button onClick={() => openNewTodo(col.id)} className="w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 hover:text-violet-500 hover:bg-violet-500/10 transition-colors"><Plus size={13} /></button>
+                    <button onClick={() => toggleCol(col.id)} className="w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors">
                       {isCollapsed ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
                     </button>
                   </div>
@@ -3480,8 +3416,8 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                           initial={{ opacity: 0, y: -18, scale: 0.98 }}
                           animate={{ opacity: 1, y: 0, scale: 1 }}
                           transition={{
-                            duration: 0.35,
-                            delay: idx * 0.06,
+                            duration: 0.25,
+                            delay: Math.min(idx, 8) * 0.04,
                             ease: [0.32, 0.72, 0, 1],
                           }}
                         >
@@ -3511,13 +3447,13 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
         </div>
         <DragOverlay dropAnimation={null}>
           {activeDragTask && (
-            <div className="bg-white dark:bg-dark-card/95 backdrop-blur-sm border border-violet-500/30 rounded-xl px-4 py-2.5 shadow-2xl shadow-violet-500/10 cursor-grabbing flex items-center gap-2 max-w-md">
+            <div className="bg-dark-card border border-violet-500/30 rounded-xl px-4 py-2.5 shadow-2xl cursor-grabbing flex items-center gap-2 max-w-md">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="text-violet-500 dark:text-violet-400 flex-shrink-0">
                 <circle cx="5" cy="3" r="1.5" /><circle cx="11" cy="3" r="1.5" />
                 <circle cx="5" cy="8" r="1.5" /><circle cx="11" cy="8" r="1.5" />
                 <circle cx="5" cy="13" r="1.5" /><circle cx="11" cy="13" r="1.5" />
               </svg>
-              <span className="text-sm font-medium text-slate-700 dark:text-white truncate">{activeDragTask.title}</span>
+              <span className="text-sm font-medium text-dark-text truncate">{activeDragTask.title}</span>
               {activeDragTask.tags[0] && (() => {
                 const ctag = (enableColoredTags ? coloredTagDefs : [])?.find(c => c.name.trim().toLowerCase() === activeDragTask.tags[0].trim().toLowerCase());
                 const tagStyle = ctag
@@ -3547,19 +3483,9 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
         <div className="px-6 md:px-8 pb-10">
           {/* Ideias KPIs */}
           <div className="grid grid-cols-3 gap-3 mb-5">
-            {[
-              { label: 'Total', value: ideas.length, sub: 'ideias', valueClass: 'text-dark-text' },
-              { label: 'Aprovadas', value: ideas.filter(i => i.status === 'aprovada').length, sub: 'ideias', valueClass: 'text-emerald-400' },
-              { label: 'Favoritas', value: ideas.filter(i => i.status === 'favorita').length, sub: 'ideias', valueClass: 'text-pink-400' },
-            ].map(k => (
-              <div key={k.label} className="bg-dark-card border border-white/[0.07] rounded-2xl px-4 py-3 flex items-center gap-4">
-                <div>
-                  <span className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest block">{k.label}</span>
-                  <span className={`text-xl font-black ${k.valueClass}`}>{k.value}</span>
-                </div>
-                <span className="text-xs text-dark-text/40">{k.sub}</span>
-              </div>
-            ))}
+            <CartaoKpi titulo="Total" valor={ideas.length} apoio="ideias" />
+            <CartaoKpi titulo="Aprovadas" valor={ideas.filter(i => i.status === 'aprovada').length} apoio="ideias" />
+            <CartaoKpi titulo="Favoritas" valor={ideas.filter(i => i.status === 'favorita').length} apoio="ideias" />
           </div>
           {/* Ideias board */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -3567,21 +3493,21 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
               const colIdeas = ideas.filter(i => i.status === col.id);
               return (
                 <div key={col.id} className="flex flex-col gap-2">
-                  <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl bg-gradient-to-r ${col.color} border border-white/[0.06]`}>
+                  <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl ${col.color} border border-black/10 dark:border-white/[0.06]`}>
                     <div className="flex items-center gap-2">
                       <span className="text-dark-text/40">{col.icon}</span>
                       <span className="text-[11px] font-bold text-dark-text uppercase tracking-widest">{col.label}</span>
                       <span className="text-[10px] font-bold text-dark-text/40 bg-dark-text/10 px-1.5 py-0.5 rounded-full">{colIdeas.length}</span>
                     </div>
                     <button onClick={() => { setEditingIdea({ status: col.id } as IdeaItem); setIdeaModal(true); }}
-                      className={`w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 ${col.accent} transition-all`}>
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 ${col.accent} transition-colors`}>
                       <Plus size={13} />
                     </button>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     {colIdeas.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-6 rounded-xl border border-dashed border-dark-text/10 text-dark-text/40 gap-1.5">
-                        <span className="text-xl opacity-25">💡</span>
+                        <Lightbulb size={18} className="text-slate-400" />
                         <span className="text-[11px]">Nenhuma ideia</span>
                         <button onClick={() => { setEditingIdea({ status: col.id } as IdeaItem); setIdeaModal(true); }}
                           className="text-[11px] text-violet-500 hover:text-violet-600 font-semibold transition-colors">+ Adicionar</button>
@@ -3592,8 +3518,8 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                         initial={{ opacity: 0, y: -18, scale: 0.98 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         transition={{
-                          duration: 0.35,
-                          delay: idx * 0.06,
+                          duration: 0.25,
+                          delay: Math.min(idx, 8) * 0.04,
                           ease: [0.32, 0.72, 0, 1],
                         }}
                       >
@@ -3613,6 +3539,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
           </div>
         </div>
       )}
+      </>}
 
       {/* ── Modals ─── */}
       {viewingTodo && (

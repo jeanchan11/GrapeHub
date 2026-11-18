@@ -114,7 +114,7 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
           onClick={() => setOpen(v => !v)}
           title={value || placeholder}
           className={`group/tag max-w-full inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all cursor-pointer ${
-            value ? 'hover:brightness-125' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'
+            value ? 'hover:brightness-110 dark:hover:brightness-125' : 'text-slate-500 hover:bg-black/5 dark:hover:bg-white/5 hover:text-slate-700 dark:hover:text-slate-300'
           }`}
           style={value ? { background: `${cs?.text || '#94a3b8'}26`, color: cs?.text || '#94a3b8' } : undefined}
         >
@@ -136,8 +136,8 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
         onClick={() => setOpen(v => !v)}
         className={`flex items-center gap-1.5 rounded-lg transition-all cursor-pointer ${
           compact
-            ? 'px-2 py-1 text-[10px] font-bold uppercase tracking-wider border hover:bg-white/5'
-            : 'px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider border hover:bg-white/5'
+            ? 'px-2 py-1 text-[10px] font-bold uppercase tracking-wider border hover:bg-black/5 dark:hover:bg-white/5'
+            : 'px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider border hover:bg-black/5 dark:hover:bg-white/5'
         }`}
         style={cs ? {
           background: cs.bg,
@@ -146,7 +146,8 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
           borderColor: cs.border || 'transparent',
         } : {
           background: 'transparent',
-          borderColor: compact ? 'transparent' : 'rgba(255,255,255,0.1)',
+          // token do tema: borda visível no claro e no escuro
+          borderColor: compact ? 'transparent' : 'rgb(var(--dark-text) / 0.12)',
           color: '#94a3b8',
         }}
       >
@@ -159,14 +160,14 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
         <div
           ref={menuRef}
           data-picker-menu
-          className="fixed z-[100000] bg-dark-card border border-white/10 rounded-xl shadow-2xl py-1.5 max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-150"
+          className="fixed z-[100000] bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl py-1.5 max-h-60 overflow-y-auto"
           style={{ top: pos.top, left: pos.left, minWidth: pos.minWidth }}
         >
           {emptyLabel !== undefined && (
             <button
               type="button"
               onClick={() => { onChange(null); setOpen(false); }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-500 hover:bg-white/5 transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-500 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
             >
               <span className="flex-1 text-left font-medium">{emptyLabel || '—'}</span>
               {!value && <Check size={14} className="text-slate-400 shrink-0" />}
@@ -177,13 +178,13 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
               key={opt.label}
               type="button"
               onClick={() => { onChange(opt.label); setOpen(false); }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-dark-text hover:bg-white/5 transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-dark-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
             >
               {opt.color && (
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ background: opt.color }} />
               )}
               <span className="flex-1 text-left font-medium">{opt.label}</span>
-              {value === opt.label && <Check size={14} className="text-violet-400 shrink-0" />}
+              {value === opt.label && <Check size={14} className="text-violet-500 shrink-0" />}
             </button>
           ))}
         </div>,

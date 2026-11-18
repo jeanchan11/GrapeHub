@@ -23,7 +23,8 @@ const SplitHeadline: React.FC<SplitHeadlineProps> = ({
   text,
   highlight,
   subtitle,
-  className = 'text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-1',
+  // Tamanho único de título de página (18/11/2026): 2xl, como o Dashboard Operacional e o Comercial
+  className = 'text-2xl font-black text-dark-text tracking-tight mb-1',
   subtitleClassName = 'text-slate-500 text-sm',
 }) => {
   const baseChars = text.split('');

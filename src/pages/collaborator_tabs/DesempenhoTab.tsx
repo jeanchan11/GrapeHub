@@ -4,7 +4,10 @@ import {
   Plus, X, Star, ChevronDown,
   Trash2, Award, BarChart3, CalendarClock, Clock, Trash, Loader2, Check
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
+import { Modal } from '../../components/ui/Modal';
+import { CarregandoBloco } from '../../components/LoadingSpinner';
+import { EstadoVazio } from '../../components/ui/EstadoVazio';
 import SplitHeadline from '../../components/SplitHeadline';
 import DateRangePicker from '../../components/ui/DateRangePicker';
 import { auth } from '../../firebase';
@@ -133,11 +136,7 @@ function AgendarProximaModal({ collaboratorId, userEmail, onClose, onSaved }: Ag
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
+  // Esc e clique fora: o <Modal> cuida (comportamento igual ao anterior)
 
   const handleSave = async () => {
     if (!data) { setError('Selecione a data da próxima avaliação.'); return; }
@@ -166,12 +165,7 @@ function AgendarProximaModal({ collaboratorId, userEmail, onClose, onSaved }: Ag
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.72)' }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="relative w-full max-w-md bg-white dark:bg-dark-bg/95 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-md" className="max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 dark:border-white/[0.07]">
           <div className="flex items-center gap-3">
@@ -179,11 +173,11 @@ function AgendarProximaModal({ collaboratorId, userEmail, onClose, onSaved }: Ag
               <CalendarClock size={18} className="text-violet-400" />
             </div>
             <div>
-              <h2 className="font-black text-slate-800 dark:text-white text-base">Agendar Próxima Avaliação</h2>
+              <h2 className="font-black text-dark-text text-base">Agendar Próxima Avaliação</h2>
               <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">Defina a data do próximo ciclo</p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
+          <button onClick={onClose} aria-label="Fechar" className="w-8 h-8 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-dark-text transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -197,7 +191,7 @@ function AgendarProximaModal({ collaboratorId, userEmail, onClose, onSaved }: Ag
                 type="date"
                 value={data}
                 onChange={e => setData(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 transition-colors"
+                className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500 transition-colors"
               />
             </div>
             <div>
@@ -206,7 +200,7 @@ function AgendarProximaModal({ collaboratorId, userEmail, onClose, onSaved }: Ag
                 type="time"
                 value={horario}
                 onChange={e => setHorario(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 transition-colors"
+                className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500 transition-colors"
               />
             </div>
           </div>
@@ -218,7 +212,7 @@ function AgendarProximaModal({ collaboratorId, userEmail, onClose, onSaved }: Ag
               onChange={e => setObservacao(e.target.value)}
               rows={3}
               placeholder="Algum ponto a preparar antes da avaliação..."
-              className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors resize-none"
+              className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-dark-text placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors resize-none"
             />
           </div>
 
@@ -231,7 +225,7 @@ function AgendarProximaModal({ collaboratorId, userEmail, onClose, onSaved }: Ag
         <div className="px-6 py-4 border-t border-slate-100 dark:border-white/[0.07] flex items-center justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-5 py-2 rounded-xl text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+            className="px-5 py-2 rounded-xl text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-dark-text hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
           >
             Cancelar
           </button>
@@ -244,8 +238,7 @@ function AgendarProximaModal({ collaboratorId, userEmail, onClose, onSaved }: Ag
             Confirmar agendamento
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -272,12 +265,7 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved, reali
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  // Fechar com ESC
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
+  // Fechar com ESC e clique fora: o <Modal> cuida
 
   // Carrega os critérios do cargo do colaborador
   useEffect(() => {
@@ -364,12 +352,7 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved, reali
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.72)' }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="relative w-full max-w-xl bg-white dark:bg-dark-bg/95 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-xl" className="max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 dark:border-white/[0.07]">
           <div className="flex items-center gap-3">
@@ -377,13 +360,13 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved, reali
               <BarChart3 size={18} className="text-violet-400" />
             </div>
             <div>
-              <h2 className="font-black text-slate-800 dark:text-white text-base">{realizando ? 'Realizar Avaliação Quinzenal' : 'Registrar Avaliação Quinzenal'}</h2>
+              <h2 className="font-black text-dark-text text-base">{realizando ? 'Realizar Avaliação Quinzenal' : 'Registrar Avaliação Quinzenal'}</h2>
               <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">
                 {cargo ? `Desempenho — ${cargo}` : 'Desempenho do colaborador'}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
+          <button onClick={onClose} aria-label="Fechar" className="w-8 h-8 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-dark-text transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -400,9 +383,7 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved, reali
           <div>
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 block">Avaliação por critério</label>
             {loadingCrit ? (
-              <div className="flex items-center justify-center py-8 text-slate-400">
-                <Loader2 size={22} className="animate-spin" />
-              </div>
+              <CarregandoBloco className="py-8" />
             ) : (
               <div className="space-y-3">
                 {criterios.map((c, i) => {
@@ -415,7 +396,7 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved, reali
                           <Ico size={16} />
                         </div>
                         <div className="min-w-0">
-                          <p className="font-bold text-slate-800 dark:text-white text-sm">{c.label}</p>
+                          <p className="font-bold text-dark-text text-sm">{c.label}</p>
                           {c.descricao && <p className="text-[11px] text-slate-500 truncate">{c.descricao}</p>}
                         </div>
                       </div>
@@ -435,7 +416,7 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved, reali
               onChange={e => setComentario(e.target.value)}
               rows={3}
               placeholder="Observações sobre o ciclo, pontos de melhoria, destaques..."
-              className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors resize-none"
+              className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-dark-text placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors resize-none"
             />
           </div>
 
@@ -458,7 +439,7 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved, reali
         <div className="px-6 py-4 border-t border-slate-100 dark:border-white/[0.07] flex items-center justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-5 py-2 rounded-xl text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+            className="px-5 py-2 rounded-xl text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-dark-text hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
           >
             Cancelar
           </button>
@@ -471,8 +452,7 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved, reali
             {realizando ? 'Concluir avaliação' : 'Salvar avaliação'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -531,9 +511,7 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-      </div>
+      <CarregandoBloco />
     );
   }
 
@@ -557,12 +535,12 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
   });
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+    <div className="space-y-6">
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
-          <SplitHeadline text="Desempenho " highlight="Quinzenal" className="text-xl font-black text-slate-800 dark:text-white" />
+          <SplitHeadline text="Desempenho " highlight="Quinzenal" className="text-xl font-black text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
             Avaliação por critérios — ciclos de 15 dias
           </p>
@@ -622,7 +600,7 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
                 <p className="text-[10px] font-bold text-violet-400 uppercase tracking-widest">Próxima Avaliação Agendada</p>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeColor}`}>{badgeLabel}</span>
               </div>
-              <p className="text-base font-black text-slate-800 dark:text-white">
+              <p className="text-base font-black text-dark-text">
                 {dataObj.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
               </p>
               <div className="flex items-center gap-4 mt-1">
@@ -668,11 +646,10 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
 
       {cycles.length === 0 ? (
         /* Empty state */
-        <div className="flex flex-col items-center justify-center h-56 text-slate-500 border border-dashed border-white/10 rounded-2xl">
-          <BarChart3 size={40} className="mb-3 opacity-30" />
-          <p className="text-sm font-medium">Nenhuma avaliação registrada ainda.</p>
+        <div className="flex flex-col items-center justify-center h-56 text-slate-500 border border-dashed border-black/10 dark:border-white/10 rounded-2xl">
+          <EstadoVazio Icone={BarChart3} titulo="Nenhuma avaliação registrada ainda." className="py-0" />
           {isAdmin && (
-            <button onClick={() => setShowModal(true)} className="mt-4 text-violet-400 text-sm font-bold hover:text-violet-300 transition-colors">
+            <button onClick={() => setShowModal(true)} className="mt-4 text-violet-600 dark:text-violet-400 text-sm font-bold hover:text-violet-700 dark:hover:text-violet-300 transition-colors">
               + Registrar primeiro ciclo
             </button>
           )}
@@ -685,14 +662,14 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
               const Ico = iconOf(c.icon);
               const col = colorOf(c.cor);
               return (
-                <div key={`${critKey(c)}-${i}`} className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200 hover:border-violet-500/30 dark:hover:border-violet-500/30 hover:shadow-sm">
+                <div key={`${critKey(c)}-${i}`} className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200 hover:border-violet-500/30 dark:hover:border-violet-500/30 hover:shadow-sm">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest truncate">{c.label}</span>
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${col.bg} ${col.text}`}>
                       <Ico size={16} />
                     </div>
                   </div>
-                  <div className="text-2xl font-black text-slate-800 dark:text-white leading-tight mt-1">
+                  <div className="text-2xl font-black text-dark-text leading-tight mt-1">
                     {c.media > 0 ? c.media.toFixed(1) : '—'}
                   </div>
                   {c.descricao && (
@@ -712,7 +689,7 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
 
           {/* ── Média Geral + Barras ── */}
           {resumo.length > 0 && (
-            <div className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-6 flex flex-col md:flex-row gap-8 items-center">
+            <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 flex flex-col md:flex-row gap-8 items-center">
 
               {/* Big Score Block */}
               <div className="flex flex-col items-center justify-center md:min-w-[240px] shrink-0 md:border-r border-slate-200 dark:border-white/10 md:pr-8">
@@ -723,7 +700,7 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Média Geral</span>
                 </div>
 
-                <div className="text-5xl font-black text-slate-800 dark:text-white leading-none mb-3">
+                <div className="text-5xl font-black text-dark-text leading-none mb-3">
                   {lastCycle ? lastCycle.media_geral.toFixed(1) : '—'}
                 </div>
 
@@ -758,12 +735,12 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
                           <motion.div
                             initial={{ width: 0 }}
                             animate={{ width: `${pct}%` }}
-                            transition={{ duration: 1, ease: "easeOut" }}
+                            transition={{ duration: 0.5, ease: "easeOut" }}
                             className={`h-full rounded-full ${col.bar}`}
                           />
                         </div>
                         <div className="flex items-center justify-end w-10 shrink-0">
-                          <span className="text-sm font-black text-slate-800 dark:text-white">{c.media.toFixed(1)}</span>
+                          <span className="text-sm font-black text-dark-text">{c.media.toFixed(1)}</span>
                         </div>
                       </div>
                     );
@@ -782,7 +759,7 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
                 return (
                   <div
                     key={cycle.id}
-                    className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden transition-colors duration-200"
+                    className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden transition-colors duration-200"
                   >
                     {/* Row header */}
                     <button
@@ -794,7 +771,7 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
                           {cycles.length - idx}
                         </div>
                         <div className="text-left">
-                          <p className="font-bold text-slate-800 dark:text-white text-sm">
+                          <p className="font-bold text-dark-text text-sm">
                             {fmtDate(cycle.periodo_inicio)} → {fmtDate(cycle.periodo_fim)}
                           </p>
                           <p className="text-[11px] text-slate-500 mt-0.5">Por {cycle.avaliador_nome}</p>
@@ -821,7 +798,7 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
                           <div className="text-right">
                             <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Média Geral</div>
                             <div className="flex items-center gap-1 justify-end">
-                              <span className="text-lg font-black text-slate-800 dark:text-white leading-none">{cycle.media_geral.toFixed(1)}</span>
+                              <span className="text-lg font-black text-dark-text leading-none">{cycle.media_geral.toFixed(1)}</span>
                               <Star size={12} className="fill-violet-400 text-violet-400" />
                             </div>
                           </div>
@@ -847,7 +824,7 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
                                   <Ico size={16} />
                                   <span className="text-[10px] font-bold uppercase tracking-wider truncate">{n.label}</span>
                                 </div>
-                                <div className="text-xl font-black text-slate-800 dark:text-white mb-1">{Number(n.nota).toFixed(1)}</div>
+                                <div className="text-xl font-black text-dark-text mb-1">{Number(n.nota).toFixed(1)}</div>
                                 <StarRow value={Number(n.nota)} size={11} />
                               </div>
                             );

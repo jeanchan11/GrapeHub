@@ -11,6 +11,8 @@ import {
   Globe, Activity, DollarSign, ArrowLeft
 } from 'lucide-react';
 import { Modal } from './ui/Modal';
+import { Abas, type AbaItem } from './ui/Abas';
+import { CarregandoBloco } from './LoadingSpinner';
 import { designSystem } from '../design-system';
 import CrmCommentHistory from './CrmCommentHistory';
 import { confirmDialog } from '../lib/confirm';
@@ -374,10 +376,7 @@ const AbaFinanceiro: React.FC<{
       {/* ── Resumo + histórico ── */}
       {subId && (
         carregandoMov ? (
-          <div className="py-14 flex flex-col items-center gap-3">
-            <div className="w-7 h-7 border-4 border-violet-500/20 border-t-violet-500 rounded-full animate-spin" />
-            <p className="text-slate-500 text-xs font-medium">Carregando pagamentos…</p>
-          </div>
+          <CarregandoBloco className="py-14" />
         ) : (
           <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.03] p-6">
             <div className="grid grid-cols-3 divide-x divide-slate-200 dark:divide-white/10 mb-6">
@@ -667,7 +666,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
       const fetchChurnData = async () => {
         setIsLoadingChurn(true);
         try {
-          const res = await fetch(`/api/churn/${encodeURIComponent(editingClient.name)}`);
+          const res = await fetch(`/api/churn/${encodeURIComponent(editingClient.name)}?client_id=${encodeURIComponent(editingClient.id)}`);
           if (res.ok) {
             const data = await res.json();
             setChurnData(data);
@@ -964,6 +963,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
     <Modal
       isOpen={isOpen}
       onClose={() => { setIsEditing(false); onClose(); }}
+      // Com o popup do produto aberto por cima, Esc fecha só ele
+      fecharComEsc={!selectedProductView}
       title={editingClient ? (isEditing ? 'Editar Cliente' : editingClient.name) : 'Novo Cliente'}
       icon={<UserPlus size={24} />}
       maxWidth="max-w-5xl"
@@ -990,36 +991,18 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
     >
       <div className="flex flex-col h-full">
         {/* Tabs */}
-        <div className="flex border-b modal-divider shrink-0 mb-6">
-          <button 
-            onClick={() => setActiveTab('client')}
-            className={`px-8 py-4 text-sm font-bold transition-all ${activeTab === 'client' ? 'modal-tab-active' : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'}`}
-          >
-            Dados do Cliente
-          </button>
-          <button 
-            onClick={() => setActiveTab('finance')}
-            className={`px-8 py-4 text-sm font-bold transition-all ${activeTab === 'finance' ? 'modal-tab-active' : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'}`}
-          >
-            Financeiro
-          </button>
-          {editingClient && editingClient.status === 'Inativo' && (
-            <button 
-              onClick={() => setActiveTab('churn')}
-              className={`px-8 py-4 text-sm font-bold transition-all ${activeTab === 'churn' ? 'modal-tab-active' : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'}`}
-            >
-              Motivo de Saída
-            </button>
-          )}
-          {editingClient && (
-            <button 
-              onClick={() => setActiveTab('projeto')}
-              className={`px-8 py-4 text-sm font-bold transition-all ${activeTab === 'projeto' ? 'modal-tab-active' : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'}`}
-            >
-              Projeto
-            </button>
-          )}
-        </div>
+        <Abas
+          variante="segmentado"
+          className="shrink-0 mb-6"
+          abas={[
+            { id: 'client', rotulo: 'Dados do Cliente' },
+            { id: 'finance', rotulo: 'Financeiro' },
+            ...(editingClient && editingClient.status === 'Inativo' ? [{ id: 'churn', rotulo: 'Motivo de Saída' }] : []),
+            ...(editingClient ? [{ id: 'projeto', rotulo: 'Projeto' }] : []),
+          ] as AbaItem<typeof activeTab>[]}
+          ativa={activeTab}
+          onChange={(id) => setActiveTab(id as typeof activeTab)}
+        />
 
         <div className="flex-1 overflow-y-auto">
           {activeTab === 'client' && (
@@ -1187,10 +1170,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
           {activeTab === 'churn' && (
                   <div className="space-y-6">
                     {isLoadingChurn ? (
-                      <div className="py-20 flex flex-col items-center gap-3">
-                        <div className="w-8 h-8 border-4 border-violet-500/20 border-t-violet-500 rounded-full animate-spin"></div>
-                        <p className="text-slate-500 text-sm font-medium">Carregando dados de churn...</p>
-                      </div>
+                      <CarregandoBloco className="py-20" />
                     ) : !churnData ? (
                       <div className="p-8 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl flex flex-col items-center gap-3 text-center">
                         <AlertCircle className="text-slate-400" size={32} />
@@ -1227,19 +1207,20 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                               churnData['Motivo de saída'].split(',').map((reason: string, idx: number) => {
                                 const r = reason.trim();
                                 const colorMap: Record<string, string> = {
-                                  'Motivo Pessoal': 'bg-blue-500 text-white border-blue-500',
-                                  'Falta de Relacionamento': 'bg-rose-500 text-white border-rose-500',
-                                  'inadimplência': 'bg-orange-500 text-white border-orange-500',
-                                  'Inadimplência': 'bg-orange-500 text-white border-orange-500',
-                                  'Resultado Comercial': 'bg-red-600 text-white border-red-600',
-                                  'Motivo Financeiro': 'bg-purple-500 text-white border-purple-500',
-                                  'CRM e IA': 'bg-cyan-500 text-white border-cyan-500',
-                                  'Outros': 'bg-slate-600 text-white border-slate-600',
-                                  'Resultado Campanha': 'bg-red-600 text-white border-red-600',
+                                  // Pílula do padrão: fundo 10% + texto da cor (antes fundo saturado cheio + texto branco)
+                                  'Motivo Pessoal': 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20',
+                                  'Falta de Relacionamento': 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20',
+                                  'inadimplência': 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
+                                  'Inadimplência': 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
+                                  'Resultado Comercial': 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20',
+                                  'Motivo Financeiro': 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20',
+                                  'CRM e IA': 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20',
+                                  'Outros': 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
+                                  'Resultado Campanha': 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20',
                                 };
-                                const cls = colorMap[r] || 'bg-slate-500 text-white border-slate-500';
+                                const cls = colorMap[r] || 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20';
                                 return (
-                                  <span key={idx} className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border ${cls}`}>
+                                  <span key={idx} className={`px-3 py-1.5 rounded-full text-[11px] font-bold border ${cls}`}>
                                     {r}
                                   </span>
                                 );
@@ -1390,10 +1371,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
           {activeTab === 'projeto' && (
             <div className="space-y-6">
               {isLoadingProject ? (
-                <div className="py-20 flex flex-col items-center gap-3">
-                  <div className="w-8 h-8 border-4 border-violet-500/20 border-t-violet-500 rounded-full animate-spin"></div>
-                  <p className="text-slate-500 text-sm font-medium">Carregando projeto...</p>
-                </div>
+                <CarregandoBloco className="py-20" />
               ) : !projectData ? (
                 <div className="p-8 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl flex flex-col items-center gap-3 text-center">
                   <Briefcase className="text-slate-400" size={32} />
@@ -1416,8 +1394,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                     <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
                       <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Resultado</p>
                       <span className={`inline-flex px-3 py-1 rounded-lg text-[10px] font-bold ${
-                        (projectData.projectResult || '').includes('BOM') ? 'bg-emerald-500/10 text-emerald-500' :
-                        (projectData.projectResult || '').includes('OK') ? 'bg-blue-500/10 text-blue-500' :
+                        (projectData.projectResult || '').includes('BOM') ? 'bg-emerald-600/15 text-emerald-700 dark:text-emerald-300' :
+                        (projectData.projectResult || '').includes('OK') ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
                         (projectData.projectResult || '').includes('RUIM') ? 'bg-rose-500/10 text-rose-500' :
                         'bg-slate-500/10 text-slate-500'
                       }`}>{projectData.projectResult || '-'}</span>
@@ -1491,7 +1469,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                               <div key={idx} className="relative flex items-center justify-center">
                                 {/* Timeline Clock */}
                                 <div className="absolute left-1/2 -translate-x-1/2 z-10">
-                                  <div className="w-8 h-8 rounded-full bg-white dark:bg-[#1a1625]">
+                                  <div className="w-8 h-8 rounded-full bg-white dark:bg-dark-card">
                                     <div className="w-full h-full rounded-full bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 flex items-center justify-center shadow-sm">
                                       <Clock size={16} className="text-violet-500" />
                                     </div>
@@ -1545,20 +1523,9 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
       {/* Product Detail Popup - overlay on top of ClientModal */}
       <AnimatePresence>
         {selectedProductView && (
-          <div className="fixed inset-0 z-[1100] flex items-start justify-center p-4 overflow-y-auto pt-10 pb-10">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedProductView(null)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-5xl modal-container overflow-hidden mb-10 transition-colors duration-300"
-            >
+          <Modal isOpen onClose={() => setSelectedProductView(null)} semCabecalho semPadding maxWidth="max-w-5xl">
+            
+            <div className="relative w-full">
               {/* Header */}
               <div className="p-8 border-b border-slate-200 dark:border-white/10">
                 <div className="flex items-center justify-between">
@@ -1596,8 +1563,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                   <div className="flex items-center gap-3 mt-4">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Resultado:</p>
                     <span className={`inline-flex px-3 py-1 rounded-lg text-xs font-bold ${
-                      (selectedProductView.projectResult || '').includes('BOM') ? 'bg-emerald-500/10 text-emerald-500' :
-                      (selectedProductView.projectResult || '').includes('OK') ? 'bg-blue-500/10 text-blue-500' :
+                      (selectedProductView.projectResult || '').includes('BOM') ? 'bg-emerald-600/15 text-emerald-700 dark:text-emerald-300' :
+                      (selectedProductView.projectResult || '').includes('OK') ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
                       (selectedProductView.projectResult || '').includes('RUIM') ? 'bg-rose-500/10 text-rose-500' :
                       'bg-slate-500/10 text-slate-500'
                     }`}>{selectedProductView.projectResult}</span>
@@ -1662,7 +1629,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                         <div key={idx} className="relative flex items-center justify-center">
                           {/* Timeline Dot */}
                           <div className="absolute left-1/2 -translate-x-1/2 z-10">
-                            <div className="w-8 h-8 rounded-full bg-white dark:bg-[#1a1625]">
+                            <div className="w-8 h-8 rounded-full bg-white dark:bg-dark-card">
                               <div className="w-full h-full rounded-full bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 flex items-center justify-center shadow-sm">
                                 <Clock size={16} className="text-violet-500" />
                               </div>
@@ -1716,8 +1683,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                   <p className="text-xs text-slate-500 italic text-center py-8">Nenhum histórico de otimizações disponível.</p>
                 )}
               </div>
-            </motion.div>
-          </div>
+            </div>
+          </Modal>
         )}
       </AnimatePresence>
     </>

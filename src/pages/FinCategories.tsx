@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronRight, ChevronDown, Plus, Pencil, Check, X, FolderTree, Layers, Tag, Search, Loader2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, ChevronLeft, Plus, Pencil, Check, X, FolderTree, Layers, Tag, Search, Loader2 } from 'lucide-react';
+import { CartaoKpi } from '../components/graficos';
+import { CarregandoBloco } from '../components/LoadingSpinner';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
 import SplitHeadline from '../components/SplitHeadline';
 import { invalidarPlanoDeContas } from '../components/SeletorCategoriaDRE';
 import { promptDialog } from '@/src/lib/confirm';
@@ -332,7 +335,7 @@ export default function FinCategories({ onBack }: { onBack: () => void }) {
     <div className="p-8 max-w-5xl mx-auto">
       {/* Back Button */}
       <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-violet-500 hover:text-violet-400 transition-colors mb-4 group">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="transition-transform group-hover:-translate-x-0.5"><path d="m15 18-6-6 6-6"/></svg>
+        <ChevronLeft size={16} className="transition-transform group-hover:-translate-x-0.5" />
         Voltar para Configurações
       </button>
 
@@ -342,48 +345,15 @@ export default function FinCategories({ onBack }: { onBack: () => void }) {
           text="Plano de "
           highlight="Categorias"
           subtitle="Gerencie as categorias financeiras da empresa em estrutura hierárquica."
-          className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1"
         />
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="bg-light-card dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-white/5 p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
-              <FolderTree size={16} className="text-violet-400" />
-            </div>
-            <span className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Total</span>
-          </div>
-          <p className="text-2xl font-black text-dark-text">{flat.length}</p>
-        </div>
-        <div className="bg-light-card dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-white/5 p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
-              <Layers size={16} className="text-violet-400" />
-            </div>
-            <span className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Grupos</span>
-          </div>
-          <p className="text-2xl font-black text-violet-400">{countL1}</p>
-        </div>
-        <div className="bg-light-card dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-white/5 p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 rounded-lg bg-sky-500/10 flex items-center justify-center">
-              <Tag size={16} className="text-sky-400" />
-            </div>
-            <span className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Subgrupos</span>
-          </div>
-          <p className="text-2xl font-black text-sky-400">{countL2}</p>
-        </div>
-        <div className="bg-light-card dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-white/5 p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-              <Tag size={16} className="text-emerald-400" />
-            </div>
-            <span className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Contas</span>
-          </div>
-          <p className="text-2xl font-black text-emerald-400">{countL3}</p>
-        </div>
+      {/* Stats Cards — desenho do CartaoKpi (18/11/2026), mesmos números */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <CartaoKpi titulo="Total" valor={flat.length} />
+        <CartaoKpi titulo="Grupos" valor={<span className="text-violet-500">{countL1}</span>} />
+        <CartaoKpi titulo="Subgrupos" valor={<span className="text-sky-500">{countL2}</span>} />
+        <CartaoKpi titulo="Contas" valor={<span className="text-emerald-500">{countL3}</span>} />
       </div>
 
       {/* Search + Actions */}
@@ -443,16 +413,9 @@ export default function FinCategories({ onBack }: { onBack: () => void }) {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-8 h-8 border-3 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-          </div>
+          <CarregandoBloco className="py-20" />
         ) : displayTree.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-dark-text/30">
-            <FolderTree size={40} className="mb-3 opacity-30" />
-            <p className="text-sm font-medium">
-              {searchTerm ? 'Nenhuma categoria encontrada' : 'Nenhuma categoria cadastrada'}
-            </p>
-          </div>
+          <EstadoVazio Icone={FolderTree} titulo={searchTerm ? 'Nenhuma categoria encontrada' : 'Nenhuma categoria cadastrada'} className="py-20" />
         ) : (
           displayTree.map((node) => (
             <CategoryTreeNode

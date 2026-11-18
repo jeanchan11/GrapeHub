@@ -12,6 +12,11 @@ import BotaoSincronizar from '../components/BotaoSincronizar';
 import { motion, AnimatePresence, useSpring, useTransform, useInView } from 'motion/react';
 import { confirmDialog } from '@/src/lib/confirm';
 import ThemedDropdown from '@/src/components/ui/ThemedDropdown';
+import { Modal } from '@/src/components/ui/Modal';
+import { EstadoVazio } from '@/src/components/ui/EstadoVazio';
+import { CarregandoBloco } from '@/src/components/LoadingSpinner';
+import { CartaoKpi } from '@/src/components/graficos';
+import { Abas } from '@/src/components/ui/Abas';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 interface Bill {
@@ -126,7 +131,7 @@ const TH = 'text-[10px] font-bold text-slate-500 uppercase tracking-widest';
 const CountUp = ({ value, currency = false }: { value: number; currency?: boolean }) => {
   const ref = useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true, margin: '-50px' });
-  const spring = useSpring(0, { duration: 1000, bounce: 0 });
+  const spring = useSpring(0, { duration: 600, bounce: 0 });
   const display = useTransform(spring, v =>
     currency ? Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : Math.round(v).toLocaleString('pt-BR')
   );
@@ -137,10 +142,10 @@ const CountUp = ({ value, currency = false }: { value: number; currency?: boolea
 // ── Status Badge ─────────────────────────────────────────────────────────────
 const StatusBadge = ({ status, dueDate }: { status: Entry['status']; dueDate: string | null }) => {
   const ds = getDueDateStatus(dueDate, status);
-  if (ds === 'paid') return <span className={`${PILULA} bg-emerald-500/10 text-emerald-600 dark:text-emerald-400`}>✓ Pago</span>;
+  if (ds === 'paid') return <span className={`${PILULA} bg-emerald-500/10 text-emerald-600 dark:text-emerald-400`}><Check size={11} /> Pago</span>;
   if (status === 'partial') return <span className={`${PILULA} bg-amber-500/10 text-amber-600 dark:text-amber-400`}>~ Parcial</span>;
   if (status === 'cancelled') return <span className={`${PILULA} bg-slate-500/10 text-slate-500 dark:text-slate-400`}>× Cancelado</span>;
-  if (ds === 'overdue') return <span className={`${PILULA} bg-rose-500/10 text-rose-600 dark:text-rose-400`}>⚠ Atrasado</span>;
+  if (ds === 'overdue') return <span className={`${PILULA} bg-rose-500/10 text-rose-600 dark:text-rose-400`}><AlertTriangle size={11} /> Atrasado</span>;
   if (ds === 'today') return <span className={`${PILULA} bg-amber-500/10 text-amber-600 dark:text-amber-400`}>● Hoje</span>;
   if (ds === 'soon') return <span className={`${PILULA} bg-blue-500/10 text-blue-600 dark:text-blue-400`}>Em breve</span>;
   return <span className={`${PILULA} bg-slate-500/10 text-slate-500 dark:text-slate-400`}>Pendente</span>;
@@ -240,9 +245,7 @@ const BillModal: React.FC<BillModalProps> = ({ bill, categories, onSave, onClose
   const allCats = showNewCat ? [...categories, newCat].filter(Boolean) : categories;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
-      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
-        className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl mx-4">
+    <Modal isOpen onClose={onClose} semCabecalho maxWidth="max-w-md">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-base font-bold text-dark-text">{form.id ? 'Editar Conta' : 'Nova Conta'}</h3>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors"><X size={16} /></button>
@@ -325,8 +328,7 @@ const BillModal: React.FC<BillModalProps> = ({ bill, categories, onSave, onClose
             {saving ? 'Salvando...' : 'Salvar'}
           </button>
         </div>
-      </motion.div>
-    </div>
+      </Modal>
   );
 };
 
@@ -343,9 +345,7 @@ const PayModal = ({ entry, onSave, onClose }: { entry: Entry; onSave: (id: numbe
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
-      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
-        className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl w-full max-w-sm p-6 mx-4">
+    <Modal isOpen onClose={onClose} semCabecalho maxWidth="max-w-sm">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-dark-text">Marcar como Pago</h3>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400"><X size={14} /></button>
@@ -371,8 +371,7 @@ const PayModal = ({ entry, onSave, onClose }: { entry: Entry; onSave: (id: numbe
             {saving ? 'Salvando...' : 'Confirmar'}
           </button>
         </div>
-      </motion.div>
-    </div>
+      </Modal>
   );
 };
 
@@ -406,9 +405,7 @@ const SicrediEditModal = ({ item, categories, onSave, onClose }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
-      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
-        className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl w-full max-w-sm p-6 mx-4">
+    <Modal isOpen onClose={onClose} semCabecalho maxWidth="max-w-sm">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold text-dark-text">Editar Lançamento</h3>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400"><X size={14} /></button>
@@ -434,13 +431,12 @@ const SicrediEditModal = ({ item, categories, onSave, onClose }: {
         <div className="flex gap-3 mt-5">
           <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 text-slate-400 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/5">Cancelar</button>
           <button onClick={handleSave} disabled={saving}
-            className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold flex items-center justify-center gap-2">
+            className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-bold flex items-center justify-center gap-2">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
             {saving ? 'Salvando...' : 'Salvar'}
           </button>
         </div>
-      </motion.div>
-    </div>
+      </Modal>
   );
 };
 
@@ -471,9 +467,7 @@ const EntryEditModal = ({ entry, categories, onSave, onClose }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
-      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
-        className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl w-full max-w-md p-6 mx-4 shadow-2xl">
+    <Modal isOpen onClose={onClose} semCabecalho maxWidth="max-w-md">
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-base font-bold text-dark-text">Editar Lançamento do Mês</h3>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400"><X size={16} /></button>
@@ -512,29 +506,27 @@ const EntryEditModal = ({ entry, categories, onSave, onClose }: {
             {saving ? 'Salvando...' : 'Salvar'}
           </button>
         </div>
-      </motion.div>
-    </div>
+      </Modal>
   );
 };
 
 // ── KPI Card ─────────────────────────────────────────────────────────────────
-// Padrão aprovado: ícone 7×7 com fundo da cor ~10%, rótulo pequeno, valor 2xl.
-// `alerta` pinta o card de rosa (vencendo em 7 dias, atraso).
+// 18/11/2026: desenho do CartaoKpi (graficos.tsx), como no Fluxo de Caixa. Assinatura antiga
+// mantida (ícone ignorado: o padrão novo não tem). `alerta` = vencendo em 7 dias, atraso.
 const KpiCard = ({
-  icon, label, value, sub, iconClass, alerta
-}: { icon: React.ReactNode; label: string; value: string; sub?: string; iconClass?: string; alerta?: boolean }) => (
-  <div className={`px-5 py-4 rounded-2xl border ${alerta ? 'bg-rose-500/[0.06] border-rose-500/20' : 'bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5'}`}>
-    <div className="flex items-center gap-2 mb-2">
-      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${iconClass || 'bg-violet-500/10 text-violet-500'}`}>{icon}</div>
-      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">{label}</p>
-    </div>
-    <p className={`text-2xl font-bold truncate ${alerta ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>{value}</p>
-    {sub && <p className={`text-[11px] mt-0.5 ${alerta ? 'text-rose-400' : 'text-slate-500'}`}>{sub}</p>}
-  </div>
+  icon: _icon, label, value, sub, iconClass: _iconClass, alerta, texto
+}: { icon: React.ReactNode; label: string; value: string; sub?: string; iconClass?: string; alerta?: boolean; texto?: boolean }) => (
+  <CartaoKpi
+    titulo={label}
+    alerta={alerta}
+    valorEmTexto={texto}
+    valor={texto ? value : <span className={`${value.includes('R$') ? 'text-[clamp(22px,2vw,34px)]' : ''} ${alerta ? 'text-rose-500' : ''}`}>{value}</span>}
+    apoio={sub}
+  />
 );
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function ContasAPagar() {
+export default function ContasAPagar({ pageLabel }: { pageLabel?: string } = {}) {
   const [activeTab, setActiveTab] = useState<'contas' | 'sicredi'>('contas');
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
@@ -905,7 +897,12 @@ export default function ContasAPagar() {
       {/* ── Header ── visual refeito em 09/10/2026 (mesmas informações): controles com 40px de altura */}
       <div className="px-6 pt-6 pb-4">
         <div className="flex items-start justify-between gap-4 flex-wrap">
-          <SplitHeadline text="Contas a" highlight="Pagar" subtitle={`Referência: ${monthLabel}`} subtitleClassName="text-sm text-gray-500 dark:text-gray-400 mt-1" />
+          {(() => {
+            // Título do menu quando o App passar pageLabel; reserva = o título de sempre.
+            const nome = (pageLabel || 'Contas a Pagar').trim();
+            const i = nome.lastIndexOf(' ');
+            return <SplitHeadline text={i > 0 ? nome.slice(0, i + 1) : ''} highlight={i > 0 ? nome.slice(i + 1) : nome} subtitle={`Referência: ${monthLabel}`} subtitleClassName="text-sm text-slate-500 dark:text-slate-400 mt-1" />;
+          })()}
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <BotaoSincronizar className="h-10 rounded-xl" onDone={async () => { await Promise.all([fetchEntries(), fetchBills(), fetchSicredi()]); }} />
             {/* Mês: um controle só, com as setas dentro */}
@@ -929,17 +926,17 @@ export default function ContasAPagar() {
 
       <div className="px-6 pb-10 space-y-5">
 
-        {/* Abas principais (barra segmentada) + seletor de cartão quando a aba é Cartões */}
+        {/* Abas principais (ui/Abas) + seletor de cartão quando a aba é Cartões */}
         <div className="flex items-center gap-3 flex-wrap">
           {/* Tabs */}
-          <div className={SEG_BARRA}>
-            {([['contas', 'Contas a Pagar', Receipt], ['sicredi', 'Cartões', CreditCard]] as const).map(([key, label, Icone]) => (
-              <button key={key} onClick={() => setActiveTab(key)} className={segBotao(activeTab === key)}>
-                <Icone size={14} />
-                {label}
-              </button>
-            ))}
-          </div>
+          <Abas
+            abas={[
+              { id: 'contas', rotulo: 'Contas a Pagar', Icone: Receipt },
+              { id: 'sicredi', rotulo: 'Cartões', Icone: CreditCard },
+            ]}
+            ativa={activeTab}
+            onChange={id => setActiveTab(id as typeof activeTab)}
+          />
           {/* Seletor de cartão */}
           {activeTab === 'sicredi' && (
             <div className="flex items-center gap-2">
@@ -1005,11 +1002,7 @@ export default function ContasAPagar() {
             </div>
 
             {/* Bills config modal */}
-            <AnimatePresence>
-              {showBillsConfig && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={e => e.target === e.currentTarget && setShowBillsConfig(false)}>
-                <motion.div initial={{ opacity: 0, scale: 0.96, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 10 }}
-                  className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden w-full max-w-4xl max-h-[80vh] flex flex-col shadow-2xl">
+            <Modal isOpen={showBillsConfig} onClose={() => setShowBillsConfig(false)} semCabecalho semPadding maxWidth="max-w-4xl" className="max-h-[80vh]">
                   <div className="px-5 py-4 border-b border-slate-200 dark:border-white/5 flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-2.5 flex-wrap">
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 text-violet-500"><Receipt size={14} /></div>
@@ -1028,9 +1021,9 @@ export default function ContasAPagar() {
                     <button onClick={() => setShowBillsConfig(false)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors"><X size={16} /></button>
                   </div>
                   {bills.filter(b => b.recurrence !== 'once').length === 0 ? (
-                    <div className="px-5 py-10 text-center text-slate-500 text-sm">Nenhuma conta cadastrada.</div>
+                    <EstadoVazio Icone={Receipt} titulo="Nenhuma conta cadastrada." className="py-10" />
                   ) : (
-                    <div className="divide-y divide-slate-100 dark:divide-white/5 overflow-y-auto">
+                    <div className="divide-y divide-slate-100 dark:divide-white/5 overflow-y-auto flex-1 min-h-0">
                       {/* Column header */}
                       <div className={`flex items-center px-5 py-2.5 bg-slate-50 dark:bg-white/[0.02] ${TH}`}>
                         <span className="flex-1">Nome</span>
@@ -1111,16 +1104,11 @@ export default function ContasAPagar() {
                       })}
                     </div>
                   )}
-                </motion.div>
-                </div>
-              )}
-            </AnimatePresence>
+            </Modal>
 
             {/* Entries table in a single unified list layout (resembling the second screenshot) */}
             {loading ? (
-              <div className="flex items-center justify-center py-16">
-                <div className="w-8 h-8 rounded-full border-2 border-violet-500/30 border-t-violet-500 animate-spin" />
-              </div>
+              <CarregandoBloco />
             ) : filteredEntries.length === 0 ? (
               <div className={`${CAIXA} py-12 flex flex-col items-center gap-3`}>
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-slate-500/10 text-slate-400"><Receipt size={18} /></div>
@@ -1289,7 +1277,7 @@ export default function ContasAPagar() {
                 value={sicrediSummary.total_items > 0 ? `${Math.round((sicrediSummary.categorized / sicrediSummary.total_items) * 100)}%` : '0%'}
                 sub={`${sicrediSummary.categorized} de ${sicrediSummary.total_items}`} />
               <KpiCard icon={<Calendar size={14} />} iconClass="bg-blue-500/10 text-blue-500"
-                label="Período" value={monthLabel} sub="Fatura do cartão" />
+                label="Período" value={monthLabel} sub="Fatura do cartão" texto />
             </div>
 
             {/* Upload area — aceita também arrastar e soltar o arquivo da fatura */}
@@ -1330,8 +1318,8 @@ export default function ContasAPagar() {
                     <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/5 space-y-1.5">
                       {importacoes.slice(0, 3).map((imp: any) => {
                         const brlI = (v: any) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                        const conf = imp.conferencia === 'ok' ? { t: `✓ conferida (${brlI(imp.total_impresso)})`, c: 'text-emerald-600 dark:text-emerald-400' }
-                          : imp.conferencia === 'divergente' ? { t: `⚠ soma ${brlI(imp.soma)} ≠ total ${brlI(imp.total_impresso)}`, c: 'text-amber-600 dark:text-amber-400' }
+                        const conf = imp.conferencia === 'ok' ? { t: `conferida (${brlI(imp.total_impresso)})`, c: 'text-emerald-600 dark:text-emerald-400', I: Check }
+                          : imp.conferencia === 'divergente' ? { t: `soma ${brlI(imp.soma)} ≠ total ${brlI(imp.total_impresso)}`, c: 'text-amber-600 dark:text-amber-400', I: AlertTriangle }
                           : imp.conferencia === 'sem_total' ? { t: 'sem total no PDF', c: 'text-slate-500' }
                           : null;
                         return (
@@ -1340,7 +1328,7 @@ export default function ContasAPagar() {
                             <span className={`${PILULA} uppercase bg-slate-500/10 text-slate-500 dark:text-slate-400`}>{imp.formato}</span>
                             <span>{imp.itens} itens</span>
                             {imp.created_by && <span className="truncate max-w-[160px]">· {String(imp.created_by).split('@')[0]}</span>}
-                            {conf && !imp.undone_at && <span className={`font-semibold ${conf.c}`}>· {conf.t}</span>}
+                            {conf && !imp.undone_at && <span className={`font-semibold inline-flex items-center gap-1 ${conf.c}`}>· {(conf as any).I && React.createElement((conf as any).I, { size: 11 })} {conf.t}</span>}
                             {imp.undone_at && <span className="no-underline">· desfeita</span>}
                             {imp.pode_desfazer && (
                               <button onClick={() => desfazerImportacao(imp)} disabled={desfazendo}
@@ -1396,9 +1384,7 @@ export default function ContasAPagar() {
 
             {/* Sicredi table */}
             {sicrediLoading ? (
-              <div className="flex items-center justify-center py-16">
-                <div className="w-8 h-8 rounded-full border-2 border-violet-500/30 border-t-violet-500 animate-spin" />
-              </div>
+              <CarregandoBloco />
             ) : sicrediItems.length === 0 ? (
               <div className={`${CAIXA} py-12 px-5 flex flex-col items-center gap-3`}>
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-slate-500/10 text-slate-400"><CreditCard size={18} /></div>
@@ -1449,7 +1435,7 @@ export default function ContasAPagar() {
                     const desc = item.custom_description || item.description;
                     const isDebit = item.type === -1;
                     return (
-                      <motion.div key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.02 }}
+                      <motion.div key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(idx, 12) * 0.02 }}
                         className="grid grid-cols-12 items-center px-5 py-3 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors gap-2">
                         <div className="col-span-5 min-w-0">
                           <p className="text-[13px] font-semibold text-dark-text truncate">{desc}</p>
@@ -1500,12 +1486,7 @@ export default function ContasAPagar() {
         {payModal && <PayModal entry={payModal} onSave={handlePayEntry} onClose={() => setPayModal(null)} />}
         {editEntry && <EntryEditModal entry={editEntry} categories={categories} onSave={handleEditEntry} onClose={() => setEditEntry(null)} />}
         {linkModal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-            onClick={() => setLinkModal(null)}>
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-              className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col"
-              onClick={e => e.stopPropagation()}>
+          <Modal isOpen onClose={() => setLinkModal(null)} semCabecalho semPadding maxWidth="max-w-2xl" className="max-h-[80vh]">
               <div className="px-5 py-4 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
                 <div>
                   <p className="text-sm font-bold text-dark-text">Vincular ao Extrato</p>
@@ -1517,11 +1498,11 @@ export default function ContasAPagar() {
                   <X size={16} />
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto p-4 space-y-1">
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1">
                 {linkModal.loading ? (
-                  <div className="flex justify-center py-12"><Loader2 className="animate-spin text-violet-500" size={24} /></div>
+                  <CarregandoBloco />
                 ) : linkModal.candidates.length === 0 ? (
-                  <p className="text-center text-slate-500 py-12">Nenhum pagamento encontrado no período.</p>
+                  <EstadoVazio titulo="Nenhum pagamento encontrado no período." />
                 ) : (
                   linkModal.candidates.map(c => {
                     const isLinked = !!c.linked_bill_entry_id;
@@ -1556,8 +1537,7 @@ export default function ContasAPagar() {
                   })
                 )}
               </div>
-            </motion.div>
-          </motion.div>
+          </Modal>
         )}
         {sicrediEditItem && (
           <SicrediEditModal item={sicrediEditItem} categories={categories} onSave={handleSicrediEdit} onClose={() => setSicrediEditItem(null)} />

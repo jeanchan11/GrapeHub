@@ -24,8 +24,12 @@ import {
   Gavel, Scale, HeartPulse, ShieldCheck, 
   Hammer, Landmark, Banknote, ShoppingCart, 
   Home, Stethoscope, Building2, Image as ImageIcon,
-  Folder, File, Film, Eye, EyeOff, Download, Trash2, Upload, FileText, GripVertical, Copy, Loader2, Star, Lock, LockOpen, Bot, Edit2, ThumbsUp, SmilePlus, KeyRound
+  Folder, File, Film, Eye, EyeOff, Download, Trash2, Upload, FileText, GripVertical, Copy, Loader2, Star, Lock, LockOpen, Bot, Edit2, ThumbsUp, SmilePlus, KeyRound,
+  Megaphone, Music, FolderOpen
 } from 'lucide-react';
+import { CarregandoPagina } from '../components/LoadingSpinner';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
+import { Abas } from '../components/ui/Abas';
 import { motion, AnimatePresence } from 'motion/react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import confetti from 'canvas-confetti';
@@ -206,13 +210,13 @@ const MetaIssueTooltip: React.FC<{ summary: { title: string; detail?: string; fi
       {show && ReactDOM.createPortal(
         <div
           style={{ position: 'fixed', left: pos.left, top: pos.top, zIndex: 9999, width: 300 }}
-          className="rounded-xl border border-white/10 bg-white dark:bg-[#1A1625] shadow-2xl p-3 text-left pointer-events-none"
+          className="rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-dark-card shadow-2xl p-3 text-left pointer-events-none"
         >
           <div className="flex items-center gap-1.5 text-xs font-bold text-rose-500">
             <AlertTriangle size={12} /> {summary.title}
           </div>
           {summary.detail && <p className="text-[11px] text-slate-500 dark:text-slate-300 mt-1.5 break-words leading-snug">{summary.detail}</p>}
-          <div className="mt-2 pt-2 border-t border-gray-200 dark:border-white/10">
+          <div className="mt-2 pt-2 border-t border-slate-200 dark:border-white/10">
             <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Como corrigir</p>
             <p className="text-[11px] text-slate-700 dark:text-slate-200 leading-snug">{summary.fix}</p>
           </div>
@@ -539,7 +543,7 @@ export const ChurnRiskCircle: React.FC<{ project: { churnChecklist?: Record<stri
   return (
     <div className="relative w-7 h-7 shrink-0" title={`Risco de churn: ${risk.label} — ${count}/${CHURN_TOTAL} sinais (${pct}%)`}>
       <svg viewBox="0 0 24 24" className="w-full h-full -rotate-90">
-        <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2.5" className="text-gray-200 dark:text-white/10" />
+        <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2.5" className="text-slate-200 dark:text-white/10" />
         <circle cx="12" cy="12" r={r} fill="none" stroke={colorHex} strokeWidth="2.5" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
       </svg>
       <span className="absolute inset-0 flex items-center justify-center text-[7px] font-black" style={{ color: colorHex }}>{pct}</span>
@@ -561,9 +565,11 @@ const initialProjects: Project[] = [];
 interface Props {
   activePage: string;
   modalOnly?: boolean;
+  /** Nome da página no menu (o template `projects` é usado por várias páginas). */
+  pageLabel?: string;
 }
 
-const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
+const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly, pageLabel }) => {
   const { userData } = useAuth();
   const { menu, refreshMenu } = useMenu();
   // Engrenagem do topo: configurações desta página (alerta de saldo baixo)
@@ -1621,7 +1627,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   };
 
   const getCampaignStatusColor = (status: string) => {
-    return campaignStatusOptions.find(o => o.label === status)?.color || 'text-white';
+    return campaignStatusOptions.find(o => o.label === status)?.color || 'text-dark-text';
   };
 
   const getCpaGoalColor = (current: string, goal: string) => {
@@ -2352,39 +2358,26 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     }));
   };
 
+  // Embutido só para os popups (Parceiros Squad): nada de bloco de tela cheia embaixo da tabela.
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-light-bg dark:bg-dark-bg transition-colors duration-300">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-violet-500/20 border-t-violet-500 rounded-full animate-spin"></div>
-          <p className="text-slate-500 dark:text-slate-400 font-medium">Carregando projetos...</p>
-        </div>
-      </div>
-    );
+    return modalOnly ? null : <CarregandoPagina />;
   }
+
+  // Título = nome da página no menu (última palavra em destaque); reserva: o título antigo
+  const tituloPagina = (pageLabel || '').trim() || 'Projetos & Parceiros';
+  const corteTitulo = tituloPagina.lastIndexOf(' ');
 
   return (
     <>
-      <div className="min-h-screen bg-dark-bg text-white p-8 font-sans relative">
+      <div className={modalOnly ? 'contents' : 'min-h-screen bg-dark-bg text-dark-text p-8 font-sans relative'}>
 
 
       {/* Product Modal */}
       <AnimatePresence>
         {isProductModalOpen && selectedProduct && tempProduct && (
-          <div className="fixed inset-0 z-[1000] flex items-start justify-center p-4 overflow-y-auto pt-10 pb-10 scrollbar-hide">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsProductModalOpen(false)}
-              className="fixed inset-0 modal-overlay"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-5xl min-h-[800px] flex flex-col modal-container overflow-hidden mb-10 transition-colors duration-300"
-            >
+          <Modal isOpen onClose={() => setIsProductModalOpen(false)} semCabecalho semPadding maxWidth="max-w-5xl" fecharComEsc={!productToDelete}>
+            
+            <div className="relative w-full min-h-[800px] flex flex-col">
               {/* Modal Header */}
               <div className="px-8 pt-7 pb-6 border-b border-slate-200 dark:border-white/10">
                 <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-5">
@@ -2486,7 +2479,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               initial={{ opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, y: 10 }}
-                              className="absolute top-full left-0 mt-2 w-max min-w-[220px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden"
+                              className="absolute top-full left-0 mt-2 w-max min-w-[220px] bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden"
                             >
                               <div className="max-h-60 overflow-y-auto custom-scrollbar">
                                 <button
@@ -2547,7 +2540,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               initial={{ opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, y: 10 }}
-                              className="absolute top-full left-0 mt-2 w-max min-w-[220px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden"
+                              className="absolute top-full left-0 mt-2 w-max min-w-[220px] bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden"
                             >
                               <div className="max-h-60 overflow-y-auto custom-scrollbar">
                                 {campaignStatusOptions.map((res) => (
@@ -2684,7 +2677,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     />
                     <button 
                       onClick={() => setIsAddingNote(!isAddingNote)}
-                      className="h-9 px-3 flex items-center gap-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-colors ml-2"
+                      className="h-9 px-3 flex items-center gap-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition-colors ml-2"
                     >
                       <Plus size={14} />
                       Adicionar nota
@@ -2798,15 +2791,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         <button 
                           onClick={handleAddNote}
                           disabled={isSavingNote}
-                          className={`px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-xl transition-all ${isSavingNote ? 'opacity-70 cursor-not-allowed' : ''}`}
+                          className={`px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold rounded-xl transition-all ${isSavingNote ? 'opacity-70 cursor-not-allowed' : ''}`}
                         >
                           {isSavingNote ? (
-                            <motion.div
-                              animate={{ rotate: 360 }}
-                              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                            >
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-                            </motion.div>
+                            <Loader2 size={16} className="animate-spin" />
                           ) : (
                             'Salvar Nota'
                           )}
@@ -2853,7 +2841,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                             : (opt.type || opt.status) ? { I: BarChart3, c: 'text-blue-500 bg-blue-500/10 border-blue-500/20' }
                             : { I: MessageSquare, c: 'text-slate-500 bg-slate-500/10 border-slate-500/20' };
                           return (
-                            <div className="absolute -left-12 top-4 z-10 w-8 h-8 rounded-full bg-white dark:bg-[#1a1625]">
+                            <div className="absolute -left-12 top-4 z-10 w-8 h-8 rounded-full bg-white dark:bg-dark-card">
                               <div className={`w-full h-full rounded-full border flex items-center justify-center ${t.c}`}><t.I size={14} /></div>
                             </div>
                           );
@@ -3035,7 +3023,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     }`}
                                   >
                                     {opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user') ? (
-                                      <span>👍</span>
+                                      <ThumbsUp size={14} fill="currentColor" className="text-violet-500" />
                                     ) : (
                                       <ThumbsUp size={14} />
                                     )}
@@ -3056,30 +3044,17 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 </div>
               </div>
               )}
-            </motion.div>
-          </div>
+            </div>
+          </Modal>
         )}
       </AnimatePresence>
 
       {/* Add Product Modal */}
       <AnimatePresence>
         {isAddProductModalOpen && (
-          <div className="fixed inset-0 z-[100] overflow-y-auto p-4 flex justify-center items-start">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsAddProductModalOpen(false)}
-              className="fixed inset-0 modal-overlay"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              // sem overflow-hidden: o seletor de ação abre ancorado no campo e
-              // precisa poder ultrapassar a borda do card sem ser recortado
-              className="relative w-full max-w-2xl modal-container my-auto transition-colors duration-300"
-            >
+          <Modal isOpen onClose={() => setIsAddProductModalOpen(false)} semCabecalho semPadding maxWidth="max-w-2xl" fecharAoClicarFora={false} className="!overflow-visible">
+            
+            <div className="relative w-full">
               <div className="p-8 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-violet-600/20 rounded-lg">
@@ -3243,35 +3218,24 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   <button 
                     onClick={handleSaveNewProduct}
                     disabled={!newProductData.name}
-                    className="flex-1 px-6 py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20"
+                    className="flex-1 px-6 py-3 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all"
                   >
                     Cadastrar Produto
                   </button>
                 </div>
               </div>
-            </motion.div>
-          </div>
+            </div>
+          </Modal>
         )}
       </AnimatePresence>
 
       {/* Group Modal */}
       <AnimatePresence>
         {isGroupModalOpen && (
-          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-slate-900/20 dark:bg-black/40 backdrop-blur-sm"
-              onClick={() => setIsGroupModalOpen(false)}
-            ></motion.div>
+          <Modal isOpen onClose={() => setIsGroupModalOpen(false)} semCabecalho semPadding maxWidth="max-w-sm">
             
-            <motion.div 
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="relative w-full max-w-sm bg-white dark:bg-dark-card rounded-2xl shadow-xl overflow-hidden border border-slate-200 dark:border-white/10"
-            >
+            
+            <div className="relative w-full">
               <div className="p-6 border-b border-slate-200 dark:border-white/5 flex items-center justify-between">
                 <h3 className="text-lg font-bold text-light-text dark:text-white">Mudar Grupo</h3>
                 <button 
@@ -3316,29 +3280,18 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   </button>
                 </div>
               </div>
-            </motion.div>
-          </div>
+            </div>
+          </Modal>
         )}
       </AnimatePresence>
 
       {/* Page Modal */}
       <AnimatePresence>
         {isPageModalOpen && (
-          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setIsPageModalOpen(false)}
-            ></motion.div>
+          <Modal isOpen onClose={() => setIsPageModalOpen(false)} semCabecalho semPadding maxWidth="max-w-sm">
             
-            <motion.div 
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="relative w-full max-w-sm bg-white dark:bg-[#14141f] rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden"
-            >
+            
+            <div className="relative w-full">
               <div className="p-5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
                 <h3 className="text-lg font-bold text-light-text dark:text-white">Mudar de Página</h3>
                 <button 
@@ -3415,28 +3368,17 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   ));
                 })()}
               </div>
-            </motion.div>
-          </div>
+            </div>
+          </Modal>
         )}
       </AnimatePresence>
 
       {/* Meeting Modal */}
       <AnimatePresence>
         {isMeetingModalOpen && (
-          <div className="fixed inset-0 z-[1000] flex items-start justify-center p-4 overflow-y-auto pt-10 pb-10 scrollbar-hide">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsMeetingModalOpen(false)}
-              className="fixed inset-0 modal-overlay"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl modal-container overflow-hidden my-auto transition-colors duration-300"
-            >
+          <Modal isOpen onClose={() => setIsMeetingModalOpen(false)} semCabecalho semPadding maxWidth="max-w-2xl" fecharAoClicarFora={false}>
+            
+            <div className="relative w-full">
               <div className="p-6 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-violet-500/15 text-violet-500 flex items-center justify-center"><Calendar size={18} /></div>
@@ -3497,33 +3439,22 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 </div>
                 <button
                   onClick={handleSaveMeeting}
-                  className="w-full px-6 py-3 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20"
+                  className="w-full px-6 py-3 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl transition-all"
                 >
                   Salvar Reunião
                 </button>
               </div>
-            </motion.div>
-          </div>
+            </div>
+          </Modal>
         )}
       </AnimatePresence>
 
       {/* Add Partner Modal */}
       <AnimatePresence>
         {isAddPartnerModalOpen && (
-          <div className="fixed inset-0 z-[150] overflow-y-auto p-4 flex justify-center items-start">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsAddPartnerModalOpen(false)}
-              className="fixed inset-0 modal-overlay"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-xl modal-container overflow-visible my-auto transition-colors"
-            >
+          <Modal isOpen onClose={() => setIsAddPartnerModalOpen(false)} semCabecalho semPadding maxWidth="max-w-xl" fecharAoClicarFora={false} className="!overflow-visible">
+            
+            <div className="relative w-full">
               <div className="p-8 border-b border-slate-200 dark:border-white/10">
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-4">
@@ -3598,15 +3529,15 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     <button 
                       onClick={handleSaveNewPartner}
                       disabled={!newPartnerData.partner}
-                      className="flex-1 px-6 py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20"
+                      className="flex-1 px-6 py-3 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all"
                     >
                       Criar Parceiro
                     </button>
                   </div>
                 </div>
               </div>
-            </motion.div>
-          </div>
+            </div>
+          </Modal>
         )}
       </AnimatePresence>
 
@@ -3617,8 +3548,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         <div className="flex items-center justify-between mb-6">
           <div>
             <SplitHeadline 
-              text="Projetos & " 
-              highlight="Parceiros"
+              text={tituloPagina.slice(0, corteTitulo + 1)} 
+              highlight={tituloPagina.slice(corteTitulo + 1)}
               subtitle="Gerenciamento centralizado de contas, performance e gargalos operacionais."
             />
           </div>
@@ -3675,11 +3606,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   <ChevronDown size={14} className="ml-1" />
                 </button>
                 {showResponsavelDropdown && (
-                  <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-[#1a1625] border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[9999] overflow-hidden">
+                  <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[9999] overflow-hidden">
                     <div className="p-2 border-b border-slate-100 dark:border-white/5">
                       <p className="text-xs font-bold text-slate-500 px-2 py-1 uppercase tracking-wider">Gestores Disponíveis</p>
                     </div>
-                    <div className="max-h-60 overflow-y-auto p-1 bg-white dark:bg-[#1a1625]">
+                    <div className="max-h-60 overflow-y-auto p-1 bg-white dark:bg-dark-card">
                       {gestores.map(g => (
                         <button
                           key={g.id}
@@ -3765,7 +3696,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
             )}
             <button 
               onClick={() => setIsAddPartnerModalOpen(true)}
-              className="h-10 px-4 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20 flex items-center gap-2 shrink-0"
+              className="h-10 px-4 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 shrink-0"
             >
               <Plus size={16} />
               Adicionar Parceiro
@@ -3864,8 +3795,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
       {/* Containers por grupo */}
       <div className="space-y-6">
+        {Object.entries(groupedProjects).length === 0 && (
+          <EstadoVazio Icone={FolderOpen} titulo="Nenhum projeto para mostrar" descricao="Adicione um parceiro ou ajuste os filtros." />
+        )}
         {Object.entries(groupedProjects).map(([groupName, projectsInGroup]) => (
-          <div key={groupName} className="bg-white dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/5 shadow-xl transition-colors duration-300">
+          <div key={groupName} className="bg-dark-card rounded-2xl border border-black/10 dark:border-white/10 shadow-sm transition-colors duration-300">
             <div 
               className="px-6 py-4 bg-transparent flex items-center justify-between relative z-10"
             >
@@ -4240,7 +4174,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     transition={{ duration: 0.2 }}
                                     key={prod.id} 
                                     onClick={() => handleProductClick(prod)}
-                                    className={`bg-dark-card backdrop-blur-md rounded-2xl border p-6 shadow-xl relative overflow-hidden before:absolute before:inset-0 before:bg-gradient-to-br before:to-transparent before:opacity-50 before:pointer-events-none transition-all cursor-pointer group/prod ${
+                                    className={`bg-dark-card rounded-2xl border p-6 shadow-sm relative overflow-hidden transition-all cursor-pointer group/prod ${
                                       prod.status === 'Inativo'
                                         ? 'opacity-40 hover:opacity-70 border-slate-500/20 before:from-slate-500/5 hover:border-slate-500/40'
                                         : prod.status && prod.status !== 'Rodando' 
@@ -4262,7 +4196,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                           <DropdownMenu.Trigger asChild>
                                             <button 
                                               onClick={(e) => e.stopPropagation()}
-                                              className="text-slate-500 hover:text-light-text dark:hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10"
+                                              className="text-slate-500 hover:text-light-text dark:hover:text-white transition-colors p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10"
                                             >
                                               <MoreHorizontal size={18} />
                                             </button>
@@ -4345,7 +4279,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     className="group relative flex flex-col items-center justify-center gap-3 p-8 rounded-2xl border-2 border-dashed border-slate-200 dark:border-white/5 hover:border-violet-500/30 hover:bg-violet-500/5 transition-all min-h-[200px]"
                                   >
                                     <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-white/5 group-hover:bg-violet-600 flex items-center justify-center transition-all">
-                                      <Plus size={24} className="text-slate-400 group-hover:text-white" />
+                                      <Plus size={24} className="text-slate-400 group-hover:text-violet-500" />
                                     </div>
                                     <p className="text-sm font-bold text-slate-500 group-hover:text-light-text dark:group-hover:text-white transition-colors">Adicionar Novo Produto</p>
                                   </motion.button>
@@ -4404,35 +4338,22 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
           }
           maxWidth="max-w-[1400px]"
           minHeight="min-h-[800px]"
+          // Esc fecha só o popup de cima: com outro aberto por cima, este não reage
+          fecharComEsc={!isProductModalOpen && !isAddProductModalOpen && !isMeetingModalOpen && !isTokenModalOpen && !productToDelete && !projectToDelete && !isGroupModalOpen && !isPageModalOpen && !previewImage && !metaAdsProject}
         >
         <div className="flex flex-col min-h-[750px]">
           {/* Abas como barra de botões compacta (06/10/2026). Antes eram espalhadas pela largura
               toda, com uma segunda linha divisória logo abaixo da do cabeçalho do modal. */}
-          <div className="flex items-center gap-1 mb-6 p-1 w-fit max-w-full overflow-x-auto rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/5 shrink-0">
-            {(['resultado', 'reunioes', 'comentarios', 'criativos', 'nps', 'churn', 'tokens'] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveProjectTab(tab as any)}
-                className={`relative h-9 px-4 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap ${
-                  activeProjectTab === tab
-                    ? 'text-slate-900 dark:text-white'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
-                }`}
-              >
-                {activeProjectTab === tab && (
-                  <motion.div
-                    layoutId="project-tab-indicator"
-                    className="absolute inset-0 rounded-lg bg-white dark:bg-white/10 shadow-sm"
-                    transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-                  />
-                )}
-                <span className="relative">
-                  {tab === 'resultado' ? 'Resumo' : tab === 'reunioes' ? 'Reuniões' : tab === 'criativos' ? 'Criativos' : tab === 'comentarios' ? 'Comentários' : tab === 'nps' ? 'NPS' : tab === 'tokens' ? 'Tokens' : 'Risco de Churn'}
-                </span>
-              </button>
-            ))}
-
-          </div>
+          <Abas
+            variante="segmentado"
+            className="mb-6 shrink-0"
+            abas={(['resultado', 'reunioes', 'comentarios', 'criativos', 'nps', 'churn', 'tokens'] as const).map(tab => ({
+              id: tab,
+              rotulo: tab === 'resultado' ? 'Resumo' : tab === 'reunioes' ? 'Reuniões' : tab === 'criativos' ? 'Criativos' : tab === 'comentarios' ? 'Comentários' : tab === 'nps' ? 'NPS' : tab === 'tokens' ? 'Tokens' : 'Risco de Churn',
+            }))}
+            ativa={activeProjectTab as any}
+            onChange={(tab) => setActiveProjectTab(tab as any)}
+          />
 
           {/* Content based on active tab */}
           <AnimatePresence mode="wait">
@@ -4473,7 +4394,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: 10 }}
-                                className="absolute top-full left-0 mt-2 w-max min-w-[220px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden"
+                                className="absolute top-full left-0 mt-2 w-max min-w-[220px] bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden"
                               >
                                 <div className="max-h-60 overflow-y-auto custom-scrollbar">
                                   <button
@@ -4581,7 +4502,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: 10 }}
-                                className="absolute top-full left-0 mt-2 w-max min-w-[220px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden"
+                                className="absolute top-full left-0 mt-2 w-max min-w-[220px] bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden"
                               >
                                 <div className="max-h-60 overflow-y-auto custom-scrollbar">
                                   <button
@@ -4664,7 +4585,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 : opt.status === 'Mudança de Status' ? { I: Activity, c: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' }
                                 : { I: BarChart3, c: 'text-blue-500 bg-blue-500/10 border-blue-500/20' };
                               return (
-                                <div className="absolute -left-12 top-4 z-10 w-8 h-8 rounded-full bg-white dark:bg-[#1a1625]">
+                                <div className="absolute -left-12 top-4 z-10 w-8 h-8 rounded-full bg-white dark:bg-dark-card">
                                   <div className={`w-full h-full rounded-full border flex items-center justify-center ${t.c}`}><t.I size={14} /></div>
                                 </div>
                               );
@@ -4884,7 +4805,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     }`}
                                   >
                                     {opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user') ? (
-                                      <span>👍</span>
+                                      <ThumbsUp size={14} fill="currentColor" className="text-violet-500" />
                                     ) : (
                                       <ThumbsUp size={14} />
                                     )}
@@ -4933,7 +4854,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           <div key={opt.id} className="relative">
                             {/* Marcador na linha do tempo — ícone de reunião */}
                             <div className="absolute -left-12 top-6 z-10">
-                              <div className="w-8 h-8 rounded-full bg-white dark:bg-[#1a1625]">
+                              <div className="w-8 h-8 rounded-full bg-white dark:bg-dark-card">
                                 <div className="w-full h-full rounded-full bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 flex items-center justify-center shadow-sm">
                                   <Users size={15} className="text-violet-500" />
                                 </div>
@@ -5069,7 +4990,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       }`}
                                     >
                                       {opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user') ? (
-                                        <span>👍</span>
+                                        <ThumbsUp size={14} fill="currentColor" className="text-violet-500" />
                                       ) : (
                                         <ThumbsUp size={14} />
                                       )}
@@ -5129,7 +5050,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           className="border-2 border-dashed border-slate-300 dark:border-white/10 rounded-2xl p-10 text-center bg-slate-50 dark:bg-white/5 cursor-pointer hover:border-violet-500 transition-all"
                         >
                           <div className="flex flex-col items-center gap-3">
-                            <div className="p-3 bg-white/5 rounded-full border border-white/10">
+                            <div className="p-3 bg-black/[0.03] dark:bg-white/5 rounded-full border border-black/10 dark:border-white/10">
                               <Film size={24} className="text-slate-400 dark:text-slate-300" />
                             </div>
                             <div>
@@ -5249,7 +5170,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           {npsResponses.map((res, i) => {
                             const avg = ((res.response_time_score || 0) + (res.project_result_score || 0) + (res.paid_traffic_score || 0) + (res.operations_manager_score || 0)) / 4;
                             const avgColor = avg >= 4 ? 'text-emerald-500' : avg >= 3 ? 'text-amber-500' : 'text-rose-500';
-                            const avgBg = avg >= 4 ? 'from-emerald-500/10 to-transparent' : avg >= 3 ? 'from-amber-500/10 to-transparent' : 'from-rose-500/10 to-transparent';
                             const avgBorder = avg >= 4 ? 'border-emerald-500/20' : avg >= 3 ? 'border-amber-500/20' : 'border-rose-500/20';
                             const pct = (s: number) => Math.round((s / 5) * 100);
                             const circumference = 2 * Math.PI * 20;
@@ -5262,9 +5182,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                             ];
 
                             return (
-                              <div key={i} className={`bg-light-card dark:bg-dark-card border ${avgBorder} rounded-3xl overflow-hidden shadow-sm`}>
+                              <div key={i} className={`bg-light-card dark:bg-dark-card border ${avgBorder} rounded-2xl overflow-hidden shadow-sm`}>
                                 {/* Header */}
-                                <div className={`bg-gradient-to-r ${avgBg} px-3 py-3.5 border-b border-slate-100 dark:border-white/5 flex items-center justify-between`}>
+                                <div className={`px-3 py-3.5 border-b border-slate-100 dark:border-white/5 flex items-center justify-between`}>
                                   <div className="flex items-center gap-4">
                                     <div className="w-11 h-11 rounded-2xl bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-700 dark:text-white font-black text-lg">
                                       {(res.office || '?')[0].toUpperCase()}
@@ -5351,7 +5271,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   return (
                     <div className="space-y-5 mt-2 pb-4">
                       {/* Indicador de risco */}
-                      <div className="p-5 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5">
+                      <div className="p-5 bg-slate-50 dark:bg-white/[0.03] rounded-2xl border border-slate-200 dark:border-white/5">
                         <div className="flex items-center justify-between mb-3">
                           <div>
                             <p className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest mb-1">Nível de risco de churn</p>
@@ -5372,7 +5292,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         const gChecked = group.items.filter(it => cl[it.id]).length;
                         return (
                           <div key={group.group} className="rounded-2xl border border-slate-200 dark:border-white/5 overflow-hidden">
-                            <div className="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/30 border-b border-slate-200 dark:border-white/5">
+                            <div className="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-white/[0.03] border-b border-slate-200 dark:border-white/5">
                               <p className="text-xs font-bold text-slate-700 dark:text-white uppercase tracking-wider">{group.group}</p>
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${gChecked > 0 ? 'bg-rose-500/10 text-rose-500' : 'bg-slate-500/10 text-slate-400 dark:text-slate-300'}`}>{gChecked}/{group.items.length}</span>
                             </div>
@@ -5412,20 +5332,21 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         <Loader2 className="animate-spin text-violet-500" size={32} />
                       </div>
                     ) : (
-                      <div className="bg-white dark:bg-[#11111b] border border-slate-200 dark:border-white/5 shadow-sm dark:shadow-none rounded-xl overflow-hidden">
+                      <div className="bg-white dark:bg-dark-card border border-slate-200 dark:border-white/5 shadow-sm dark:shadow-none rounded-xl overflow-hidden">
                         <div className="p-2 space-y-1">
                           {projectTokens.map((token, idx) => {
-                            const platformConfig: Record<string, { icon: string; color: string; bg: string }> = {
-                              meta_ads: { icon: '📘', color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/30' },
-                              google_ads: { icon: '🔴', color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/30' },
-                              tiktok_ads: { icon: '🎵', color: 'text-pink-400', bg: 'bg-pink-500/10 border-pink-500/30' },
-                              outro: { icon: '🔑', color: 'text-violet-400', bg: 'bg-violet-500/10 border-violet-500/30' },
+                            // Ícone lucide por plataforma (antes emoji 📘 🔴 🎵 🔑)
+                            const platformConfig: Record<string, { icon: React.ReactNode; color: string; bg: string }> = {
+                              meta_ads: { icon: <Megaphone size={14} />, color: 'text-sky-500', bg: 'bg-sky-500/10 border-sky-500/30 text-sky-500' },
+                              google_ads: { icon: <Search size={14} />, color: 'text-rose-500', bg: 'bg-rose-500/10 border-rose-500/30 text-rose-500' },
+                              tiktok_ads: { icon: <Music size={14} />, color: 'text-pink-500', bg: 'bg-pink-500/10 border-pink-500/30 text-pink-500' },
+                              outro: { icon: <KeyRound size={14} />, color: 'text-violet-500', bg: 'bg-violet-500/10 border-violet-500/30 text-violet-500' },
                             };
                             const statusConfig: Record<string, { label: string; color: string }> = {
-                              active: { label: 'Ativo', color: 'bg-emerald-500/20 text-emerald-400' },
-                              error: { label: 'Erro', color: 'bg-red-500/20 text-red-400' },
-                              paused: { label: 'Pausado', color: 'bg-yellow-500/20 text-yellow-400' },
-                              pending_reauth: { label: 'Reautenticar', color: 'bg-orange-500/20 text-orange-400' },
+                              active: { label: 'Ativo', color: 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' },
+                              error: { label: 'Erro', color: 'bg-rose-500/20 text-rose-600 dark:text-rose-400' },
+                              paused: { label: 'Pausado', color: 'bg-amber-500/20 text-amber-600 dark:text-amber-400' },
+                              pending_reauth: { label: 'Reautenticar', color: 'bg-orange-500/20 text-orange-600 dark:text-orange-400' },
                             };
                             const pCfg = platformConfig[token.platform] || platformConfig.outro;
                             const sCfg = statusConfig[token.status] || statusConfig.active;
@@ -5438,7 +5359,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 transition={{
                                   duration: 0.35,
-                                  delay: idx * 0.06,
+                                  delay: Math.min(idx, 8) * 0.04,
                                   ease: [0.32, 0.72, 0, 1],
                                 }}
                               >
@@ -5454,18 +5375,18 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   {/* Info */}
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
-                                      <span className="text-sm font-medium text-slate-800 dark:text-gray-200 truncate">
+                                      <span className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
                                         {platformLabel}
                                       </span>
                                       {token.account_id && (
-                                        <span className="text-xs text-slate-400 dark:text-slate-300 dark:text-gray-500 font-mono">
+                                        <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                                           ID: {token.account_id}
                                         </span>
                                       )}
                                     </div>
                                     <div className="flex items-center gap-2 mt-0.5">
                                       {token.token_masked && (
-                                        <span className="text-xs text-slate-400 dark:text-slate-300 dark:text-gray-600 font-mono">
+                                        <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                                           {token.token_masked}
                                         </span>
                                       )}
@@ -5477,7 +5398,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     {sCfg.label}
                                   </span>
 
-                                  <button className="text-xs text-slate-400 dark:text-slate-300 dark:text-gray-500 hover:text-violet-500 transition-colors">
+                                  <button className="text-xs text-slate-500 dark:text-slate-400 hover:text-violet-500 transition-colors">
                                     Ver dados
                                   </button>
                                 </div>
@@ -5494,7 +5415,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           <div className="p-3 mt-2">
                             <button
                               onClick={openNewToken}
-                              className="text-sm text-slate-500 dark:text-slate-300 dark:text-gray-500 hover:text-violet-600 dark:hover:text-violet-400 flex items-center gap-2 font-medium transition-colors"
+                              className="text-sm text-slate-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 flex items-center gap-2 font-medium transition-colors"
                             >
                               <Plus size={16} /> ADICIONAR TOKEN
                             </button>
@@ -5581,7 +5502,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   : 'text-slate-400 dark:text-slate-300 hover:text-slate-600 dark:hover:text-white'
                               }`}
                             >
-                              {f === 'all' ? 'Todos' : f === 'comment' ? 'Comentários' : '🔒 Internas'}
+                              {f === 'all' ? 'Todos' : f === 'comment' ? 'Comentários' : <span className="inline-flex items-center gap-1"><Lock size={10} /> Internas</span>}
                             </button>
                           ))}
                         </div>
@@ -5627,9 +5548,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 </span>
                               </div>
                               {c.isInternal && (
-                                <span className="inline-block mb-2 text-[10px] font-bold text-amber-400 uppercase tracking-wider">🔒 Nota Interna</span>
+                                <span className="inline-flex items-center gap-1 mb-2 text-[10px] font-bold text-amber-500 dark:text-amber-400 uppercase tracking-wider"><Lock size={10} /> Nota Interna</span>
                               )}
-                              {c.text && <p className={`text-sm leading-relaxed whitespace-pre-wrap ${c.isInternal ? 'text-amber-100/80' : 'text-slate-700 dark:text-white'}`}>{c.text}</p>}
+                              {c.text && <p className={`text-sm leading-relaxed whitespace-pre-wrap ${c.isInternal ? 'text-amber-800 dark:text-amber-100/80' : 'text-slate-700 dark:text-white'}`}>{c.text}</p>}
                               {Array.isArray(c.images) && c.images.length > 0 && (
                                 <div className="flex flex-wrap gap-2 mt-2">
                                   {c.images.map((url: string, i: number) => (
@@ -5688,7 +5609,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               }
                             }}
                             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(); } }}
-                            placeholder={isInternalNote ? '🔒 Nota interna (só visível para a equipe)...' : 'Escreva um comentário... (Enter para enviar)'}
+                            placeholder={isInternalNote ? 'Nota interna (só visível para a equipe)...' : 'Escreva um comentário... (Enter para enviar)'}
                             rows={2}
                             className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 resize-none outline-none"
                           />
@@ -5773,7 +5694,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
             </button>
             <button 
               onClick={confirmDeleteProject}
-              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl transition-colors"
             >
               Excluir
             </button>
@@ -5799,7 +5720,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
             </button>
             <button 
               onClick={confirmDeleteProduct}
-              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl transition-colors"
             >
               Excluir
             </button>
@@ -5816,20 +5737,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       {/* Token Detail Modal */}
       <AnimatePresence>
         {isTokenModalOpen && (
-          <div className="fixed inset-0 z-[1000] flex items-start justify-center p-4 overflow-y-auto pt-10 pb-10 scrollbar-hide">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsTokenModalOpen(false)}
-              className="fixed inset-0 modal-overlay"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg modal-container overflow-hidden my-auto transition-colors duration-300"
-            >
+          <Modal isOpen onClose={() => setIsTokenModalOpen(false)} semCabecalho semPadding maxWidth="max-w-lg" fecharAoClicarFora={false}>
+            
+            <div className="relative w-full">
               <div className="p-6 space-y-6">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xl font-bold text-light-text dark:text-white">
@@ -6016,8 +5926,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   )}
                 </div>
               </div>
-            </motion.div>
-          </div>
+            </div>
+          </Modal>
         )}
       </AnimatePresence>
 

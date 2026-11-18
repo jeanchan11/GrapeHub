@@ -6,15 +6,15 @@ import TodoStaff from './TodoStaff';
  *
  * Página de gestão de ideias criativas.
  * Clona o template do TodoStaff/ChamadosGrapehub com customizações:
- * - Título: "Ideais Criativos"
+ * - Título: vem do rótulo da página no menu (pageLabel); "Ideais Criativos" é a reserva
  * - Coluna "A Fazer" renomeada para "Ideias"
  * - Aba secundária "Ideias" removida (hideIdeas)
  */
-const IdeaisCriativos: React.FC<{ activePage?: string }> = ({ activePage }) => {
+const IdeaisCriativos: React.FC<{ activePage?: string; pageLabel?: string }> = ({ activePage, pageLabel }) => {
   return (
     <TodoStaff
       activePage={activePage}
-      pageTitle="Ideais Criativos"
+      pageTitle={pageLabel?.trim() || 'Ideais Criativos'}
       pageSubtitle="Gestão de ideias criativas · seção grape"
       todoLabel="Ideias"
       hideIdeas

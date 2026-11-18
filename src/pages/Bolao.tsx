@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
-import { Trophy, Target, Settings, Check, Plus, X, Medal, Crown, Gift, Lock, Edit2, Eye } from 'lucide-react';
+import { Trophy, Target, Settings, Check, Plus, X, Medal, Crown, Gift, Lock, Edit2, Eye, CheckCircle2, XCircle, ScrollText } from 'lucide-react';
+import { Modal } from '../components/ui/Modal';
+import { Abas } from '../components/ui/Abas';
+import { CarregandoBloco } from '../components/LoadingSpinner';
 import { toast } from '@/src/lib/toast';
 import ThemedDropdown from '@/src/components/ui/ThemedDropdown';
 
@@ -96,7 +99,7 @@ const GameNode: React.FC<GameNodeProps> = ({ jogo, onClickBet, saved, isHighligh
     <div
       onClick={() => canBet && onClickBet?.(jogo)}
       className={`relative rounded-xl border transition-all overflow-hidden ${
-        canBet ? 'cursor-pointer hover:border-violet-500/40 hover:shadow-lg hover:shadow-violet-500/10' : ''
+        canBet ? 'cursor-pointer hover:border-violet-500/40 hover:shadow-sm' : ''
       } ${
         isHighlighted
           ? 'border-yellow-400/50 shadow-lg shadow-yellow-500/10 bg-gradient-to-br from-yellow-500/[0.12] to-violet-600/[0.18]'
@@ -111,10 +114,14 @@ const GameNode: React.FC<GameNodeProps> = ({ jogo, onClickBet, saved, isHighligh
 
         {/* Top: status chip + date */}
         <div className="flex items-center justify-between">
-          <span className={`text-[7px] font-black uppercase tracking-widest ${
+          <span className={`inline-flex items-center gap-0.5 text-[7px] font-black uppercase tracking-widest ${
             isHighlighted ? 'text-yellow-400' : isEncerrado ? 'text-emerald-400' : hasBet ? 'text-emerald-400' : isTravado ? 'text-amber-400/80' : 'text-violet-400'
           }`}>
-            {isHighlighted ? '⚽ Final' : isEncerrado ? '✓ Encerrado' : hasBet ? '✓ Apostado' : isTravado ? '🔒 Bloqueado' : '✏️ Apostar'}
+            {isHighlighted ? <><Trophy size={8} /> Final</>
+              : isEncerrado ? <><Check size={8} /> Encerrado</>
+              : hasBet ? <><Check size={8} /> Apostado</>
+              : isTravado ? <><Lock size={8} /> Bloqueado</>
+              : <><Edit2 size={8} /> Apostar</>}
           </span>
           <span className="text-[7px] text-slate-600">{fmtDate(jogo.inicia_em)}</span>
         </div>
@@ -155,15 +162,15 @@ const GameNode: React.FC<GameNodeProps> = ({ jogo, onClickBet, saved, isHighligh
             : <span />
           }
           {isEncerrado && jogo.pontos !== null
-            ? <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md ${
-                acertouExato ? 'bg-emerald-500/20 text-emerald-400' : acertouResult ? 'bg-blue-500/15 text-blue-400' : 'bg-black/5 dark:bg-white/5 text-slate-500'
-              }`}>{acertouExato ? '🎯' : acertouResult ? '✅' : '❌'} +{jogo.pontos}pts</span>
+            ? <span className={`inline-flex items-center gap-0.5 text-[8px] font-black px-1.5 py-0.5 rounded-md ${
+                acertouExato ? 'bg-emerald-500/20 text-emerald-500' : acertouResult ? 'bg-violet-500/15 text-violet-500' : 'bg-black/5 dark:bg-white/5 text-slate-500'
+              }`}>{acertouExato ? <Target size={8} /> : acertouResult ? <CheckCircle2 size={8} /> : <XCircle size={8} />} +{jogo.pontos}pts</span>
             : saved
             ? <span className="text-[8px] text-emerald-400 font-bold flex items-center gap-0.5"><Check size={8} /> Salvo</span>
             : hasBet && isTravado
-            ? <span className="text-[7px] text-emerald-500/50 font-bold">🔒 Trancado</span>
+            ? <span className="inline-flex items-center gap-0.5 text-[7px] text-emerald-500/50 font-bold"><Lock size={7} /> Trancado</span>
             : hasBet
-            ? <span className="text-[7px] text-emerald-400/60 font-bold">✏️ Editável</span>
+            ? <span className="inline-flex items-center gap-0.5 text-[7px] text-emerald-500/70 font-bold"><Edit2 size={7} /> Editável</span>
             : null
           }
         </div>
@@ -211,16 +218,12 @@ const BetModal = ({
   );
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div
-        className="relative bg-dark-card rounded-2xl border border-black/10 dark:border-white/10 shadow-2xl shadow-violet-500/10 p-6 w-[380px] max-w-[90vw]"
-        onClick={e => e.stopPropagation()}
-      >
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-[380px]">
+      <div className="p-6">
         {/* Header */}
         <div className="text-center mb-6">
           <span className="text-[9px] font-bold uppercase tracking-widest text-violet-400">{jaApostou ? 'Editar Palpite' : 'Fazer Palpite'}</span>
-          <p className="text-xs text-slate-500 mt-1">✏️ Dá pra editar até 1h antes do jogo.</p>
+          <p className="text-xs text-slate-500 mt-1">Dá pra editar até 1h antes do jogo.</p>
         </div>
 
         {/* Score selectors */}
@@ -247,13 +250,13 @@ const BetModal = ({
           <button
             onClick={handleConfirm}
             disabled={saving}
-            className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-violet-500/20 active:scale-95 disabled:opacity-50"
+            className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-black uppercase tracking-wider transition-colors active:scale-95 disabled:opacity-50"
           >
-            {saving ? 'Salvando...' : (jaApostou ? '✏️ Salvar' : '⚽ Apostar')}
+            {saving ? 'Salvando...' : (jaApostou ? 'Salvar' : 'Apostar')}
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -332,7 +335,7 @@ const BracketView = ({
           { s: COL_CONN_FLEX, label: '' },
           { s: COL_CARD, label: 'Semifinal',          cls: 'text-slate-500' },
           { s: COL_CONN_FLEX, label: '' },
-          { s: COL_CARD, label: '⚽  Final',          cls: 'text-yellow-500/70' },
+          { s: COL_CARD, label: 'Final',          cls: 'text-yellow-500/70' },
         ].map((col, i) => (
           <div key={i} className={`text-center text-[9px] font-black uppercase tracking-widest ${'cls' in col ? col.cls : ''}`}
             style={col.s}>
@@ -428,7 +431,7 @@ const Podio = ({ ranking, myUid, onSelectCollab }: { ranking: RankingEntry[]; my
 
   const medals = [
     {
-      icon: <Crown size={22} className="text-yellow-400 animate-bounce" />,
+      icon: <Crown size={22} className="text-yellow-400" />,
       h: 'h-44',
       step: '1',
       colorClass: 'text-yellow-400',
@@ -457,7 +460,7 @@ const Podio = ({ ranking, myUid, onSelectCollab }: { ranking: RankingEntry[]; my
   ];
 
   return (
-    <div className="relative flex items-end justify-center gap-6 mb-12 pt-8 pb-4 bg-dark-bg/40 rounded-3xl border border-black/10 dark:border-white/5 max-w-2xl mx-auto overflow-hidden px-12 shadow-inner">
+    <div className="relative flex items-end justify-center gap-6 mb-12 pt-8 pb-4 bg-dark-bg/40 rounded-2xl border border-black/10 dark:border-white/5 max-w-2xl mx-auto overflow-hidden px-12 shadow-inner">
       {/* Spotlights/Beams */}
       <div className="absolute inset-x-0 top-0 h-full pointer-events-none overflow-hidden flex justify-center gap-24 opacity-40">
         <div className="w-20 h-80 bg-gradient-to-b from-white/10 via-white/2 to-transparent blur-xl transform rotate-12 -translate-x-16" />
@@ -478,7 +481,7 @@ const Podio = ({ ranking, myUid, onSelectCollab }: { ranking: RankingEntry[]; my
             {entry ? (
               <div 
                 onClick={() => onSelectCollab(entry)}
-                className={`flex flex-col items-center rounded-2xl bg-dark-card/90 border ${isMe ? 'border-violet-500/60 shadow-[0_0_15px_rgba(124,58,237,0.3)]' : 'border-black/10 dark:border-white/10'} w-full shadow-xl transition-all duration-300 hover:scale-105 mb-2 relative cursor-pointer`}
+                className={`flex flex-col items-center rounded-2xl bg-dark-card/90 border ${isMe ? 'border-violet-500/60' : 'border-black/10 dark:border-white/10'} w-full shadow-xl transition-all duration-300 hover:scale-105 mb-2 relative cursor-pointer`}
               >
                 <div className="absolute -top-3.5 flex justify-center w-full left-0 z-20">
                   <div className="bg-dark-card/95 border border-black/10 dark:border-white/15 p-1 rounded-full shadow-lg">
@@ -528,7 +531,7 @@ const Podio = ({ ranking, myUid, onSelectCollab }: { ranking: RankingEntry[]; my
 
 // ── TabLeaderboard ─────────────────────────────────────────────────────────────
 const TabLeaderboard = ({ ranking, myUid, loading, onSelectCollab }: { ranking: RankingEntry[]; myUid: string; loading: boolean; onSelectCollab: (entry: RankingEntry) => void }) => {
-  if (loading) return <div className="flex justify-center py-24"><div className="w-8 h-8 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" /></div>;
+  if (loading) return <CarregandoBloco className="py-24" />;
   if (ranking.length === 0) return (
     <div className="text-center py-20 text-slate-600">
       <Trophy size={40} className="mx-auto mb-3 opacity-20" />
@@ -677,7 +680,7 @@ const TabAdmin = ({
           </div>
         </div>
         <button onClick={handleAddJogo} disabled={saving || !form.time_casa || !form.time_fora || !form.inicia_em}
-          className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-sm font-bold text-white transition-all flex items-center justify-center gap-2">
+          className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-40 text-sm font-bold text-white transition-all flex items-center justify-center gap-2">
           {saving ? <div className="w-4 h-4 border-2 border-black/10 dark:border-white/30 border-t-white rounded-full animate-spin" /> : <Plus size={14} />}
           Cadastrar
         </button>
@@ -728,8 +731,8 @@ const TabAdmin = ({
 
       {/* Result modal */}
       {resultModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setResultModal(null)}>
-          <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 w-80 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <Modal isOpen onClose={() => setResultModal(null)} semCabecalho semPadding maxWidth="max-w-xs">
+          <div className="p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-black text-dark-text">{resultModal.jogo.status === 'encerrado' ? 'Corrigir Resultado' : 'Resultado Final'}</h3>
               <button onClick={() => setResultModal(null)} className="text-slate-500 hover:text-dark-text"><X size={16} /></button>
@@ -744,18 +747,18 @@ const TabAdmin = ({
                 className="flex-1 min-w-0 w-0 bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-3 text-xl font-black text-dark-text text-center focus:outline-none focus:border-violet-500" />
             </div>
             <button onClick={handleLancarResultado} disabled={savingResult || !resultModal.casa || !resultModal.fora}
-              className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-sm font-bold text-white transition-all flex items-center justify-center gap-2">
+              className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-sm font-bold text-white transition-all flex items-center justify-center gap-2">
               {savingResult ? <div className="w-4 h-4 border-2 border-black/10 dark:border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={14} />}
               Confirmar Resultado
             </button>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Edit game modal — definir times/fase/data dos próximos jogos */}
       {editModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setEditModal(null)}>
-          <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 w-96 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <Modal isOpen onClose={() => setEditModal(null)} semCabecalho semPadding maxWidth="max-w-sm">
+          <div className="p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-black text-dark-text flex items-center gap-2"><Edit2 size={14} className="text-violet-400" /> Editar Jogo</h3>
               <button onClick={() => setEditModal(null)} className="text-slate-500 hover:text-dark-text"><X size={16} /></button>
@@ -782,12 +785,12 @@ const TabAdmin = ({
               </div>
             </div>
             <button onClick={handleEditJogo} disabled={savingEdit || !editModal.time_casa.trim() || !editModal.time_fora.trim() || !editModal.inicia_em}
-              className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-sm font-bold text-white transition-all flex items-center justify-center gap-2">
+              className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-40 text-sm font-bold text-white transition-all flex items-center justify-center gap-2">
               {savingEdit ? <div className="w-4 h-4 border-2 border-black/10 dark:border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={14} />}
               Salvar
             </button>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
@@ -819,28 +822,21 @@ function ColaboradorDetalhesModal({ entry, myUid, bolaoId, onClose, apiFetch }: 
       });
   }, [bolaoId, entry.user_id, apiFetch]);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
-
+  // Esc e clique fora: o <Modal> cuida (como antes)
   const isMe = entry.user_id === myUid;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-[#0a0118]/80" onClick={onClose} />
-
-      <div className="relative w-full max-w-3xl bg-dark-card border border-black/10 dark:border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row z-10 animate-in fade-in zoom-in-95 duration-200">
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-3xl">
+      <div className="relative flex flex-col md:flex-row">
         <button onClick={onClose} className="absolute top-4 right-4 z-20 text-slate-400 hover:text-dark-text transition-colors bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 p-1.5 rounded-full">
           <X size={18} />
         </button>
 
-        <div className="w-full md:w-72 bg-gradient-to-b from-violet-950/20 to-black/40 flex flex-col items-center justify-center p-8 border-b md:border-b-0 md:border-r border-black/10 dark:border-white/5 relative shrink-0">
+        <div className="w-full md:w-72 bg-gradient-to-b from-violet-500/10 to-black/5 dark:from-violet-950/20 dark:to-black/40 flex flex-col items-center justify-center p-8 border-b md:border-b-0 md:border-r border-black/10 dark:border-white/5 relative shrink-0">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(124,58,237,0.1),transparent_70%)] pointer-events-none" />
           
           {entry.bolao_avatar_url || entry.user_picture ? (
-            <div className="relative w-56 h-80 rounded-2xl overflow-hidden border border-black/10 dark:border-white/15 shadow-[0_0_30px_rgba(124,58,237,0.35)] mb-4 transition-all duration-300 hover:scale-[1.03] hover:shadow-[0_0_40px_rgba(124,58,237,0.5)] group">
+            <div className="relative w-56 h-80 rounded-2xl overflow-hidden border border-black/10 dark:border-white/15 shadow-sm mb-4 transition-transform duration-300 hover:scale-[1.03] group">
               <img
                 src={entry.bolao_avatar_url || entry.user_picture}
                 alt={entry.user_name || ''}
@@ -876,7 +872,7 @@ function ColaboradorDetalhesModal({ entry, myUid, bolaoId, onClose, apiFetch }: 
             </div>
             <div className="bg-black/[0.04] dark:bg-white/[0.02] border border-black/10 dark:border-white/5 rounded-2xl p-3 flex flex-col items-center">
               <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Palpites</span>
-              <span className="text-xl font-black text-slate-300">{entry.qtd_palpites}</span>
+              <span className="text-xl font-black text-dark-text">{entry.qtd_palpites}</span>
             </div>
           </div>
 
@@ -885,9 +881,7 @@ function ColaboradorDetalhesModal({ entry, myUid, bolaoId, onClose, apiFetch }: 
           </h4>
 
           {loading ? (
-            <div className="flex-1 flex items-center justify-center py-12">
-              <div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-            </div>
+            <CarregandoBloco className="flex-1 py-12" />
           ) : (
             <div className="flex-1 overflow-y-auto pr-1 max-h-72 space-y-2.5">
               {jogos.map((j: any) => {
@@ -952,7 +946,7 @@ function ColaboradorDetalhesModal({ entry, myUid, bolaoId, onClose, apiFetch }: 
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1096,6 +1090,9 @@ export default function Bolao() {
 
   return (
     <div className="p-6 md:p-8 bg-dark-bg text-dark-text min-h-screen">
+      <div className="mb-6">
+        <SplitHeadline text="Bolão da " highlight="Copa" />
+      </div>
       <div className="mb-8 relative overflow-hidden rounded-2xl border border-black/10 dark:border-white/10" style={{ maxHeight: 260 }}>
         <img 
           src="/bolao.png" 
@@ -1103,7 +1100,7 @@ export default function Bolao() {
           className="w-full object-cover object-center"
           style={{ height: 260 }}
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0d0d1a]/80 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
         <div className="absolute bottom-4 left-6">
           <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400/80">
             Mata-mata — faça seus palpites por fase!
@@ -1111,30 +1108,23 @@ export default function Bolao() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 mb-8 bg-dark-card p-1 rounded-xl border border-black/10 dark:border-white/10 w-fit">
-        {tabs.map(tab => {
-          const Icon = tab.icon;
-          return (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                activeTab === tab.id ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/20' : 'text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5'
-              }`}>
-              <Icon size={13} />{tab.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* Abas */}
+      <Abas
+        className="mb-8"
+        abas={tabs.map(tab => ({ id: tab.id, rotulo: tab.label, Icone: tab.icon }))}
+        ativa={activeTab}
+        onChange={(id) => setActiveTab(id as typeof activeTab)}
+      />
 
       {/* Content */}
       {activeTab === 'palpites' && (
         loadingJogos
-          ? <div className="flex justify-center py-24"><div className="w-8 h-8 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" /></div>
+          ? <CarregandoBloco className="py-24" />
           : <BracketView jogos={jogos} onSave={handleSavePalpite} />
       )}
       {activeTab === 'apostas' && (
         loadingPalpites
-          ? <div className="flex justify-center py-24"><div className="w-8 h-8 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" /></div>
+          ? <CarregandoBloco className="py-24" />
           : <PalpitesTodosView rows={palpitesAll} />
       )}
       {activeTab === 'leaderboard' && (
@@ -1148,7 +1138,7 @@ export default function Bolao() {
       {activeTab === 'premiacoes' && (
         <div className="space-y-6">
           <div className="text-center mb-2">
-            <h2 className="text-lg font-black text-dark-text">🏆 Premiações do <span className="text-violet-400">Bolão</span></h2>
+            <h2 className="text-lg font-black text-dark-text inline-flex items-center gap-2"><Trophy size={18} className="text-violet-500" /> Premiações do <span className="text-violet-500">Bolão</span></h2>
             <p className="text-[11px] text-slate-500 uppercase tracking-widest mt-1">Confira o que está em jogo!</p>
           </div>
 
@@ -1157,7 +1147,6 @@ export default function Bolao() {
             <div className="bg-dark-card rounded-2xl border border-yellow-500/30 p-6 text-center relative overflow-hidden">
               <div className="absolute inset-0 bg-gradient-to-b from-yellow-500/10 to-transparent pointer-events-none" />
               <div className="relative">
-                <span className="text-4xl mb-3 block">🥇</span>
                 <Crown size={20} className="text-yellow-400 mx-auto mb-2" />
                 <h3 className="text-sm font-black text-yellow-400 uppercase tracking-wider">1º Lugar</h3>
                 <div className="mt-4 bg-yellow-500/10 rounded-xl px-4 py-3 border border-yellow-500/20">
@@ -1171,7 +1160,6 @@ export default function Bolao() {
             <div className="bg-dark-card rounded-2xl border border-slate-400/20 p-6 text-center relative overflow-hidden">
               <div className="absolute inset-0 bg-gradient-to-b from-slate-400/5 to-transparent pointer-events-none" />
               <div className="relative">
-                <span className="text-4xl mb-3 block">🥈</span>
                 <Medal size={20} className="text-slate-300 mx-auto mb-2" />
                 <h3 className="text-sm font-black text-slate-300 uppercase tracking-wider">2º Lugar</h3>
                 <div className="mt-4 bg-slate-500/10 rounded-xl px-4 py-3 border border-slate-500/20">
@@ -1185,7 +1173,6 @@ export default function Bolao() {
             <div className="bg-dark-card rounded-2xl border border-amber-700/20 p-6 text-center relative overflow-hidden">
               <div className="absolute inset-0 bg-gradient-to-b from-amber-700/5 to-transparent pointer-events-none" />
               <div className="relative">
-                <span className="text-4xl mb-3 block">🥉</span>
                 <Medal size={20} className="text-amber-600 mx-auto mb-2" />
                 <h3 className="text-sm font-black text-amber-600 uppercase tracking-wider">3º Lugar</h3>
                 <div className="mt-4 bg-amber-700/10 rounded-xl px-4 py-3 border border-amber-700/20">
@@ -1197,17 +1184,17 @@ export default function Bolao() {
           </div>
 
           <div className="bg-dark-card rounded-2xl border border-black/10 dark:border-white/10 p-5 mt-4">
-            <h3 className="text-xs font-bold text-slate-400 uppercase mb-3">📋 Regras de Pontuação</h3>
+            <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-1.5"><ScrollText size={13} /> Regras de Pontuação</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="flex items-center gap-3 bg-emerald-500/5 rounded-xl px-4 py-3 border border-emerald-500/10">
-                <span className="text-xl">🎯</span>
+                <Target size={20} className="text-emerald-500 shrink-0" />
                 <div>
                   <span className="text-sm font-bold text-emerald-400">Placar Exato</span>
                   <span className="text-xs text-slate-500 block">+3 pontos</span>
                 </div>
               </div>
               <div className="flex items-center gap-3 bg-violet-500/5 rounded-xl px-4 py-3 border border-violet-500/10">
-                <span className="text-xl">✅</span>
+                <CheckCircle2 size={20} className="text-violet-500 shrink-0" />
                 <div>
                   <span className="text-sm font-bold text-violet-400">Resultado Certo</span>
                   <span className="text-xs text-slate-500 block">+1 ponto (vitória/empate/derrota)</span>

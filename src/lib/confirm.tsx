@@ -64,12 +64,18 @@ export const ConfirmHost: React.FC = () => {
   useEffect(() => { const l = () => force(n => n + 1); listeners.add(l); return () => { listeners.delete(l); }; }, []);
   useEffect(() => { if (current?.kind === 'prompt') setInputVal(current.defaultValue || ''); }, [current?._id]);
   useEffect(() => {
+    // Captura + stopImmediatePropagation: o Esc da confirmação não chega ao popup de baixo
+    // (ui/Modal também escuta Esc no window; antes fechava os dois).
     const onKey = (e: KeyboardEvent) => {
       if (!current) return;
-      if (e.key === 'Escape') settle(current.kind === 'prompt' ? null : false);
+      if (e.key === 'Escape') {
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+        settle(current.kind === 'prompt' ? null : false);
+      }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, []);
   if (!current || typeof document === 'undefined') return null;
   const o = current;

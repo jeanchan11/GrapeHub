@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { Plus, ChevronDown, ChevronUp, Trash2, Save, X, Edit2, Calendar, Clock, CheckSquare, FileText, Users, Loader2, Paperclip, ImageIcon, Check } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
-import LoadingSpinner from '../components/LoadingSpinner';
+import { CarregandoBloco } from '../components/LoadingSpinner';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
+import { CartaoKpi } from '../components/graficos';
 import { confirmDialog } from '@/src/lib/confirm';
 
 interface Session {
@@ -145,54 +147,47 @@ export default function MeetingNotes({ activePage, pageLabel }: { activePage: st
       {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div>
-          <SplitHeadline text="Notas de " highlight={pageLabel || 'Reunião'} className="text-4xl font-black text-gray-900 dark:text-white tracking-tight mb-1" subtitle="Atas, registros e acompanhamento de reuniões" />
+          {(() => {
+            // Destaque só na última palavra ("Notas de Reunião Semanal Comercial")
+            const nome = `Notas de ${(pageLabel || 'Reunião').trim()}`;
+            const i = nome.lastIndexOf(' ');
+            return <SplitHeadline text={nome.slice(0, i + 1)} highlight={nome.slice(i + 1)} subtitle="Atas, registros e acompanhamento de reuniões" />;
+          })()}
         </div>
-        <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-xl font-bold text-sm transition-colors shadow-lg shadow-violet-500/20">
+        <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold text-sm transition-colors">
           <Plus size={16} /> Nova Reunião
         </button>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        {[
-          { label: 'Total',        value: sessions.length, icon: FileText,  color: '#6366f1' },
-          { label: 'Este Mês',     value: thisMonth,        icon: Clock,     color: '#8b5cf6' },
-          { label: 'Participantes',value: totalAttendees,   icon: Users,     color: '#10b981' },
-          { label: 'Com Notas',    value: sessions.filter(s => s.notes_html && s.notes_html !== '<p></p>').length, icon: CheckSquare, color: '#f59e0b' },
-        ].map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="bg-white dark:bg-dark-card border border-gray-100 dark:border-white/5 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `${color}22` }}>
-                <Icon size={14} style={{ color }} />
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-slate-500">{label}</span>
-            </div>
-            <p className="text-3xl font-black" style={{ color }}>{value}</p>
-          </div>
-        ))}
+        <CartaoKpi titulo="Total" valor={sessions.length} apoio="reuniões" />
+        <CartaoKpi titulo="Este mês" valor={thisMonth} apoio="reuniões" />
+        <CartaoKpi titulo="Participantes" valor={totalAttendees} />
+        <CartaoKpi titulo="Com notas" valor={sessions.filter(s => s.notes_html && s.notes_html !== '<p></p>').length} apoio="reuniões" />
       </div>
 
       {/* New Session Form */}
       {showNew && (
-        <div className="bg-white dark:bg-dark-card border border-violet-500/30 rounded-2xl p-6 mb-6 shadow-lg">
+        <div className="bg-dark-card border border-violet-500/30 rounded-2xl p-6 mb-6 shadow-lg">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-gray-900 dark:text-white">Nova Reunião</h3>
-            <button onClick={() => setShowNew(false)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+            <h3 className="font-bold text-dark-text">Nova Reunião</h3>
+            <button onClick={() => setShowNew(false)} className="text-slate-400 hover:text-dark-text"><X size={18} /></button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="text-xs text-gray-500 font-medium mb-1 block">Título *</label>
+              <label className="text-xs text-slate-500 font-medium mb-1 block">Título *</label>
               <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Ex: Weekly Operacional — 11/05"
-                className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
+                className="w-full bg-slate-50 dark:bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text outline-none focus:border-violet-500/50" />
             </div>
             <div>
-              <label className="text-xs text-gray-500 font-medium mb-1 block">Data</label>
+              <label className="text-xs text-slate-500 font-medium mb-1 block">Data</label>
               <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
-                className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
+                className="w-full bg-slate-50 dark:bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text outline-none focus:border-violet-500/50" />
             </div>
           </div>
           <div className="mb-4 relative">
-            <label className="text-xs text-gray-500 font-medium mb-1 block">Participantes</label>
+            <label className="text-xs text-slate-500 font-medium mb-1 block">Participantes</label>
             <div className="flex gap-2">
               <div className="flex-1 relative">
                 <input value={newAttendee} 
@@ -201,19 +196,19 @@ export default function MeetingNotes({ activePage, pageLabel }: { activePage: st
                   onBlur={() => setTimeout(() => setShowUserDropdown(false), 200)}
                   onKeyDown={e => { if (e.key === 'Enter' && newAttendee.trim()) { const val = newAttendee.trim(); setNewAttendees(p => p.includes(val) ? p : [...p, val]); setNewAttendee(''); setShowUserDropdown(false); }}}
                   placeholder="Nome + Enter ou selecione na lista"
-                  className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
+                  className="w-full bg-slate-50 dark:bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text outline-none focus:border-violet-500/50" />
                 
                 {showUserDropdown && systemUsers.length > 0 && (
-                  <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl shadow-xl">
+                  <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-xl">
                     {systemUsers.filter(u => (u.name || u.email).toLowerCase().includes(newAttendee.toLowerCase())).map(u => {
                       const displayName = u.name && u.name.trim() !== '' ? u.name : u.email;
                       return (
                         <div key={u.email} 
                           onClick={() => { setNewAttendees(p => p.includes(displayName) ? p : [...p, displayName]); setNewAttendee(''); setShowUserDropdown(false); }}
-                          className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer border-b border-gray-100 dark:border-white/5 last:border-0"
+                          className="flex items-center gap-3 px-3 py-2 hover:bg-black/[0.03] dark:hover:bg-white/5 cursor-pointer border-b border-black/5 dark:border-white/5 last:border-0"
                         >
                           <UserAvatar name={displayName} picture={u.picture} size={24} />
-                          <span className="text-sm font-medium text-gray-900 dark:text-white">{displayName}</span>
+                          <span className="text-sm font-medium text-dark-text">{displayName}</span>
                         </div>
                       );
                     })}
@@ -238,10 +233,10 @@ export default function MeetingNotes({ activePage, pageLabel }: { activePage: st
             )}
           </div>
           <div className="flex justify-end gap-2">
-            <button onClick={() => setShowNew(false)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 dark:hover:text-white">Cancelar</button>
+            <button onClick={() => setShowNew(false)} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-900 dark:hover:text-white">Cancelar</button>
             <button onClick={createSession} disabled={saving || !newTitle.trim()}
               className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-colors">
-              {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={14} />} Criar
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Criar
             </button>
           </div>
         </div>
@@ -249,17 +244,13 @@ export default function MeetingNotes({ activePage, pageLabel }: { activePage: st
 
       {/* Sessions List */}
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <LoadingSpinner size="md" />
-        </div>
+        <CarregandoBloco className="py-20" />
       ) : sessions.length === 0 ? (
-        <div className="text-center py-20">
-          <div className="w-16 h-16 bg-violet-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <FileText size={28} className="text-violet-400" />
-          </div>
-          <p className="text-gray-500 dark:text-slate-400 text-sm">Nenhuma reunião registrada ainda.</p>
-          <button onClick={() => setShowNew(true)} className="mt-3 text-violet-500 hover:text-violet-400 text-sm font-medium">+ Criar primeira reunião</button>
-        </div>
+        <EstadoVazio
+          Icone={FileText}
+          titulo="Nenhuma reunião registrada ainda."
+          acao={<button onClick={() => setShowNew(true)} className="text-violet-500 hover:text-violet-600 text-sm font-medium">+ Criar primeira reunião</button>}
+        />
       ) : (
         <div className="space-y-6">
           {sortedGroupsKeys.map(groupKey => {
@@ -272,31 +263,31 @@ export default function MeetingNotes({ activePage, pageLabel }: { activePage: st
             const isExpanded = expandedGroups.includes(groupKey);
 
             return (
-              <div key={groupKey} className="bg-white/50 dark:bg-dark-card/50 rounded-2xl border border-gray-100 dark:border-white/5 overflow-hidden">
+              <div key={groupKey} className="bg-dark-card rounded-2xl border border-black/5 dark:border-white/5 overflow-hidden">
                 <div 
-                  className="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                  className="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/5 transition-colors"
                   onClick={() => setExpandedGroups(prev => prev.includes(groupKey) ? prev.filter(k => k !== groupKey) : [...prev, groupKey])}
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center text-violet-500">
                       <Calendar size={16} />
                     </div>
-                    <h3 className="font-bold text-gray-900 dark:text-white">{groupTitle}</h3>
-                    <span className="text-xs font-medium text-gray-400 dark:text-slate-500 bg-gray-100 dark:bg-white/10 px-2 py-0.5 rounded-md">
+                    <h3 className="font-bold text-dark-text">{groupTitle}</h3>
+                    <span className="text-xs font-medium text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-white/10 px-2 py-0.5 rounded-md">
                       {groupSessions.length} {groupSessions.length === 1 ? 'reunião' : 'reuniões'}
                     </span>
                   </div>
-                  {isExpanded ? <ChevronUp size={18} className="text-gray-400" /> : <ChevronDown size={18} className="text-gray-400" />}
+                  {isExpanded ? <ChevronUp size={18} className="text-slate-400" /> : <ChevronDown size={18} className="text-slate-400" />}
                 </div>
                 
                 {isExpanded && (
-                  <div className="p-4 border-t border-gray-100 dark:border-white/5 space-y-3">
+                  <div className="p-4 border-t border-black/5 dark:border-white/5 space-y-3">
                     {groupSessions.map((session, idx) => (
                       <motion.div
                         key={session.id}
                         initial={{ opacity: 0, y: -18, scale: 0.98 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
-                        transition={{ duration: 0.35, delay: idx * 0.06, ease: [0.32, 0.72, 0, 1] }}
+                        transition={{ duration: 0.25, delay: Math.min(idx, 8) * 0.04, ease: [0.32, 0.72, 0, 1] }}
                       >
                         <SessionCard session={session}
                           expanded={expandedId === session.id}
@@ -449,7 +440,7 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
   const hasNotes = notesHtml && notesHtml !== '<p></p>' && notesHtml !== '';
 
   return (
-    <div className="bg-white dark:bg-dark-card border border-gray-100 dark:border-white/5 rounded-2xl shadow-sm overflow-hidden hover:border-violet-500/20 transition-all">
+    <div className="bg-dark-card border border-black/5 dark:border-white/5 rounded-2xl shadow-sm overflow-hidden hover:border-violet-500/20 transition-all">
       {/* Header Row */}
       <div className="flex items-center gap-4 px-6 py-4 cursor-pointer" onClick={onToggle}>
         <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center shrink-0">
@@ -457,8 +448,8 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-bold text-gray-900 dark:text-white text-sm">{session.title}</h3>
-            <span className="text-[10px] font-medium text-gray-400 dark:text-slate-500 shrink-0">{fmtDate(session.meeting_date)}</span>
+            <h3 className="font-bold text-dark-text text-sm">{session.title}</h3>
+            <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 shrink-0">{fmtDate(session.meeting_date)}</span>
             {hasNotes && <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">Com notas</span>}
           </div>
           {(session.attendees || []).length > 0 && (
@@ -469,12 +460,12 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
                   return <UserAvatar key={i} name={a} picture={matchingUser?.picture} size={20} />;
                 })}
                 {(session.attendees || []).length > 5 && (
-                  <div className="w-5 h-5 rounded-full bg-gray-200 dark:bg-white/10 flex items-center justify-center text-[9px] font-bold text-gray-500 dark:text-slate-400" style={{border:'2px solid'}}>
+                  <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-[9px] font-bold text-slate-500 dark:text-slate-400" style={{border:'2px solid'}}>
                     +{(session.attendees||[]).length-5}
                   </div>
                 )}
               </div>
-              <span className="text-[10px] text-gray-400 dark:text-slate-500">{(session.attendees||[]).join(', ')}</span>
+              <span className="text-[10px] text-slate-400 dark:text-slate-500">{(session.attendees||[]).join(', ')}</span>
             </div>
           )}
         </div>
@@ -483,23 +474,23 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
             onClick={e => { 
               e.stopPropagation(); 
               setEditingMeta(!editingMeta); 
-              if (!expanded) setExpanded(true);
+              if (!expanded) onToggle(); // abre a reunião (antes chamava setExpanded, que não existe)
             }} 
-            className={`p-2 rounded-lg transition-colors ${editingMeta ? 'text-violet-500 bg-violet-500/10' : 'text-gray-400 hover:text-violet-500 hover:bg-violet-500/10'}`}
+            className={`p-2 rounded-lg transition-colors ${editingMeta ? 'text-violet-500 bg-violet-500/10' : 'text-slate-400 hover:text-violet-500 hover:bg-violet-500/10'}`}
             title="Editar informações"
           >
             <Edit2 size={14} />
           </button>
-          <button onClick={e => { e.stopPropagation(); onDelete(); }} className="p-2 text-gray-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors"><Trash2 size={14} /></button>
-          {expanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+          <button onClick={e => { e.stopPropagation(); onDelete(); }} className="p-2 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors"><Trash2 size={14} /></button>
+          {expanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
         </div>
       </div>
 
       {/* Expanded Body — Two Columns */}
       {expanded && (
-        <div className="border-t border-gray-100 dark:border-white/5 flex h-[600px] overflow-hidden">
+        <div className="border-t border-black/5 dark:border-white/5 flex h-[600px] overflow-hidden">
           {/* LEFT: Editor */}
-          <div className="flex-1 flex flex-col border-r border-gray-100 dark:border-white/5 overflow-y-auto">
+          <div className="flex-1 flex flex-col border-r border-black/5 dark:border-white/5 overflow-y-auto">
             {/* Meta edit bar */}
             <div className="px-6 pt-5 pb-3 flex items-center justify-between shrink-0">
               <h4 className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -509,19 +500,19 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
 
             {/* Meta edit panel */}
             {editingMeta && (
-              <div className="mx-6 mb-4 p-4 bg-gray-50 dark:bg-dark-bg rounded-xl border border-gray-200 dark:border-white/10 shrink-0">
+              <div className="mx-6 mb-4 p-4 bg-slate-50 dark:bg-dark-bg rounded-xl border border-black/10 dark:border-white/10 shrink-0">
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div>
-                    <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1 block">Título</label>
-                    <input value={metaTitle} onChange={e => setMetaTitle(e.target.value)} className="w-full bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
+                    <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1 block">Título</label>
+                    <input value={metaTitle} onChange={e => setMetaTitle(e.target.value)} className="w-full bg-dark-card border border-black/10 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-dark-text outline-none focus:border-violet-500/50" />
                   </div>
                   <div>
-                    <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1 block">Data</label>
-                    <input type="date" value={metaDate} onChange={e => setMetaDate(e.target.value)} className="w-full bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
+                    <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1 block">Data</label>
+                    <input type="date" value={metaDate} onChange={e => setMetaDate(e.target.value)} className="w-full bg-dark-card border border-black/10 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-dark-text outline-none focus:border-violet-500/50" />
                   </div>
                 </div>
                 <div className="mb-3 relative">
-                  <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1 block">Participantes</label>
+                  <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1 block">Participantes</label>
                   <div className="flex flex-wrap gap-1.5 mb-1.5">
                     {metaAttendees.map((a, i) => {
                       const matchingUser = systemUsers.find(u => (u.name || u.email) === a);
@@ -556,9 +547,9 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
                         }
                       }}
                       placeholder="Nome + Enter ou selecione"
-                      className="w-full bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
+                      className="w-full bg-dark-card border border-black/10 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-dark-text outline-none focus:border-violet-500/50" />
                     
-                    <div id={`meta-dropdown-${session.id}`} style={{display: 'none'}} className="absolute z-50 left-0 right-0 mt-1 max-h-40 overflow-y-auto bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl shadow-xl">
+                    <div id={`meta-dropdown-${session.id}`} style={{display: 'none'}} className="absolute z-50 left-0 right-0 mt-1 max-h-40 overflow-y-auto bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-xl">
                       {systemUsers.filter(u => (u.name || u.email).toLowerCase().includes(metaAttendee.toLowerCase())).map(u => {
                         const displayName = u.name && u.name.trim() !== '' ? u.name : u.email;
                         return (
@@ -569,10 +560,10 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
                               const el = document.getElementById(`meta-dropdown-${session.id}`);
                               if (el) el.style.display = 'none';
                             }}
-                            className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer border-b border-gray-100 dark:border-white/5 last:border-0"
+                            className="flex items-center gap-2 px-3 py-1.5 hover:bg-black/[0.03] dark:hover:bg-white/5 cursor-pointer border-b border-black/5 dark:border-white/5 last:border-0"
                           >
                             <UserAvatar name={displayName} picture={u.picture} size={20} />
-                            <span className="text-[11px] font-medium text-gray-900 dark:text-white">{displayName}</span>
+                            <span className="text-[11px] font-medium text-dark-text">{displayName}</span>
                           </div>
                         );
                       })}
@@ -607,10 +598,10 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
           </div>
 
           {/* RIGHT: Comments / Activity */}
-          <div className="w-72 flex flex-col bg-gray-50/50 dark:bg-white/[0.01]">
-            <div className="px-4 py-4 border-b border-gray-100 dark:border-white/5 shrink-0">
+          <div className="w-72 flex flex-col bg-slate-50/50 dark:bg-white/[0.01]">
+            <div className="px-4 py-4 border-b border-black/5 dark:border-white/5 shrink-0">
               <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                Atividade <span className="bg-gray-100 dark:bg-white/10 px-2 py-0.5 rounded-full text-slate-400">{comments.length}</span>
+                Atividade <span className="bg-slate-100 dark:bg-white/10 px-2 py-0.5 rounded-full text-slate-400">{comments.length}</span>
               </h4>
             </div>
 
@@ -621,31 +612,31 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
                 <p className="text-center text-slate-500 text-xs py-8">Nenhum comentário ainda.</p>
               ) : (
                 comments.map(c => (
-                  <div key={c.id} className="bg-white dark:bg-dark-card border border-gray-100 dark:border-white/5 rounded-xl px-4 py-3">
+                  <div key={c.id} className="bg-dark-card border border-black/5 dark:border-white/5 rounded-xl px-4 py-3">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-[10px] font-bold text-violet-500">{c.author_name || 'Usuário'}</span>
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-gray-400 dark:text-slate-500">
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500">
                           {new Date(c.created_at).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}
                         </span>
                         {(userRole === 'superadmin' || userRole === 'diretor-operacional') && (
-                          <button onClick={() => deleteComment(c.id)} className="text-gray-400 hover:text-red-500 transition-colors" title="Excluir">
+                          <button onClick={() => deleteComment(c.id)} className="text-slate-400 hover:text-red-500 transition-colors" title="Excluir">
                             <Trash2 size={10} />
                           </button>
                         )}
                       </div>
                     </div>
-                    {c.text && <p className="text-xs text-gray-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>}
+                    {c.text && <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>}
                     {c.files && c.files.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-2">
                         {c.files.map((f, i) => (
                           <div key={i} className="relative group">
                             {f.type.startsWith('image/') ? (
-                              <img src={f.url} alt={f.name} className="h-20 w-auto rounded-lg object-cover border border-gray-200 dark:border-white/10 cursor-pointer" onClick={() => window.open(f.url, '_blank')} />
+                              <img src={f.url} alt={f.name} className="h-20 w-auto rounded-lg object-cover border border-black/10 dark:border-white/10 cursor-pointer" onClick={() => window.open(f.url, '_blank')} />
                             ) : (
-                              <a href={f.url} download={f.name} className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-white/10 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
+                              <a href={f.url} download={f.name} className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 dark:bg-white/5 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
                                 <FileText size={14} className="text-violet-500" />
-                                <span className="text-[10px] text-gray-600 dark:text-slate-300 max-w-[120px] truncate">{f.name}</span>
+                                <span className="text-[10px] text-slate-600 dark:text-slate-300 max-w-[120px] truncate">{f.name}</span>
                               </a>
                             )}
                           </div>
@@ -657,7 +648,7 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
               )}
             </div>
 
-            <div className="p-4 border-t border-gray-100 dark:border-white/5 shrink-0">
+            <div className="p-4 border-t border-black/5 dark:border-white/5 shrink-0">
               {newFiles.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-2">
                   {newFiles.map((f, i) => (
@@ -672,11 +663,11 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
               <textarea value={newComment} onChange={e => setNewComment(e.target.value)}
                 onPaste={handlePaste}
                 placeholder="Escreva um comentário ou cole um print (Ctrl+V)..."
-                className="w-full bg-white dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 outline-none focus:border-violet-500/50 resize-none h-20 mb-2 transition-colors" />
+                className="w-full bg-dark-card border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-xs text-dark-text placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-violet-500/50 resize-none h-20 mb-2 transition-colors" />
               <div className="flex items-center justify-between">
                 <div>
                   <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
-                  <button onClick={() => fileInputRef.current?.click()} className="p-1.5 text-gray-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/10 rounded-lg transition-colors" title="Anexar arquivo ou imagem">
+                  <button onClick={() => fileInputRef.current?.click()} className="p-1.5 text-slate-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/10 rounded-lg transition-colors" title="Anexar arquivo ou imagem">
                     <Paperclip size={16} />
                   </button>
                 </div>

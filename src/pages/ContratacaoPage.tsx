@@ -10,6 +10,28 @@ import { useAuth } from '../contexts/AuthContext';
 import { CandidateDetailModal } from '../components/CandidateDetailModal';
 import OptionPicker from '../components/ui/OptionPicker';
 import { confirmDialog } from '@/src/lib/confirm';
+import { Modal } from '../components/ui/Modal';
+import { Abas } from '../components/ui/Abas';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
+import { CarregandoBloco } from '../components/LoadingSpinner';
+
+/**
+ * Ponte para o confirmDialog (18/11/2026): os handlers continuam pondo
+ * {msg, onConfirm} no estado, como antes; quem desenha a pergunta agora é o
+ * diálogo padrão. Confirmou → onConfirm (que limpa o estado); cancelou → limpa.
+ */
+function useConfirmacaoPadrao(
+  pedido: { msg: string; onConfirm: () => void } | null,
+  limpar: () => void,
+) {
+  useEffect(() => {
+    if (!pedido) return;
+    let vivo = true;
+    confirmDialog({ title: 'Confirmar exclusão', message: pedido.msg, confirmText: 'Excluir', danger: true })
+      .then(ok => { if (!vivo) return; if (ok) pedido.onConfirm(); else limpar(); });
+    return () => { vivo = false; };
+  }, [pedido]);
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -61,18 +83,11 @@ function getActionBadge(acao: string | null, dataAcao: string | null): { label: 
 // ── Modal Overlay ─────────────────────────────────────────────────────────────
 
 function ModalOverlay({ onClose, title, children }: { onClose: () => void; title: string; children: React.ReactNode }) {
+  // Agora é o <Modal> padrão (fecha com clique fora, como antes, e com Esc)
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 outline-none"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md bg-white dark:bg-[#1e1e2e] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto outline-none">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-base font-black text-light-text dark:text-dark-text">{title}</h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-400 transition-colors"><X size={15} /></button>
-        </div>
-        {children}
-      </div>
-    </div>
+    <Modal isOpen onClose={onClose} title={title} maxWidth="max-w-md" className="max-h-[90vh]">
+      {children}
+    </Modal>
   );
 }
 
@@ -122,6 +137,7 @@ function DocumentsEditor({ userName }: { userName: string }) {
   const [newSectionName, setNewSectionName] = useState('');
   const sectionInputRef = useRef<HTMLInputElement>(null);
   const [confirmAction, setConfirmAction] = useState<{ msg: string; onConfirm: () => void } | null>(null);
+  useConfirmacaoPadrao(confirmAction, () => setConfirmAction(null));
 
   const loadDocs = useCallback(async () => {
     try {
@@ -257,7 +273,7 @@ function DocumentsEditor({ userName }: { userName: string }) {
                   <div className="ml-4 pl-2 border-l border-white/5 space-y-0.5 mt-0.5">
                     {secDocs.map(doc => (
                       <div key={doc.id} onClick={() => setActiveDoc(doc)}
-                        className={`group flex items-center gap-2 px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors text-sm ${activeDoc?.id === doc.id ? 'bg-violet-500/15 text-violet-400 font-bold' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-white/5'}`}>
+                        className={`group flex items-center gap-2 px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors text-sm ${activeDoc?.id === doc.id ? 'bg-violet-500/15 text-violet-600 dark:text-violet-400 font-bold' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-white/5'}`}>
                         <FileText size={13} className="shrink-0" />
                         <span className="truncate flex-1">{doc.title || 'Sem título'}</span>
                         <button onClick={e => { e.stopPropagation(); handleDeleteDoc(doc.id); }} className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded hover:bg-rose-500/20 hover:text-rose-400 flex items-center justify-center transition-all shrink-0"><Trash2 size={10} /></button>
@@ -272,10 +288,10 @@ function DocumentsEditor({ userName }: { userName: string }) {
             );
           })}
           {unsectionedDocs.length > 0 && (
-            <div className="mt-2 pt-2 border-t border-white/5">
+            <div className="mt-2 pt-2 border-t border-black/5 dark:border-white/5">
               {unsectionedDocs.map(doc => (
                 <div key={doc.id} onClick={() => setActiveDoc(doc)}
-                  className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer transition-colors text-sm ${activeDoc?.id === doc.id ? 'bg-violet-500/15 text-violet-400 font-bold' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-white/5'}`}>
+                  className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer transition-colors text-sm ${activeDoc?.id === doc.id ? 'bg-violet-500/15 text-violet-600 dark:text-violet-400 font-bold' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-white/5'}`}>
                   <FileText size={13} className="shrink-0" />
                   <span className="truncate flex-1">{doc.title || 'Sem título'}</span>
                   <button onClick={e => { e.stopPropagation(); handleDeleteDoc(doc.id); }} className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded hover:bg-rose-500/20 hover:text-rose-400 flex items-center justify-center transition-all shrink-0"><Trash2 size={10} /></button>
@@ -289,7 +305,7 @@ function DocumentsEditor({ userName }: { userName: string }) {
             <div className="flex gap-1.5">
               <input ref={sectionInputRef} autoFocus value={newSectionName} onChange={e => setNewSectionName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleCreateSection(); if (e.key === 'Escape') { setAddingSectionName(false); setNewSectionName(''); } }}
-                placeholder="Nome da sessão..." className="flex-1 bg-dark-bg border border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-violet-500" />
+                placeholder="Nome da sessão..." className="flex-1 bg-black/[0.03] dark:bg-dark-bg border border-black/10 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-dark-text placeholder:text-slate-500 focus:outline-none focus:border-violet-500" />
               <button onClick={handleCreateSection} className="px-2.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-xs font-bold transition-colors">OK</button>
             </div>
           ) : (
@@ -320,7 +336,7 @@ function DocumentsEditor({ userName }: { userName: string }) {
             </div>
             <div className="flex-1 overflow-y-auto px-8 sm:px-16 py-10 max-w-4xl mx-auto w-full">
               <input ref={titleRef} value={activeDoc.title} onChange={e => updateField('title', e.target.value)} placeholder="Sem título"
-                className="w-full text-3xl sm:text-4xl font-extrabold text-slate-800 dark:text-white bg-transparent border-none focus:outline-none placeholder:text-slate-300 dark:placeholder:text-slate-600 mb-6" />
+                className="w-full text-3xl sm:text-4xl font-extrabold text-dark-text bg-transparent border-none focus:outline-none placeholder:text-slate-300 dark:placeholder:text-slate-600 mb-6" />
               <textarea value={activeDoc.content} onChange={e => updateField('content', e.target.value)} placeholder="Comece a escrever..."
                 ref={el => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
                 className="w-full min-h-[400px] text-base text-slate-600 dark:text-slate-300 leading-relaxed bg-transparent border-none focus:outline-none placeholder:text-slate-300 dark:placeholder:text-slate-600 resize-none overflow-hidden" />
@@ -339,24 +355,6 @@ function DocumentsEditor({ userName }: { userName: string }) {
         )}
       </div>
 
-      {/* Custom Confirm Modal */}
-      {confirmAction && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setConfirmAction(null)}>
-          <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-rose-500/15 flex items-center justify-center shrink-0">
-                <Trash2 size={18} className="text-rose-400" />
-              </div>
-              <h3 className="text-white font-bold text-base">Confirmar Exclusão</h3>
-            </div>
-            <p className="text-slate-400 text-sm mb-6 leading-relaxed">{confirmAction.msg}</p>
-            <div className="flex gap-3 justify-end">
-              <button onClick={() => setConfirmAction(null)} className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors">Cancelar</button>
-              <button onClick={confirmAction.onConfirm} className="px-4 py-2 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors">Excluir</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -400,6 +398,14 @@ function ContratosManager({ userName }: { userName: string }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ name: '', description: '' });
   const [confirmDelete, setConfirmDelete] = useState<HiringContract | null>(null);
+  // Pergunta de exclusão pelo confirmDialog padrão (antes: popup próprio)
+  useEffect(() => {
+    if (!confirmDelete) return;
+    let vivo = true;
+    confirmDialog({ title: 'Excluir contrato', message: `Excluir ${confirmDelete.name}? Esta ação não pode ser desfeita.`, confirmText: 'Excluir', danger: true })
+      .then(ok => { if (!vivo) return; if (ok) handleDelete(confirmDelete); else setConfirmDelete(null); });
+    return () => { vivo = false; };
+  }, [confirmDelete]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadContracts = useCallback(async () => {
@@ -495,12 +501,12 @@ function ContratosManager({ userName }: { userName: string }) {
         <div className="relative flex-1 max-w-md">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar contrato…"
-            className="w-full bg-light-bg dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-light-text dark:text-dark-text placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 transition-colors pl-9" />
+            className="w-full bg-light-bg dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 transition-colors pl-9" />
         </div>
         <input ref={fileInputRef} type="file" multiple className="hidden" onChange={e => handleUpload(e.target.files)}
           accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg,.webp" />
         <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
-          className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors shadow-lg shadow-violet-500/20 disabled:opacity-50">
+          className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50">
           {uploading ? (
             <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Enviando...</>
           ) : (
@@ -531,18 +537,14 @@ function ContratosManager({ userName }: { userName: string }) {
 
         {/* Loading */}
         {loading ? (
-          <div className="flex justify-center items-center h-40">
-            <div className="w-10 h-10 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-          </div>
+          <CarregandoBloco className="h-40" />
         ) : filtered.length === 0 ? (
-          <div className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-12 text-center">
-            <ScrollText size={32} className="text-slate-500 dark:text-slate-600 mx-auto mb-3" />
-            <p className="text-slate-400 text-sm font-medium">
-              {search ? 'Nenhum contrato encontrado' : 'Nenhum contrato anexado'}
-            </p>
-            <p className="text-slate-500 text-xs mt-1">
-              {search ? 'Tente outro termo de busca' : 'Clique em "Anexar Contrato" para começar'}
-            </p>
+          <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl">
+            <EstadoVazio
+              Icone={ScrollText}
+              titulo={search ? 'Nenhum contrato encontrado' : 'Nenhum contrato anexado'}
+              descricao={search ? 'Tente outro termo de busca' : 'Clique em "Anexar Contrato" para começar'}
+            />
           </div>
         ) : (
           <div className="grid gap-3">
@@ -551,7 +553,7 @@ function ContratosManager({ userName }: { userName: string }) {
               const isEditing = editingId === contract.id;
               return (
                 <div key={contract.id}
-                  className="group bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-4 hover:border-violet-500/20 transition-all duration-200">
+                  className="group bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-4 hover:border-violet-500/20 transition-all duration-200">
                   <div className="flex items-center gap-4">
                     {/* File type badge */}
                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${icon.color}`}>
@@ -565,19 +567,19 @@ function ContratosManager({ userName }: { userName: string }) {
                           <input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
                             onKeyDown={e => { if (e.key === 'Enter') handleSaveEdit(); if (e.key === 'Escape') setEditingId(null); }}
                             autoFocus
-                            className="w-full bg-light-bg dark:bg-dark-bg border border-white/10 rounded-lg px-3 py-1.5 text-sm text-light-text dark:text-white focus:outline-none focus:border-violet-500/50" />
+                            className="w-full bg-light-bg dark:bg-dark-bg border border-black/10 dark:border-white/10 rounded-lg px-3 py-1.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
                           <input value={editForm.description} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))}
                             onKeyDown={e => { if (e.key === 'Enter') handleSaveEdit(); if (e.key === 'Escape') setEditingId(null); }}
                             placeholder="Descrição (opcional)"
-                            className="w-full bg-light-bg dark:bg-dark-bg border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-400 placeholder:text-slate-600 focus:outline-none focus:border-violet-500/50" />
+                            className="w-full bg-light-bg dark:bg-dark-bg border border-black/10 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-400 placeholder:text-slate-600 focus:outline-none focus:border-violet-500/50" />
                           <div className="flex gap-2">
-                            <button onClick={() => setEditingId(null)} className="text-xs text-slate-400 hover:text-white px-3 py-1 rounded-lg hover:bg-white/5 transition-colors">Cancelar</button>
+                            <button onClick={() => setEditingId(null)} className="text-xs text-slate-400 hover:text-dark-text px-3 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">Cancelar</button>
                             <button onClick={handleSaveEdit} className="text-xs text-white font-bold px-3 py-1 rounded-lg bg-violet-600 hover:bg-violet-700 transition-colors">Salvar</button>
                           </div>
                         </div>
                       ) : (
                         <>
-                          <p className="text-sm font-bold text-light-text dark:text-dark-text truncate">{contract.name}</p>
+                          <p className="text-sm font-bold text-dark-text truncate">{contract.name}</p>
                           {contract.description && <p className="text-xs text-slate-400 truncate mt-0.5">{contract.description}</p>}
                           <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-500">
                             <span className="flex items-center gap-1"><File size={10} /> {contract.file_name}</span>
@@ -596,7 +598,7 @@ function ContratosManager({ userName }: { userName: string }) {
                           <Download size={16} />
                         </button>
                         <button onClick={() => { setEditingId(contract.id); setEditForm({ name: contract.name, description: contract.description || '' }); }}
-                          className="w-9 h-9 rounded-xl hover:bg-white/5 flex items-center justify-center text-slate-400 hover:text-white transition-colors" title="Editar">
+                          className="w-9 h-9 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-center text-slate-400 hover:text-dark-text transition-colors" title="Editar">
                           <Pencil size={14} />
                         </button>
                         <button onClick={() => setConfirmDelete(contract)}
@@ -613,33 +615,13 @@ function ContratosManager({ userName }: { userName: string }) {
         )}
       </div>
 
-      {/* Delete Confirm Modal */}
-      {confirmDelete && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setConfirmDelete(null)}>
-          <div className="bg-light-card dark:bg-[#1a1a2e] border border-slate-200 dark:border-white/10 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-rose-500/15 flex items-center justify-center shrink-0">
-                <Trash2 size={18} className="text-rose-400" />
-              </div>
-              <h3 className="text-light-text dark:text-white font-bold text-base">Excluir Contrato</h3>
-            </div>
-            <p className="text-slate-400 text-sm mb-6 leading-relaxed">
-              Excluir <strong className="text-light-text dark:text-white">{confirmDelete.name}</strong>? Esta ação não pode ser desfeita.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button onClick={() => setConfirmDelete(null)} className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-light-text dark:hover:text-white bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 rounded-xl transition-colors">Cancelar</button>
-              <button onClick={() => handleDelete(confirmDelete)} className="px-4 py-2 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors">Excluir</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
 // ── Input class ───────────────────────────────────────────────────────────────
 
-const inputCls = "w-full bg-light-bg dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-light-text dark:text-dark-text placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 transition-colors";
+const inputCls = "w-full bg-light-bg dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 transition-colors";
 const labelCls = "text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest block mb-1.5";
 
 // ── Main Component ────────────────────────────────────────────────────────────
@@ -695,8 +677,9 @@ export default function ContratacaoPage() {
   // Main page tabs
   const [mainTab, setMainTab] = useState<'formularios' | 'documentos' | 'contratos'>('formularios');
 
-  // Confirm modal (shared)
+  // Confirm modal (shared) — desenhado pelo confirmDialog padrão
   const [confirmAction, setConfirmAction] = useState<{ msg: string; onConfirm: () => void } | null>(null);
+  useConfirmacaoPadrao(confirmAction, () => setConfirmAction(null));
 
   // ── Fetch folders ──────────────────────────────────────────────────────────
 
@@ -1044,7 +1027,7 @@ export default function ContratacaoPage() {
               <ChevronLeft size={14} /> Voltar para Seleções
             </button>
             <div className="flex items-center gap-3">
-              <SplitHeadline text="Contratação / " highlight={activeFolder.nome} className="text-2xl font-black tracking-tight text-light-text dark:text-dark-text" />
+              <SplitHeadline text="Contratação / " highlight={activeFolder.nome} />
               {activeFolder.cargo && (
                 <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-violet-500/10 text-violet-400">
                   {activeFolder.cargo}
@@ -1061,23 +1044,23 @@ export default function ContratacaoPage() {
               setEditingCandidate(null);
               setCandidateModal(true);
             }}
-              className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors shadow-lg shadow-violet-500/20">
+              className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors">
               <UserPlus size={15} /> Candidato
             </button>
             <div className="relative">
               <button onClick={() => setMoreMenuOpen(!moreMenuOpen)}
-                className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
+                className="w-10 h-10 rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 hover:bg-black/10 dark:hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-dark-text transition-colors">
                 <MoreVertical size={16} />
               </button>
               {moreMenuOpen && (
-                <div className="absolute right-0 top-full mt-2 w-56 bg-[#1a1a2e] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden">
+                <div className="absolute right-0 top-full mt-2 w-56 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden">
                   <button onClick={() => { setShowApproved(!showApproved); setMoreMenuOpen(false); }}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors">
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-600 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/5 hover:text-dark-text transition-colors">
                     {showApproved ? <EyeOff size={14} className="text-emerald-400" /> : <Eye size={14} className="text-slate-500" />}
                     {showApproved ? 'Ocultar aprovados' : 'Mostrar aprovados'}
                   </button>
                   <button onClick={() => { setShowRejected(!showRejected); setMoreMenuOpen(false); }}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors border-t border-white/5">
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-600 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/5 hover:text-dark-text transition-colors border-t border-black/5 dark:border-white/5">
                     {showRejected ? <EyeOff size={14} className="text-rose-400" /> : <Eye size={14} className="text-slate-500" />}
                     {showRejected ? 'Ocultar reprovados' : 'Mostrar reprovados'}
                   </button>
@@ -1119,7 +1102,7 @@ export default function ContratacaoPage() {
                         {col === 'Aprovado' ? <Trophy size={20} className="text-white" /> : col === 'Reprovado' ? <XCircle size={20} className="text-white" /> : <FolderOpen size={20} className="text-white" />}
                       </div>
                       <div>
-                        <h3 className="font-bold text-gray-900 dark:text-white text-base leading-tight">{col}</h3>
+                        <h3 className="font-bold text-dark-text text-base leading-tight">{col}</h3>
                         <p className="text-gray-500 dark:text-slate-400 text-xs mt-0.5">{colCandidates.length} tickets</p>
                       </div>
                     </div>
@@ -1129,7 +1112,7 @@ export default function ContratacaoPage() {
                         <Settings size={16} />
                       </button>
                       {colSettingsOpen === col && (
-                        <div className="absolute right-0 top-full mt-1 w-56 bg-[#1a1a2e] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="absolute right-0 top-full mt-1 w-56 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden" onClick={e => e.stopPropagation()}>
                           {colRenaming === col ? (
                             <div className="p-3">
                               <label className="text-xs text-slate-400 font-bold mb-1.5 block">Novo nome</label>
@@ -1138,11 +1121,11 @@ export default function ContratacaoPage() {
                                 value={colNewName}
                                 onChange={e => setColNewName(e.target.value)}
                                 onKeyDown={e => { if (e.key === 'Enter') handleRenameColumn(col); if (e.key === 'Escape') { setColRenaming(null); setColSettingsOpen(null); } }}
-                                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 mb-2"
+                                className="w-full bg-black/[0.03] dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-dark-text placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 mb-2"
                                 placeholder={col}
                               />
                               <div className="flex gap-2">
-                                <button onClick={() => { setColRenaming(null); setColSettingsOpen(null); }} className="flex-1 text-xs text-slate-400 hover:text-white py-1.5 rounded-lg hover:bg-white/5 transition-colors">Cancelar</button>
+                                <button onClick={() => { setColRenaming(null); setColSettingsOpen(null); }} className="flex-1 text-xs text-slate-400 hover:text-dark-text py-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">Cancelar</button>
                                 <button onClick={() => handleRenameColumn(col)} className="flex-1 text-xs text-white font-bold py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 transition-colors">Salvar</button>
                               </div>
                             </div>
@@ -1150,14 +1133,14 @@ export default function ContratacaoPage() {
                             <>
                               <button
                                 onClick={() => { setColRenaming(col); setColNewName(col); }}
-                                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors"
+                                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-600 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/5 hover:text-dark-text transition-colors"
                               >
                                 <Pencil size={14} className="text-slate-500" />
                                 Renomear etapa
                               </button>
                               <button
                                 onClick={() => handleDeleteColumn(col)}
-                                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors border-t border-white/5"
+                                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors border-t border-black/5 dark:border-white/5"
                               >
                                 <Trash2 size={14} />
                                 Excluir etapa
@@ -1227,7 +1210,7 @@ export default function ContratacaoPage() {
                                       {c.nome.charAt(0).toUpperCase()}
                                     </div>
                                     <div>
-                                      <h4 className="font-bold text-sm text-gray-900 dark:text-white line-clamp-1">{c.nome}</h4>
+                                      <h4 className="font-bold text-sm text-dark-text line-clamp-1">{c.nome}</h4>
                                       <div className="flex flex-wrap items-center gap-1 mt-1">
                                         <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                                           c.col === 'Aprovado'
@@ -1297,7 +1280,7 @@ export default function ContratacaoPage() {
             {/* + New Column */}
             <div className="flex-shrink-0 w-[200px]">
               {addingCol ? (
-                <div className="bg-light-card dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-white/10 p-4">
+                <div className="bg-dark-card rounded-2xl border border-slate-200 dark:border-white/10 p-4">
                   <input
                     autoFocus
                     value={newColName}
@@ -1398,24 +1381,6 @@ export default function ContratacaoPage() {
           />
         )}
 
-        {/* Confirm Modal (Kanban) */}
-        {confirmAction && (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setConfirmAction(null)}>
-            <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-rose-500/15 flex items-center justify-center shrink-0">
-                  <Trash2 size={18} className="text-rose-400" />
-                </div>
-                <h3 className="text-white font-bold text-base">Confirmar Exclusão</h3>
-              </div>
-              <p className="text-slate-400 text-sm mb-6 leading-relaxed">{confirmAction.msg}</p>
-              <div className="flex gap-3 justify-end">
-                <button onClick={() => setConfirmAction(null)} className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors">Cancelar</button>
-                <button onClick={confirmAction.onConfirm} className="px-4 py-2 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-colors">Excluir</button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -1429,10 +1394,7 @@ export default function ContratacaoPage() {
       {/* Header */}
       <div className="px-6 md:px-8 pt-8 pb-4 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <SplitHeadline text="Processos de " highlight="Contratação" className="text-2xl font-black tracking-tight text-light-text dark:text-dark-text" />
-          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">
-            Gerencie seleções e candidatos
-          </p>
+          <SplitHeadline text="Processos de " highlight="Contratação" subtitle="Gerencie seleções e candidatos" subtitleClassName="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5" />
         </div>
         {mainTab === 'formularios' && (
           <button onClick={() => {
@@ -1440,42 +1402,30 @@ export default function ContratacaoPage() {
             setEditingFolder(null);
             setFolderModal('create');
           }}
-            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors shadow-lg shadow-violet-500/20">
+            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-colors">
             <Plus size={15} /> Adicionar Seleção
           </button>
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="px-6 md:px-8 pb-4 flex items-center gap-1">
-        <button
-          onClick={() => setMainTab('formularios')}
-          className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${mainTab === 'formularios' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-        >
-          <FolderOpen size={14} className="inline mr-2 -mt-0.5" />
-          Formulários
-        </button>
-        <button
-          onClick={() => setMainTab('documentos')}
-          className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${mainTab === 'documentos' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-        >
-          <FileText size={14} className="inline mr-2 -mt-0.5" />
-          Documentos
-        </button>
-        <button
-          onClick={() => setMainTab('contratos')}
-          className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${mainTab === 'contratos' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-        >
-          <ScrollText size={14} className="inline mr-2 -mt-0.5" />
-          Contratos
-        </button>
+      {/* Abas */}
+      <div className="px-6 md:px-8 pb-4">
+        <Abas
+          abas={[
+            { id: 'formularios', rotulo: 'Formulários', Icone: FolderOpen },
+            { id: 'documentos', rotulo: 'Documentos', Icone: FileText },
+            { id: 'contratos', rotulo: 'Contratos', Icone: ScrollText },
+          ]}
+          ativa={mainTab}
+          onChange={(id) => setMainTab(id as typeof mainTab)}
+        />
       </div>
 
       {/* Stats - only on formularios */}
       {mainTab === 'formularios' && (
       <div className="px-6 md:px-8 pb-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
         {stats.map(s => (
-          <div key={s.label} className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 transition-colors duration-200">
+          <div key={s.label} className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 transition-colors duration-200">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{s.label}</span>
               <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${s.cls.split(' ')[1]}`}>
@@ -1485,7 +1435,7 @@ export default function ContratacaoPage() {
                 {s.label === 'Em Andamento' && <Briefcase size={15} className={s.cls.split(' ')[0]} />}
               </div>
             </div>
-            <div className="text-2xl font-black text-light-text dark:text-dark-text">{s.value}</div>
+            <div className="text-2xl font-black text-dark-text">{s.value}</div>
           </div>
         ))}
       </div>
@@ -1505,15 +1455,11 @@ export default function ContratacaoPage() {
 
       {/* Loading */}
       {loading ? (
-        <div className="flex justify-center items-center h-40">
-          <div className="w-10 h-10 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-        </div>
+        <CarregandoBloco className="h-40" />
       ) : filteredFolders.length === 0 ? (
         <div className="px-6 md:px-8 pb-8">
-          <div className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-12 text-center">
-            <FolderOpen size={32} className="text-slate-500 dark:text-slate-600 mx-auto mb-3" />
-            <p className="text-slate-400 text-sm font-medium">Nenhuma seleção encontrada</p>
-            <p className="text-slate-500 text-xs mt-1">Clique em "Adicionar Seleção" para começar</p>
+          <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl">
+            <EstadoVazio Icone={FolderOpen} titulo="Nenhuma seleção encontrada" descricao='Clique em "Adicionar Seleção" para começar' />
           </div>
         </div>
       ) : (
@@ -1526,7 +1472,7 @@ export default function ContratacaoPage() {
               return (
                 <div key={folder.id}
                   onClick={() => setActiveFolder(folder)}
-                  className="group bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-5 cursor-pointer hover:border-violet-500/30 hover:shadow-lg hover:shadow-violet-500/5 transition-all duration-200">
+                  className="group bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-5 cursor-pointer hover:border-violet-500/30 hover:shadow-sm transition-colors duration-200">
                   {/* Icon + Title */}
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3 min-w-0">
@@ -1534,23 +1480,23 @@ export default function ContratacaoPage() {
                         <FolderOpen size={18} className="text-violet-400" />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-bold text-light-text dark:text-dark-text truncate">{folder.nome}</p>
+                        <p className="text-sm font-bold text-dark-text truncate">{folder.nome}</p>
                         {folder.cargo && <p className="text-[11px] text-slate-400 truncate">{folder.cargo}</p>}
                       </div>
                     </div>
                     <div className="relative" onClick={e => e.stopPropagation()}>
                       <button onClick={() => setFolderMenuOpen(folderMenuOpen === folder.id ? null : folder.id)}
-                        className="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
+                        className="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-dark-text transition-colors">
                         <MoreVertical size={14} />
                       </button>
                       {folderMenuOpen === folder.id && (
-                        <div className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a2e] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden">
+                        <div className="absolute right-0 top-full mt-1 w-48 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden">
                           <button onClick={() => {
                             const baseUrl = window.location.origin;
                             navigator.clipboard.writeText(`${baseUrl}/?apply=${folder.id}`);
                             setFolderMenuOpen(null);
                           }}
-                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors">
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/5 hover:text-dark-text transition-colors">
                             <LinkIcon size={13} className="text-violet-400" />
                             Copiar link
                           </button>
@@ -1560,12 +1506,12 @@ export default function ContratacaoPage() {
                             setFolderModal('edit');
                             setFolderMenuOpen(null);
                           }}
-                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors border-t border-white/5">
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/5 hover:text-dark-text transition-colors border-t border-black/5 dark:border-white/5">
                             <Pencil size={13} className="text-slate-500" />
                             Editar seleção
                           </button>
                           <button onClick={() => { handleDeleteFolder(folder.id); setFolderMenuOpen(null); }}
-                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors border-t border-white/5">
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors border-t border-black/5 dark:border-white/5">
                             <Trash2 size={13} />
                             Excluir seleção
                           </button>
@@ -1578,7 +1524,7 @@ export default function ContratacaoPage() {
                             );
                             setFolderMenuOpen(null);
                           }}
-                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors border-t border-white/5">
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/5 hover:text-dark-text transition-colors border-t border-black/5 dark:border-white/5">
                             <FileText size={13} className="text-blue-400" />
                             Editar formulário
                           </button>
@@ -1651,13 +1597,11 @@ export default function ContratacaoPage() {
 
       {/* Form Editor Modal */}
       {formEditorFolder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 outline-none">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setFormEditorFolder(null)} />
-          <div className="relative z-10 w-full max-w-2xl bg-white dark:bg-[#1e1e2e] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col outline-none">
+        <Modal isOpen onClose={() => setFormEditorFolder(null)} semCabecalho semPadding maxWidth="max-w-2xl" className="max-h-[90vh]">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/10 shrink-0">
               <div>
-                <h2 className="text-base font-black text-slate-800 dark:text-white">Editar Formulário</h2>
+                <h2 className="text-base font-black text-dark-text">Editar Formulário</h2>
                 <p className="text-[10px] text-slate-400 uppercase tracking-widest">{formEditorFolder.nome} · {formEditorFields.length} perguntas</p>
               </div>
               <button onClick={() => setFormEditorFolder(null)} className="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-400"><X size={15} /></button>
@@ -1693,7 +1637,7 @@ export default function ContratacaoPage() {
                       <input
                         value={field.label}
                         onChange={e => { const arr = [...formEditorFields]; arr[idx] = { ...arr[idx], label: e.target.value }; setFormEditorFields(arr); }}
-                        className="flex-1 text-sm font-medium bg-transparent border-none outline-none text-slate-800 dark:text-white placeholder:text-slate-400"
+                        className="flex-1 text-sm font-medium bg-transparent border-none outline-none text-dark-text placeholder:text-slate-400"
                         placeholder="Texto da pergunta..."
                       />
                     </div>
@@ -1755,7 +1699,7 @@ export default function ContratacaoPage() {
                   const newKey = `campo_${Date.now()}`;
                   setFormEditorFields(prev => [...prev, { key: newKey, label: '', type: 'text', placeholder: '', required: false }]);
                 }}
-                className="flex items-center gap-2 text-xs font-bold text-violet-500 hover:text-violet-400 transition-colors"
+                className="flex items-center gap-2 text-xs font-bold text-violet-500 hover:text-violet-600 transition-colors"
               >
                 <Plus size={14} /> Adicionar pergunta
               </button>
@@ -1784,8 +1728,7 @@ export default function ContratacaoPage() {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* End of Formulários tab content */}

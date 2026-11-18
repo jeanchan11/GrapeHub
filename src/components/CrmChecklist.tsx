@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle2, Circle, Plus, Trash2, Check, GripVertical, X, Settings, Save, ChevronDown, MessageSquare, FileText } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import OptionPicker from './ui/OptionPicker';
+import { Modal } from './ui/Modal';
+import { CarregandoBloco } from './LoadingSpinner';
 
 interface ChecklistItem {
   id: number;
@@ -136,8 +138,7 @@ const TemplateModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   return (
     <>
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-[#18181b] border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl">
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-lg" className="max-h-[85vh]" fecharAoClicarFora={false} fecharComEsc={false}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-white/10">
           <div className="flex items-center gap-3">
@@ -153,7 +154,7 @@ const TemplateModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-1">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1">
           {BLOCKS.map(block => {
             const blockItems = items.filter(i => i.block === block.id);
             return (
@@ -276,13 +277,11 @@ const TemplateModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             )}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
 
     {/* Notes Edit Modal (Template) */}
     {editingNotes && (
-      <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-        <div className="bg-white dark:bg-[#18181b] border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-sm shadow-2xl">
+      <Modal isOpen onClose={() => setEditingNotes(null)} semCabecalho semPadding maxWidth="max-w-sm" fecharAoClicarFora={false} fecharComEsc={false}>
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-white/10">
             <div className="flex items-center gap-2">
               <MessageSquare size={16} className="text-violet-500" />
@@ -332,8 +331,7 @@ const TemplateModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               )}
             </button>
           </div>
-        </div>
-      </div>
+      </Modal>
     )}
     </>
   );
@@ -451,8 +449,7 @@ const ChecklistBlock: React.FC<{
 
     {/* Notes Popup */}
     {notesItem && (
-      <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-        <div className="bg-white dark:bg-[#18181b] border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-sm shadow-2xl">
+      <Modal isOpen onClose={() => setNotesItem(null)} semCabecalho semPadding maxWidth="max-w-sm" fecharAoClicarFora={false}>
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-white/10">
             <div className="flex items-center gap-2">
               <MessageSquare size={16} className="text-violet-500" />
@@ -472,8 +469,7 @@ const ChecklistBlock: React.FC<{
               <p className="text-sm text-slate-400 italic">Sem observação para esta tarefa</p>
             )}
           </div>
-        </div>
-      </div>
+      </Modal>
     )}
     </>
   );
@@ -548,6 +544,11 @@ const CrmChecklist: React.FC<CrmChecklistProps> = ({ clientId, onCompleteExit, a
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ completed: newCompleted, completed_by: by, completed_at: at })
       });
+      // Histórico do cliente: registra o que foi feito na saída (desmarcar também, para não sumir)
+      fetch(`/api/clientes/${encodeURIComponent(clientId)}/historico`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'Saída', content: newCompleted ? `Checklist de saída: concluiu "${item.item}"` : `Checklist de saída: desmarcou "${item.item}"`, meta: { evento: 'checklist', item_id: item.id, concluido: newCompleted } }),
+              }).catch(() => {});
     } catch { fetchItems(); }
   };
 
@@ -613,10 +614,7 @@ const CrmChecklist: React.FC<CrmChecklistProps> = ({ clientId, onCompleteExit, a
   const isAllDone = totalCount > 0 && completedCount === totalCount;
 
   if (isLoading) return (
-    <div className="py-12 flex flex-col items-center gap-3">
-      <div className="w-8 h-8 border-4 border-violet-500/20 border-t-violet-500 rounded-full animate-spin" />
-      <p className="text-slate-500 text-sm">Carregando checklist...</p>
-    </div>
+    <CarregandoBloco className="py-12" />
   );
 
   return (
@@ -685,8 +683,7 @@ const CrmChecklist: React.FC<CrmChecklistProps> = ({ clientId, onCompleteExit, a
 
       {/* Apply Template Confirm Modal */}
       {showApplyConfirm && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-[#18181b] border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-sm shadow-2xl">
+        <Modal isOpen onClose={() => setShowApplyConfirm(false)} semCabecalho semPadding maxWidth="max-w-sm" fecharAoClicarFora={false}>
             <div className="px-6 py-5">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center shrink-0">
@@ -710,13 +707,12 @@ const CrmChecklist: React.FC<CrmChecklistProps> = ({ clientId, onCompleteExit, a
               </button>
               <button
                 onClick={handleApplyTemplate}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-emerald-500 hover:bg-emerald-600 text-white transition-colors"
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-violet-600 hover:bg-violet-700 text-white transition-colors"
               >
                 Confirmar
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

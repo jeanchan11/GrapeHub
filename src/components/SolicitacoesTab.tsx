@@ -1,7 +1,9 @@
 // Aba "Solicitações" do modal do projeto — o time cria pedidos para o cliente
 // (criativos, feedback, roteiros...). Aparecem no portal do cliente.
 import React, { useState, useEffect } from 'react';
-import { Loader2, Plus, Trash2, Check, Clock, Image as ImageIcon, MessageSquare, FileText, Sparkles, Send } from 'lucide-react';
+import { Loader2, Plus, Trash2, Check, Clock, Image as ImageIcon, MessageSquare, FileText, Sparkles, Send, Inbox, Paperclip } from 'lucide-react';
+import { CarregandoBloco } from './LoadingSpinner';
+import { EstadoVazio } from './ui/EstadoVazio';
 import MediaLightbox, { LbFile } from './MediaLightbox';
 import { confirmDialog } from '@/src/lib/confirm';
 
@@ -103,19 +105,16 @@ const SolicitacoesTab: React.FC<{ projectId: string; authorName?: string }> = ({
 
       {/* Lista */}
       {loading ? (
-        <div className="flex justify-center py-12"><Loader2 className="animate-spin text-violet-500" size={28} /></div>
+        <CarregandoBloco />
       ) : reqs.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-12 text-slate-400">
-          <Plus size={26} className="opacity-40" />
-          <p className="text-sm">Nenhuma solicitação ainda.</p>
-        </div>
+        <EstadoVazio Icone={Inbox} titulo="Nenhuma solicitação ainda." />
       ) : (
         <div className="space-y-2.5">
           {reqs.map(req => {
             const meta = typeMeta(req.type); const Icon = meta.icon;
             const done = req.status === 'concluida';
             return (
-              <div key={req.id} className={`group flex items-start gap-3 p-4 rounded-2xl border transition-all ${done ? 'bg-emerald-500/[0.04] border-emerald-500/20' : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10'}`}>
+              <div key={req.id} className={`group flex items-start gap-3 p-4 rounded-2xl border transition-all ${done ? 'bg-emerald-500/[0.04] border-emerald-500/20' : 'bg-dark-card border-black/10 dark:border-white/10'}`}>
                 <button onClick={() => toggle(req)} title={done ? 'Reabrir' : 'Marcar como concluída'}
                   className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5 border transition-all ${done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 dark:border-white/20 text-transparent hover:border-violet-500'}`}>
                   <Check size={14} />
@@ -124,12 +123,12 @@ const SolicitacoesTab: React.FC<{ projectId: string; authorName?: string }> = ({
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md border ${meta.cls}`}><Icon size={11} /> {meta.label}</span>
                     <span className="inline-flex items-center gap-1 text-[10px] text-slate-400"><Clock size={11} /> {fmt(req.created_at)}</span>
-                    {done && <span className="text-[10px] font-bold text-emerald-500">✓ Concluída</span>}
+                    {done && <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-500"><Check size={11} /> Concluída</span>}
                   </div>
                   <p className={`text-sm ${done ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{req.description}</p>
                   {Array.isArray(req.files) && req.files.length > 0 && (
                     <div className="mt-2.5">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 mb-1.5">📎 Entregue pelo cliente</p>
+                      <p className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-500 mb-1.5"><Paperclip size={11} /> Entregue pelo cliente</p>
                       <div className="flex flex-wrap gap-2">
                         {req.files.map((f: any, i: number) => {
                           const isImg = String(f.type || '').startsWith('image/');
@@ -151,7 +150,7 @@ const SolicitacoesTab: React.FC<{ projectId: string; authorName?: string }> = ({
                         {(req.comments || []).map((c: any, i: number) => (
                           <div key={i}>
                             <div className="flex items-baseline gap-2">
-                              <span className="text-xs font-bold" style={{ color: c.authorType === 'client' ? '#0d9488' : '#7C3AED' }}>{c.author}</span>
+                              <span className={`text-xs font-bold ${c.authorType === 'client' ? 'text-teal-500' : 'text-violet-500'}`}>{c.author}</span>
                               <span className="text-[10px] text-slate-400">{fmt(c.createdAt)}</span>
                             </div>
                             <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{c.text}</p>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
 import FunilVisual from './FunilVisual';
+import { Cartao, CartaoKpi } from './graficos';
 
 /**
  * Aba "Funil" das Métricas do comercial: o funil de aquisição inteiro, da
@@ -80,22 +81,16 @@ const FunilCompleto: React.FC<{ range: Range; versao?: number }> = ({ range, ver
 
   return (
     <div className="px-6 md:px-8 pb-10">
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-5">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-4">
         {/* Funil */}
-        <div className="bg-dark-card border border-white/10 rounded-2xl p-6 md:p-8">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-sm font-bold text-dark-text">Funil completo</h2>
-              <p className="text-xs text-slate-500">Da impressão ao contrato · taxa entre etapas e custo de cada uma</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Investido</p>
-              <p className="text-lg font-black text-dark-text">{brl(gasto)}</p>
-            </div>
-          </div>
+        <Cartao
+          titulo="Funil completo"
+          legenda="Da impressão ao contrato · taxa entre etapas e custo de cada uma"
+          acao={<span className="pilula-cartao">Investido <b className="numero font-normal">{brl(gasto)}</b></span>}
+        >
 
           {meta?.motivo && (
-            <div className="mb-4 flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300">
+            <div className="mb-4 flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-600 dark:text-amber-300">
               <AlertCircle size={13} className="shrink-0 mt-0.5" /> <span>{meta.motivo}</span>
             </div>
           )}
@@ -107,21 +102,17 @@ const FunilCompleto: React.FC<{ range: Range; versao?: number }> = ({ range, ver
             Reuniões contam todas as origens de lead (a maioria é Meta Ads); contratos contam só os de origem "campanhas".
             Realizada = tem anotação da reunião — marcadas que ainda vão acontecer no período aparecem como não comparecidas.
           </p>
-        </div>
+        </Cartao>
 
         {/* Leitura rápida */}
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-4">
           {[
             { t: 'Do clique ao contrato', v: pctTxt(contratos, cliques), s: `${int(cliques)} cliques → ${int(contratos)} contratos` },
             { t: 'Da visita na LP ao contrato', v: pageview ? pctTxt(contratos, pageview) : '—', s: pageview ? `${int(pageview)} visitas → ${int(contratos)} contratos` : 'aguardando dado da Meta' },
             { t: 'Da reunião marcada ao contrato', v: pctTxt(contratos, marcadas), s: `${int(marcadas)} marcadas → ${int(contratos)} contratos` },
             { t: 'Receita dos contratos do tráfego', v: brl(Number(k.receita_trafego) || 0), s: gasto > 0 ? `${((Number(k.receita_trafego) || 0) / gasto).toFixed(1).replace('.', ',')}× o investido no mês` : '' },
           ].map(c => (
-            <div key={c.t} className="bg-dark-card border border-white/10 rounded-2xl p-5">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{c.t}</p>
-              <p className="text-2xl font-black text-dark-text mt-1">{c.v}</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">{c.s}</p>
-            </div>
+            <CartaoKpi key={c.t} titulo={c.t} valor={<span className="text-[30px]">{c.v}</span>} apoio={c.s || undefined} />
           ))}
         </div>
       </div>

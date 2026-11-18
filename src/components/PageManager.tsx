@@ -32,6 +32,7 @@ import Squad from './icons/Squad';
 import ColorSelector from './ColorSelector';
 import { useMenu } from '../context/MenuContext';
 import EstruturaMenu from './EstruturaMenu';
+import { Abas } from './ui/Abas';
 import { toast } from '@/src/lib/toast';
 
 const availableIcons = [
@@ -347,7 +348,7 @@ const IconSelector = ({ value, onChange }: { value: string, onChange: (icon: str
         ref={buttonRef}
         type="button"
         onClick={() => { setIsOpen(!isOpen); setSearch(''); }}
-        className="w-full flex items-center justify-between bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-light-text dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20"
+        className="w-full flex items-center justify-between bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-dark-text outline-none focus:ring-2 focus:ring-violet-500/20"
       >
         <div className="flex items-center gap-2">
           <SelectedIconComponent size={18} />
@@ -377,7 +378,7 @@ const IconSelector = ({ value, onChange }: { value: string, onChange: (icon: str
               value={search}
               onChange={e => setSearch(e.target.value)}
               autoFocus
-              className="w-full bg-slate-50 dark:bg-dark-bg/50 border border-slate-200 dark:border-white/5 rounded-lg px-3 py-1.5 text-sm text-light-text dark:text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-violet-500/20"
+              className="w-full bg-slate-50 dark:bg-dark-bg/50 border border-slate-200 dark:border-white/5 rounded-lg px-3 py-1.5 text-sm text-dark-text placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-violet-500/20"
             />
           </div>
           <div className="overflow-y-auto flex-1">
@@ -391,7 +392,7 @@ const IconSelector = ({ value, onChange }: { value: string, onChange: (icon: str
                   key={icon.name}
                   type="button"
                   onClick={() => { onChange(icon.name); setIsOpen(false); setSearch(''); }}
-                  className={`w-full flex items-center gap-3 px-4 py-2 hover:bg-violet-500/10 text-sm text-light-text dark:text-white ${icon.name === value ? 'bg-violet-500/10 font-medium' : ''}`}
+                  className={`w-full flex items-center gap-3 px-4 py-2 hover:bg-violet-500/10 text-sm text-dark-text ${icon.name === value ? 'bg-violet-500/10 font-medium' : ''}`}
                 >
                   <IconComponent size={18} />
                   {icon.name}
@@ -413,8 +414,6 @@ const templates = (() => {
     { id: 'contratos', label: 'Calculadora por Contratos' },
     { id: 'comercial-grape', label: 'Calculadora Comercial' },
     { id: 'gestor', label: 'Calculadora Gestor' },
-    { id: 'gerente-operacional', label: 'Calculadora Gerente Operacional' },
-    { id: 'sdr', label: 'Calculadora SDR' },
     { id: 'chamados-grapehub', label: 'Chamados Grapehub' },
     { id: 'ideais-criativos', label: 'Ideais Criativos' },
 
@@ -434,6 +433,8 @@ const templates = (() => {
     { id: 'gestor-dashboard', label: 'Dashboard Gestor' },
     { id: 'marketing-dashboard', label: 'Dashboard Marketing' },
     { id: 'dashboard-operacional', label: 'Dashboard Operacional' },
+    { id: 'painel-financeiro', label: 'Dashboard Financeiro' },
+    { id: 'gerentes', label: 'Gerentes (IA)' },
     { id: 'dashboard-head', label: 'Dashboard Head' },
     { id: 'diferenciais', label: 'Diferenciais' },
     { id: 'implementacao-ia', label: 'Implementação IA' },
@@ -534,38 +535,35 @@ export const PageManager: React.FC = () => {
   };
 
   return (
-    <div className="bg-dark-card/60 backdrop-blur-md rounded-3xl border border-white/10 shadow-xl p-6">
-      <div className="flex flex-wrap items-center gap-1 mb-6 p-1 w-fit max-w-full overflow-x-auto rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/5">
-        {([
-          ['manage', 'Estrutura'],
-          ['create-page', 'Nova página'],
-          ['create-section', 'Nova seção'],
-          ['create-sub', 'Nova pasta'],
-          ['create-subsub', 'Nova subpasta'],
-        ] as const).map(([id, rotulo]) => (
-          <button key={id} onClick={() => setActiveTab(id)}
-            className={`h-9 px-4 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap ${
-              activeTab === id ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
-            }`}>
-            {rotulo}
-          </button>
-        ))}
-      </div>
+    <div className="bg-dark-card rounded-2xl border border-black/10 dark:border-white/10 shadow-sm p-6">
+      <Abas
+        variante="segmentado"
+        className="mb-6"
+        abas={[
+          { id: 'manage', rotulo: 'Estrutura' },
+          { id: 'create-page', rotulo: 'Nova página' },
+          { id: 'create-section', rotulo: 'Nova seção' },
+          { id: 'create-sub', rotulo: 'Nova pasta' },
+          { id: 'create-subsub', rotulo: 'Nova subpasta' },
+        ]}
+        ativa={activeTab}
+        onChange={(id) => setActiveTab(id as typeof activeTab)}
+      />
 
       {activeTab === 'create-page' && (
         <form onSubmit={handleCreatePage} className="space-y-6 max-w-2xl">
           <div className="flex items-center gap-3 mb-6">
             <FileText className="text-violet-500" size={24} />
-            <h3 className="text-xl font-bold text-light-text dark:text-white">Nova página</h3>
+            <h3 className="text-xl font-bold text-dark-text">Nova página</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">ID da Página (URL/Identificador)</label>
-              <input type="text" required value={pageData.id} onChange={(e) => setPageData({ ...pageData, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="ex: nova-pagina" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-light-text dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20" />
+              <input type="text" required value={pageData.id} onChange={(e) => setPageData({ ...pageData, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="ex: nova-pagina" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-dark-text outline-none focus:ring-2 focus:ring-violet-500/20" />
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Nome da Página (Exibição)</label>
-              <input type="text" required value={pageData.label} onChange={(e) => setPageData({ ...pageData, label: e.target.value })} placeholder="ex: Projetos Squad B" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-light-text dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20" />
+              <input type="text" required value={pageData.label} onChange={(e) => setPageData({ ...pageData, label: e.target.value })} placeholder="ex: Projetos Squad B" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-dark-text outline-none focus:ring-2 focus:ring-violet-500/20" />
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Modelo (Template)</label>
@@ -593,7 +591,7 @@ export const PageManager: React.FC = () => {
                 value={(() => {
                   if (pageData.section_id) {
                     const sec = Array.isArray(menu) && menu.find((s: any) => s.id === pageData.section_id);
-                    return sec ? `📁 ${sec.title} (direto na seção)` : null;
+                    return sec ? `${sec.title} (direto na seção)` : null;
                   }
                   if (pageData.subsubsession_id) {
                     for (const s of (Array.isArray(menu) ? menu : [])) {
@@ -619,7 +617,7 @@ export const PageManager: React.FC = () => {
                   const opts: { label: string }[] = [];
                   if (Array.isArray(menu)) {
                     menu.forEach((section: any) => {
-                      opts.push({ label: `📁 ${section.title} (direto na seção)` });
+                      opts.push({ label: `${section.title} (direto na seção)` });
                       (section.subSubSessions || []).forEach((ss: any) => opts.push({ label: `  ${section.title} > ${ss.label}` }));
                       section.subSessions.forEach((sub: any) => {
                         opts.push({ label: `${section.title} > ${sub.label}` });
@@ -642,7 +640,7 @@ export const PageManager: React.FC = () => {
                   }
                   if (Array.isArray(menu)) {
                     for (const section of menu) {
-                      if (val === `📁 ${section.title} (direto na seção)`) {
+                      if (val === `${section.title} (direto na seção)`) {
                         setPageData({...pageData, section_id: section.id, subsubsession_id: '', subsession_id: ''});
                         return;
                       }
@@ -684,16 +682,16 @@ export const PageManager: React.FC = () => {
         <form onSubmit={handleCreateSection} className="space-y-6 max-w-2xl">
           <div className="flex items-center gap-3 mb-6">
             <Layers className="text-violet-500" size={24} />
-            <h3 className="text-xl font-bold text-light-text dark:text-white">Nova seção</h3>
+            <h3 className="text-xl font-bold text-dark-text">Nova seção</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">ID da Seção</label>
-              <input type="text" required value={sectionData.id} onChange={(e) => setSectionData({ ...sectionData, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="ex: marketing" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20" />
+              <input type="text" required value={sectionData.id} onChange={(e) => setSectionData({ ...sectionData, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="ex: marketing" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-dark-text outline-none focus:ring-2 focus:ring-violet-500/20" />
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">Título da Seção</label>
-              <input type="text" required value={sectionData.title} onChange={(e) => setSectionData({ ...sectionData, title: e.target.value })} placeholder="ex: Marketing" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20" />
+              <input type="text" required value={sectionData.title} onChange={(e) => setSectionData({ ...sectionData, title: e.target.value })} placeholder="ex: Marketing" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-dark-text outline-none focus:ring-2 focus:ring-violet-500/20" />
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Ícone</label>
@@ -716,16 +714,16 @@ export const PageManager: React.FC = () => {
         <form onSubmit={handleCreateSub} className="space-y-6 max-w-2xl">
           <div className="flex items-center gap-3 mb-6">
             <Folder className="text-violet-500" size={24} />
-            <h3 className="text-xl font-bold text-light-text dark:text-white">Nova pasta</h3>
+            <h3 className="text-xl font-bold text-dark-text">Nova pasta</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">ID da pasta</label>
-              <input type="text" required value={subData.id} onChange={(e) => setSubData({ ...subData, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="ex: equipe-a" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20" />
+              <input type="text" required value={subData.id} onChange={(e) => setSubData({ ...subData, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="ex: equipe-a" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-dark-text outline-none focus:ring-2 focus:ring-violet-500/20" />
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">Nome da pasta</label>
-              <input type="text" required value={subData.label} onChange={(e) => setSubData({ ...subData, label: e.target.value })} placeholder="ex: Equipe A" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20" />
+              <input type="text" required value={subData.label} onChange={(e) => setSubData({ ...subData, label: e.target.value })} placeholder="ex: Equipe A" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-dark-text outline-none focus:ring-2 focus:ring-violet-500/20" />
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Ícone</label>
@@ -767,16 +765,16 @@ export const PageManager: React.FC = () => {
         <form onSubmit={handleCreateSubsub} className="space-y-6 max-w-2xl">
           <div className="flex items-center gap-3 mb-6">
             <FolderPlus className="text-violet-500" size={24} />
-            <h3 className="text-xl font-bold text-light-text dark:text-white">Nova subpasta</h3>
+            <h3 className="text-xl font-bold text-dark-text">Nova subpasta</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">ID da subpasta</label>
-              <input type="text" required value={subsubData.id} onChange={(e) => setSubsubData({ ...subsubData, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="ex: relatorios-equipe-a" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20" />
+              <input type="text" required value={subsubData.id} onChange={(e) => setSubsubData({ ...subsubData, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="ex: relatorios-equipe-a" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-dark-text outline-none focus:ring-2 focus:ring-violet-500/20" />
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">Nome da subpasta</label>
-              <input type="text" required value={subsubData.label} onChange={(e) => setSubsubData({ ...subsubData, label: e.target.value })} placeholder="ex: Relatórios" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20" />
+              <input type="text" required value={subsubData.label} onChange={(e) => setSubsubData({ ...subsubData, label: e.target.value })} placeholder="ex: Relatórios" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-dark-text outline-none focus:ring-2 focus:ring-violet-500/20" />
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Ícone</label>
@@ -799,7 +797,7 @@ export const PageManager: React.FC = () => {
                   }
                   if (subsubData.section_id) {
                     const sec = Array.isArray(menu) && menu.find((s: any) => s.id === subsubData.section_id);
-                    return sec ? `📁 ${sec.title} (direto na seção)` : null;
+                    return sec ? `${sec.title} (direto na seção)` : null;
                   }
                   return null;
                 })()}
@@ -807,7 +805,7 @@ export const PageManager: React.FC = () => {
                   const opts: { label: string }[] = [];
                   if (Array.isArray(menu)) {
                     menu.forEach((section: any) => {
-                      opts.push({ label: `📁 ${section.title} (direto na seção)` });
+                      opts.push({ label: `${section.title} (direto na seção)` });
                       section.subSessions.forEach((sub: any) => {
                         opts.push({ label: `${section.title} > ${sub.label}` });
                       });
@@ -824,7 +822,7 @@ export const PageManager: React.FC = () => {
                   }
                   if (Array.isArray(menu)) {
                     for (const section of menu) {
-                      if (val === `📁 ${section.title} (direto na seção)`) {
+                      if (val === `${section.title} (direto na seção)`) {
                         setSubsubData({ ...subsubData, section_id: section.id, subsession_id: '' });
                         return;
                       }

@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, ChevronRight, Search, Check, Minus, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, Check, Minus, X, AlertTriangle } from 'lucide-react';
 import { Categoria, NATUREZA, useArvorePlanoDeContas } from './SeletorCategoriaDRE';
 
 /**
@@ -115,7 +115,7 @@ const FiltroCategoriasDRE: React.FC<{
 
   const Caixa: React.FC<{ estado: 'sim' | 'parte' | 'nao' }> = ({ estado }) => (
     <span className={`w-4 h-4 shrink-0 rounded border flex items-center justify-center ${
-      estado === 'nao' ? 'border-white/20' : 'bg-violet-500 border-violet-500 text-white'}`}>
+      estado === 'nao' ? 'border-black/20 dark:border-white/20' : 'bg-violet-500 border-violet-500 text-white'}`}>
       {estado === 'sim' && <Check size={11} strokeWidth={3} />}
       {estado === 'parte' && <Minus size={11} strokeWidth={3} />}
     </span>
@@ -123,7 +123,7 @@ const FiltroCategoriasDRE: React.FC<{
 
   const Valor: React.FC<{ t: TotalCategoria; forte?: boolean }> = ({ t, forte }) => (
     <span className={`shrink-0 tabular-nums text-right ${forte ? 'text-[12px] font-bold' : 'text-[11px] font-semibold'} ${
-      t.v < 0 ? 'text-rose-400' : t.v > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+      t.v < 0 ? 'text-rose-500 dark:text-rose-400' : t.v > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'}`}>
       {brl(t.v)}
     </span>
   );
@@ -140,7 +140,7 @@ const FiltroCategoriasDRE: React.FC<{
     return (
       <>
         <div
-          className={`flex items-center gap-2 pr-3 py-1.5 hover:bg-white/5 cursor-pointer ${nivel === 0 ? 'mt-1' : ''} ${vazio && estado === 'nao' ? 'opacity-45' : ''}`}
+          className={`flex items-center gap-2 pr-3 py-1.5 hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer ${nivel === 0 ? 'mt-1' : ''} ${vazio && estado === 'nao' ? 'opacity-45' : ''}`}
           style={{ paddingLeft: 10 + nivel * 16 }}
           onClick={() => alternar(ids)}
         >
@@ -158,16 +158,16 @@ const FiltroCategoriasDRE: React.FC<{
           <span className="shrink-0 text-[10px] font-mono text-slate-500 w-[58px]">{no.cat.structure}</span>
           <span className={`min-w-0 flex-1 truncate ${
             nivel === 0 ? 'text-[12px] font-black uppercase tracking-wide text-dark-text'
-              : grupo ? 'text-[12px] font-bold text-dark-text' : 'text-[12px] text-slate-300'}`}
+              : grupo ? 'text-[12px] font-bold text-dark-text' : 'text-[12px] text-slate-600 dark:text-slate-300'}`}
             title={no.cat.description}>
             {no.cat.description}
           </span>
           {nivel === 0 && natureza && (
             <span className="shrink-0 text-[9px] font-bold uppercase text-slate-500">{natureza.rotulo}</span>
           )}
-          <span className="shrink-0 text-[10px] text-slate-600 w-7 text-right">{vazio ? '' : no.total.n}</span>
+          <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-600 w-7 text-right">{vazio ? '' : no.total.n}</span>
           <span className="w-[104px] flex justify-end">
-            {vazio ? <span className="text-[11px] text-slate-600">—</span> : <Valor t={no.total} forte={grupo} />}
+            {vazio ? <span className="text-[11px] text-slate-400 dark:text-slate-600">—</span> : <Valor t={no.total} forte={grupo} />}
           </span>
         </div>
         {grupo && !fechado && no.filhos.map(f => <Linha key={f.cat.id} no={f} nivel={nivel + 1} />)}
@@ -177,7 +177,7 @@ const FiltroCategoriasDRE: React.FC<{
 
   const qtd = selecionados.length;
   const rotulo = qtd === 0 ? 'Todas categorias'
-    : qtd === 1 && sel.has(SEM_CATEGORIA) ? '⚠️ Sem categoria'
+    : qtd === 1 && sel.has(SEM_CATEGORIA) ? 'Sem categoria'
     : `${qtd} categoria${qtd > 1 ? 's' : ''}`;
 
   return (
@@ -188,14 +188,14 @@ const FiltroCategoriasDRE: React.FC<{
           type="button"
           onClick={() => setAberto(a => !a)}
           className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-xs font-bold transition-colors ${
-            qtd > 0 ? 'border-violet-500/40 text-violet-300 bg-violet-500/10' : 'border-white/10 text-slate-300 bg-black/20 hover:border-white/20'}`}
+            qtd > 0 ? 'border-violet-500/40 text-violet-600 dark:text-violet-300 bg-violet-500/10' : 'border-black/10 dark:border-white/10 text-slate-600 dark:text-slate-300 bg-black/5 dark:bg-black/20 hover:border-black/20 dark:hover:border-white/20'}`}
         >
-          <span className="truncate">{rotulo}</span>
+          <span className="truncate inline-flex items-center gap-1">{qtd === 1 && sel.has(SEM_CATEGORIA) && <AlertTriangle size={11} className="shrink-0" />}{rotulo}</span>
           <ChevronDown size={13} className={`shrink-0 transition-transform ${aberto ? 'rotate-180' : ''}`} />
         </button>
         {qtd > 0 && (
           <button type="button" onClick={() => onChange([])} title="Limpar categorias"
-            className="p-2 rounded-lg border border-white/10 text-slate-400 hover:text-dark-text">
+            className="p-2 rounded-lg border border-black/10 dark:border-white/10 text-slate-400 hover:text-dark-text">
             <X size={12} />
           </button>
         )}
@@ -205,10 +205,10 @@ const FiltroCategoriasDRE: React.FC<{
         <div
           ref={menuRef}
           data-picker-menu
-          className="fixed z-[100000] bg-dark-card border border-white/10 rounded-xl shadow-2xl flex flex-col overflow-hidden"
+          className="fixed z-[100000] bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl flex flex-col overflow-hidden"
           style={{ top: pos.top, left: pos.left, width: Math.min(480, window.innerWidth - 16), maxHeight: Math.min(pos.maxH, 560) }}
         >
-          <div className="relative border-b border-white/10 shrink-0">
+          <div className="relative border-b border-black/10 dark:border-white/10 shrink-0">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               autoFocus
@@ -222,13 +222,13 @@ const FiltroCategoriasDRE: React.FC<{
           <div className="overflow-y-auto py-1">
             {semCategoria.n > 0 && !busca.trim() && (
               <div
-                className="flex items-center gap-2 pr-3 py-1.5 hover:bg-white/5 cursor-pointer border-b border-white/5 mb-1"
+                className="flex items-center gap-2 pr-3 py-1.5 hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer border-b border-black/5 dark:border-white/5 mb-1"
                 style={{ paddingLeft: 28 }}
                 onClick={() => alternar([SEM_CATEGORIA])}
               >
                 <Caixa estado={sel.has(SEM_CATEGORIA) ? 'sim' : 'nao'} />
-                <span className="min-w-0 flex-1 text-[12px] font-bold text-amber-400">⚠️ Sem categoria (fora do DFC)</span>
-                <span className="shrink-0 text-[10px] text-slate-600 w-7 text-right">{semCategoria.n}</span>
+                <span className="min-w-0 flex-1 text-[12px] font-bold text-amber-600 dark:text-amber-400 inline-flex items-center gap-1"><AlertTriangle size={11} className="shrink-0" /> Sem categoria (fora do DFC)</span>
+                <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-600 w-7 text-right">{semCategoria.n}</span>
                 <span className="w-[104px] flex justify-end"><Valor t={semCategoria} /></span>
               </div>
             )}
@@ -242,10 +242,10 @@ const FiltroCategoriasDRE: React.FC<{
             {nos.map(no => <Linha key={no.cat.id} no={no} nivel={0} />)}
           </div>
 
-          <div className="shrink-0 border-t border-white/10 px-3 py-2 flex items-center justify-between text-[10px] text-slate-500">
+          <div className="shrink-0 border-t border-black/10 dark:border-white/10 px-3 py-2 flex items-center justify-between text-[10px] text-slate-500">
             <span>Valores líquidos do período (entradas − saídas) · cartões pelo mês da fatura</span>
             {qtd > 0 && (
-              <button type="button" onClick={() => onChange([])} className="font-bold text-violet-400 hover:text-violet-300">Limpar</button>
+              <button type="button" onClick={() => onChange([])} className="font-bold text-violet-600 dark:text-violet-400 hover:text-violet-500 dark:hover:text-violet-300">Limpar</button>
             )}
           </div>
         </div>,

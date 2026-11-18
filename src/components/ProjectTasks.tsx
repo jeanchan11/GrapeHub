@@ -240,7 +240,7 @@ export const ProjectTasks: React.FC<{ projectId: string }> = ({ projectId }) => 
                     </h5>
                     {totalSubtasks > 0 && (
                       <div className="flex items-center gap-3 mt-2">
-                        <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div className="flex-1 h-1.5 bg-slate-100 dark:bg-dark-card rounded-full overflow-hidden">
                           <div 
                             className={`h-full rounded-full transition-all ${progress === 100 ? 'bg-emerald-500' : 'bg-violet-500'}`}
                             style={{ width: `${progress}%` }}
@@ -355,7 +355,7 @@ export const ProjectTasks: React.FC<{ projectId: string }> = ({ projectId }) => 
             </button>
             
             {showTemplateDropdown && (
-              <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-10 overflow-hidden">
+              <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-10 overflow-hidden">
                 <div className="p-2">
                   {templates.length === 0 ? (
                     <div className="p-3 text-xs text-slate-500 text-center">Nenhum modelo disponível</div>
@@ -393,7 +393,7 @@ export const ProjectTasks: React.FC<{ projectId: string }> = ({ projectId }) => 
             placeholder="Título da tarefa..."
             value={newTaskTitle}
             onChange={(e) => setNewTaskTitle(e.target.value)}
-            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-violet-500 transition-colors"
+            className="w-full bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-violet-500 transition-colors"
             autoFocus
           />
           <div className="flex gap-4">
@@ -402,7 +402,7 @@ export const ProjectTasks: React.FC<{ projectId: string }> = ({ projectId }) => 
                 type="date"
                 value={newTaskDueDate}
                 onChange={(e) => setNewTaskDueDate(e.target.value)}
-                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-violet-500 transition-colors"
+                className="w-full bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-violet-500 transition-colors"
               />
             </div>
             <div className="flex gap-2">

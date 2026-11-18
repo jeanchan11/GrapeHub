@@ -9,6 +9,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { DatePicker } from './ui/DatePicker';
 import OptionPicker from './ui/OptionPicker';
 import { useAuth } from '../contexts/AuthContext';
+import { Modal } from './ui/Modal';
+import MediaLightbox from './MediaLightbox';
+import { toast } from '../lib/toast';
+import { confirmDialog } from '../lib/confirm';
 
 // ─── Types ─────────────────────────────────────────────────────────
 interface Attachment {
@@ -88,7 +92,7 @@ const formatDate = (dateStr: string): string => {
 const isImage = (type: string): boolean => type?.startsWith('image/');
 
 const getFileIcon = (type: string) => {
-  if (isImage(type)) return <ImageIcon size={18} className="text-purple-400" />;
+  if (isImage(type)) return <ImageIcon size={18} className="text-violet-400" />;
   if (type?.includes('pdf')) return <FileText size={18} className="text-red-400" />;
   return <File size={18} className="text-slate-400" />;
 };
@@ -291,18 +295,18 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
       setEditingSubtaskId(null);
       onRefresh();
     } catch {
-      alert('Não foi possível renomear a subtarefa.');
+      toast.error('Não foi possível renomear a subtarefa.');
     } finally { setSavingSubtask(false); }
   };
 
   const handleDeleteSubtask = async (subtaskId: string) => {
-    if (!confirm('Excluir esta subtarefa?')) return;
+    if (!(await confirmDialog({ message: 'Excluir esta subtarefa?', danger: true }))) return;
     try {
       const res = await fetch(`/api/task-subtasks/${subtaskId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error();
       onRefresh();
     } catch {
-      alert('Não foi possível excluir a subtarefa.');
+      toast.error('Não foi possível excluir a subtarefa.');
     }
   };
 
@@ -320,16 +324,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   return (
     <>
       {/* Main Modal */}
-      <div
-        className="fixed inset-0 z-50 modal-overlay flex items-start justify-center p-4 overflow-y-auto pt-10 pb-10"
-        onClick={(e) => e.target === e.currentTarget && onClose()}
-      >
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          className="modal-container w-full max-w-3xl mx-auto my-8 overflow-hidden flex flex-col max-h-[85vh]"
-        >
+      <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-3xl" className="max-h-[85vh]" fecharComEsc={!lightboxUrl}>
           {/* Header */}
           <div className="p-5 border-b modal-divider flex items-center justify-between shrink-0 gap-4">
             {editingTitle ? (
@@ -342,8 +337,9 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   if (e.key === 'Enter') handleSaveTitle();
                   if (e.key === 'Escape') setEditingTitle(false);
                 }}
+                data-segura-esc
                 onBlur={handleSaveTitle}
-                className="text-lg font-bold modal-title flex-1 leading-none self-center bg-transparent border-b-2 border-purple-500 focus:outline-none py-0.5"
+                className="text-lg font-bold modal-title flex-1 leading-none self-center bg-transparent border-b-2 border-violet-500 focus:outline-none py-0.5"
                 autoFocus
               />
             ) : (
@@ -395,7 +391,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                     onTaskDelete(task.id);
                     onClose();
                   }}
-                  className="p-1.5 hover:bg-red-100 dark:hover:bg-red-500/20 rounded-md text-slate-500/60 dark:text-gray-400/60 hover:text-red-500 dark:hover:text-red-400 transition-colors ml-1"
+                  className="p-1.5 hover:bg-red-100 dark:hover:bg-red-500/20 rounded-md text-slate-500/60 dark:text-slate-400/60 hover:text-red-500 dark:hover:text-red-400 transition-colors ml-1"
                   title="Excluir tarefa"
                 >
                   <Trash2 size={14} />
@@ -404,7 +400,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 
               <button
                 onClick={onClose}
-                className="p-1.5 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-md text-gray-500/60 dark:text-gray-400/60 hover:text-gray-900 dark:hover:text-white transition-colors"
+                className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-md text-slate-500/60 dark:text-slate-400/60 hover:text-dark-text transition-colors"
               >
                 <X size={16} />
               </button>
@@ -419,21 +415,21 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 onClick={() => setActiveTab(tab.key)}
                 className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors relative
                   ${activeTab === tab.key
-                    ? 'text-purple-500 dark:text-purple-400'
-                    : 'text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-300'
+                    ? 'text-violet-500 dark:text-violet-400'
+                    : 'text-slate-500 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                   }`}
               >
                 {tab.icon}
                 {tab.label}
                 {tab.count !== undefined && tab.count > 0 && (
-                  <span className="text-[10px] font-bold bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                  <span className="text-[10px] font-bold bg-violet-500/20 text-violet-400 px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
                     {tab.count}
                   </span>
                 )}
                 {activeTab === tab.key && (
                   <motion.div
                     layoutId="task-detail-tab-indicator"
-                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500"
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500"
                   />
                 )}
               </button>
@@ -455,11 +451,11 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   {/* Description */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <label className="text-xs font-bold text-slate-500 dark:text-gray-500 uppercase tracking-wider">Descrição</label>
+                      <label className="text-xs font-bold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Descrição</label>
                       {!editingDesc && (
                         <button
                           onClick={() => setEditingDesc(true)}
-                          className="text-xs text-purple-500 hover:text-purple-400 font-medium"
+                          className="text-xs text-violet-500 hover:text-violet-400 font-medium"
                         >
                           Editar
                         </button>
@@ -472,16 +468,16 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                           onChange={(e) => setDescription(e.target.value)}
                           placeholder="Adicione uma descrição..."
                           rows={4}
-                          className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-sm text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 resize-none"
+                          className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-black/10 dark:border-white/10 text-sm text-dark-text focus:outline-none focus:ring-2 focus:ring-violet-500/50 resize-none"
                           autoFocus
                         />
                         <div className="flex gap-2 justify-end">
                           <button onClick={() => { setEditingDesc(false); setDescription(task.description || ''); }}
-                            className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-gray-300 px-3 py-1.5 rounded-lg">
+                            className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 px-3 py-1.5 rounded-lg">
                             Cancelar
                           </button>
                           <button onClick={saveDescription}
-                            className="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg font-medium">
+                            className="text-xs bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg font-medium">
                             Salvar
                           </button>
                         </div>
@@ -489,7 +485,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                     ) : (
                       <div
                         onClick={() => setEditingDesc(true)}
-                        className="px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-sm text-slate-600 dark:text-gray-400 min-h-[60px] cursor-pointer hover:border-purple-500/50 transition-colors"
+                        className="px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-black/10 dark:border-white/10 text-sm text-slate-600 dark:text-slate-400 min-h-[60px] cursor-pointer hover:border-violet-500/50 transition-colors"
                       >
                         {task.description || 'Clique para adicionar uma descrição...'}
                       </div>
@@ -499,7 +495,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   {/* Subtasks */}
                   <div>
                     <div className="flex items-center justify-between mb-3">
-                      <label className="text-xs font-bold text-slate-500 dark:text-gray-500 uppercase tracking-wider">
+                      <label className="text-xs font-bold text-slate-500 dark:text-slate-500 uppercase tracking-wider">
                         Subtarefas {task.subtasks_list?.length ? `(${task.subtasks_list.filter(s => s.completed).length}/${task.subtasks_list.length})` : ''}
                       </label>
                     </div>
@@ -508,7 +504,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                         <div key={subtask.id} className="flex items-center gap-3 group px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
                           <button
                             onClick={() => onSubtaskToggle(subtask, task.id)}
-                            className={`w-4.5 h-4.5 rounded border flex items-center justify-center shrink-0 transition-colors ${subtask.completed ? 'bg-green-500 border-green-500 text-white' : 'border-slate-400 dark:border-gray-600 text-transparent group-hover:border-purple-500 bg-white dark:bg-transparent'}`}
+                            className={`w-4.5 h-4.5 rounded border flex items-center justify-center shrink-0 transition-colors ${subtask.completed ? 'bg-green-500 border-green-500 text-white' : 'border-slate-400 dark:border-slate-600 text-transparent group-hover:border-violet-500 bg-white dark:bg-transparent'}`}
                           >
                             <Check size={12} />
                           </button>
@@ -520,18 +516,18 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                               onChange={(e) => setEditingSubtaskTitle(e.target.value)}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') handleRenameSubtask(subtask.id);
-                                if (e.key === 'Escape') setEditingSubtaskId(null);
+                                if (e.key === 'Escape') { e.stopPropagation(); setEditingSubtaskId(null); }
                               }}
                               onBlur={() => handleRenameSubtask(subtask.id)}
                               disabled={savingSubtask}
-                              className="flex-1 bg-white dark:bg-white/5 border border-purple-500 rounded-lg px-2 py-1 text-sm text-slate-800 dark:text-white focus:outline-none disabled:opacity-50"
+                              className="flex-1 bg-white dark:bg-white/5 border border-violet-500 rounded-lg px-2 py-1 text-sm text-dark-text focus:outline-none disabled:opacity-50"
                               autoFocus
                             />
                           ) : (
                             <span
                               onDoubleClick={() => { setEditingSubtaskId(subtask.id); setEditingSubtaskTitle(subtask.title); }}
                               title="Clique duas vezes para editar"
-                              className={`text-sm flex-1 cursor-text ${subtask.completed ? 'text-slate-400 dark:text-gray-600 line-through' : 'text-slate-700 dark:text-gray-300'}`}
+                              className={`text-sm flex-1 cursor-text ${subtask.completed ? 'text-slate-400 dark:text-slate-600 line-through' : 'text-slate-700 dark:text-slate-300'}`}
                             >
                               {subtask.title}
                             </span>
@@ -541,7 +537,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                               <button
                                 onClick={() => { setEditingSubtaskId(subtask.id); setEditingSubtaskTitle(subtask.title); }}
                                 title="Editar"
-                                className="p-1 rounded text-slate-400 hover:text-purple-500 dark:hover:text-purple-400 transition-colors"
+                                className="p-1 rounded text-slate-400 hover:text-violet-500 dark:hover:text-violet-400 transition-colors"
                               >
                                 <Pencil size={13} />
                               </button>
@@ -563,17 +559,17 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                             value={newSubtaskTitle}
                             onChange={(e) => setNewSubtaskTitle(e.target.value)}
                             placeholder="Título da subtarefa..."
-                            className="flex-1 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-1.5 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-purple-500"
+                            className="flex-1 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-1.5 text-sm text-dark-text focus:outline-none focus:border-violet-500"
                             onKeyDown={(e) => e.key === 'Enter' && handleAddSubtask()}
                             autoFocus
                           />
-                          <button onClick={handleAddSubtask} className="text-purple-600 dark:text-purple-400 hover:text-purple-700 text-sm font-medium">Salvar</button>
-                          <button onClick={() => setAddingSubtask(false)} className="text-slate-500 hover:text-slate-700 dark:hover:text-gray-400"><X size={14} /></button>
+                          <button onClick={handleAddSubtask} className="text-violet-600 dark:text-violet-400 hover:text-violet-700 text-sm font-medium">Salvar</button>
+                          <button onClick={() => setAddingSubtask(false)} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-400"><X size={14} /></button>
                         </div>
                       ) : (
                         <button
                           onClick={() => setAddingSubtask(true)}
-                          className="text-sm text-slate-500 dark:text-gray-500 hover:text-purple-500 dark:hover:text-purple-400 flex items-center gap-1.5 px-3 py-2 font-medium"
+                          className="text-sm text-slate-500 dark:text-slate-500 hover:text-violet-500 dark:hover:text-violet-400 flex items-center gap-1.5 px-3 py-2 font-medium"
                         >
                           <Plus size={14} /> Adicionar subtarefa
                         </button>
@@ -601,8 +597,8 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                     onClick={() => fileInputRef.current?.click()}
                     className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all
                       ${dragOver
-                        ? 'border-purple-500 bg-purple-500/10'
-                        : 'border-slate-300 dark:border-white/10 hover:border-purple-500/50 hover:bg-purple-500/5'
+                        ? 'border-violet-500 bg-violet-500/10'
+                        : 'border-slate-300 dark:border-white/10 hover:border-violet-500/50 hover:bg-violet-500/5'
                       }`}
                   >
                     <input
@@ -614,19 +610,19 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                     />
                     {uploading ? (
                       <div className="flex flex-col items-center gap-3">
-                        <Loader2 size={32} className="animate-spin text-purple-500" />
-                        <p className="text-sm text-slate-500 dark:text-gray-400">Enviando arquivo...</p>
+                        <Loader2 size={32} className="animate-spin text-violet-500" />
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Enviando arquivo...</p>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-3">
-                        <div className="w-14 h-14 rounded-2xl bg-purple-500/10 flex items-center justify-center">
-                          <Upload size={24} className="text-purple-500" />
+                        <div className="w-14 h-14 rounded-2xl bg-violet-500/10 flex items-center justify-center">
+                          <Upload size={24} className="text-violet-500" />
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-slate-700 dark:text-gray-300">
-                            Arraste arquivos aqui ou <span className="text-purple-500">clique para enviar</span>
+                          <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Arraste arquivos aqui ou <span className="text-violet-500">clique para enviar</span>
                           </p>
-                          <p className="text-xs text-slate-400 dark:text-gray-500 mt-1">
+                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                             Máximo 10MB por arquivo • Imagens, PDFs, Documentos
                           </p>
                         </div>
@@ -637,12 +633,12 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   {/* Attachments List */}
                   {loadingAttachments ? (
                     <div className="flex justify-center py-6">
-                      <Loader2 size={24} className="animate-spin text-purple-500" />
+                      <Loader2 size={24} className="animate-spin text-violet-500" />
                     </div>
                   ) : attachments.length === 0 ? (
                     <div className="text-center py-8">
-                      <Paperclip size={32} className="mx-auto text-slate-300 dark:text-gray-600 mb-2" />
-                      <p className="text-sm text-slate-500 dark:text-gray-500">Nenhum anexo ainda</p>
+                      <Paperclip size={32} className="mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+                      <p className="text-sm text-slate-500 dark:text-slate-500">Nenhum anexo ainda</p>
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -650,7 +646,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                       {attachments.filter(a => isImage(a.file_type)).length > 0 && (
                         <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mb-4">
                           {attachments.filter(a => isImage(a.file_type)).map(att => (
-                            <div key={att.id} className="group relative rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 aspect-square">
+                            <div key={att.id} className="group relative rounded-xl overflow-hidden border border-black/10 dark:border-white/10 aspect-square">
                               <img
                                 src={att.file_url}
                                 alt={att.file_name}
@@ -677,13 +673,13 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 
                       {/* File list */}
                       {attachments.filter(a => !isImage(a.file_type)).map(att => (
-                        <div key={att.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 group hover:border-purple-500/30 transition-colors">
-                          <div className="w-10 h-10 rounded-xl bg-white dark:bg-white/10 flex items-center justify-center border border-slate-200 dark:border-white/10">
+                        <div key={att.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-black/10 dark:border-white/10 group hover:border-violet-500/30 transition-colors">
+                          <div className="w-10 h-10 rounded-xl bg-white dark:bg-white/10 flex items-center justify-center border border-black/10 dark:border-white/10">
                             {getFileIcon(att.file_type)}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-800 dark:text-white truncate">{att.file_name}</p>
-                            <p className="text-xs text-slate-400 dark:text-gray-500">
+                            <p className="text-sm font-medium text-dark-text truncate">{att.file_name}</p>
+                            <p className="text-xs text-slate-400 dark:text-slate-500">
                               {formatBytes(att.file_size)} • {formatDate(att.created_at)}
                             </p>
                           </div>
@@ -692,13 +688,13 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                               href={att.file_url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="p-2 hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg text-slate-500 dark:text-gray-400 transition-colors"
+                              className="p-2 hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg text-slate-500 dark:text-slate-400 transition-colors"
                             >
                               <Download size={16} />
                             </a>
                             <button
                               onClick={() => deleteAttachment(att.id)}
-                              className="p-2 hover:bg-red-100 dark:hover:bg-red-500/20 rounded-lg text-slate-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                              className="p-2 hover:bg-red-100 dark:hover:bg-red-500/20 rounded-lg text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
                             >
                               <Trash2 size={16} />
                             </button>
@@ -722,13 +718,13 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   {/* Comments List */}
                   {loadingComments ? (
                     <div className="flex justify-center py-6">
-                      <Loader2 size={24} className="animate-spin text-purple-500" />
+                      <Loader2 size={24} className="animate-spin text-violet-500" />
                     </div>
                   ) : comments.length === 0 ? (
                     <div className="text-center py-8">
-                      <MessageSquare size={32} className="mx-auto text-slate-300 dark:text-gray-600 mb-2" />
-                      <p className="text-sm text-slate-500 dark:text-gray-500">Nenhum comentário ainda</p>
-                      <p className="text-xs text-slate-400 dark:text-gray-600 mt-1">Seja o primeiro a comentar!</p>
+                      <MessageSquare size={32} className="mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+                      <p className="text-sm text-slate-500 dark:text-slate-500">Nenhum comentário ainda</p>
+                      <p className="text-xs text-slate-400 dark:text-slate-600 mt-1">Seja o primeiro a comentar!</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -736,16 +732,16 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                         <div key={comment.id} className="group">
                           <div className="flex gap-3">
                             {/* Avatar */}
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                            <div className="w-8 h-8 rounded-full bg-violet-500/15 flex items-center justify-center text-violet-600 dark:text-violet-400 text-xs font-bold flex-shrink-0">
                               {comment.author_name?.charAt(0)?.toUpperCase() || '?'}
                             </div>
                             {/* Content */}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
-                                <span className="text-sm font-semibold text-slate-800 dark:text-white">
+                                <span className="text-sm font-semibold text-dark-text">
                                   {comment.author_name}
                                 </span>
-                                <span className="text-xs text-slate-400 dark:text-gray-500">
+                                <span className="text-xs text-slate-400 dark:text-slate-500">
                                   {formatDate(comment.created_at)}
                                 </span>
                                 <button
@@ -755,7 +751,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                                   <Trash2 size={12} />
                                 </button>
                               </div>
-                              <div className="text-sm text-slate-600 dark:text-gray-300 whitespace-pre-wrap leading-relaxed bg-slate-50 dark:bg-white/5 rounded-xl rounded-tl-sm px-4 py-3 border border-slate-200 dark:border-white/10">
+                              <div className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed bg-slate-50 dark:bg-white/5 rounded-xl rounded-tl-sm px-4 py-3 border border-black/10 dark:border-white/10">
                                 {comment.content}
                               </div>
                             </div>
@@ -766,9 +762,9 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   )}
 
                   {/* New Comment Input */}
-                  <div className="sticky bottom-0 bg-white dark:bg-[#1a1a2e] pt-4 border-t border-slate-200 dark:border-white/10">
+                  <div className="sticky bottom-0 bg-dark-card pt-4 border-t border-black/10 dark:border-white/10">
                     <div className="flex gap-3">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-1">
+                      <div className="w-8 h-8 rounded-full bg-violet-500/15 flex items-center justify-center text-violet-600 dark:text-violet-400 text-xs font-bold flex-shrink-0 mt-1">
                         {authUser?.name?.charAt(0)?.toUpperCase() || '?'}
                       </div>
                       <div className="flex-1">
@@ -778,7 +774,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                           onChange={(e) => setNewComment(e.target.value)}
                           placeholder="Escreva um comentário..."
                           rows={3}
-                          className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-sm text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 resize-none placeholder:text-slate-400 dark:placeholder:text-gray-600"
+                          className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-black/10 dark:border-white/10 text-sm text-dark-text focus:outline-none focus:ring-2 focus:ring-violet-500/50 resize-none placeholder:text-slate-400 dark:placeholder:text-slate-600"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                               sendComment();
@@ -786,13 +782,13 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                           }}
                         />
                         <div className="flex items-center justify-between mt-2">
-                          <span className="text-xs text-slate-400 dark:text-gray-600">
+                          <span className="text-xs text-slate-400 dark:text-slate-600">
                             Ctrl+Enter para enviar
                           </span>
                           <button
                             onClick={sendComment}
                             disabled={!newComment.trim() || sendingComment}
-                            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
                           >
                             {sendingComment ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                             Enviar
@@ -805,36 +801,17 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               )}
             </AnimatePresence>
           </div>
-        </motion.div>
-      </div>
+      </Modal>
 
       {/* Lightbox */}
-      <AnimatePresence>
-        {lightboxUrl && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4"
-            onClick={() => setLightboxUrl(null)}
-          >
-            <button
-              className="absolute top-4 right-4 p-2 bg-white/20 rounded-full text-white hover:bg-white/30 transition-colors"
-              onClick={() => setLightboxUrl(null)}
-            >
-              <X size={24} />
-            </button>
-            <motion.img
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              src={lightboxUrl}
-              alt="Preview"
-              className="max-w-full max-h-[90vh] rounded-xl shadow-2xl object-contain"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {lightboxUrl && (
+        <MediaLightbox
+          files={[{ url: lightboxUrl, name: attachments.find(a => a.file_url === lightboxUrl)?.file_name || 'imagem', type: 'image/' }]}
+          index={0}
+          onIndex={() => {}}
+          onClose={() => setLightboxUrl(null)}
+        />
+      )}
     </>
   );
 };

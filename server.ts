@@ -20,6 +20,9 @@ import { setupFunilMetaRoutes } from "./src/routes/funil-meta";
 import { setupAlertaSaldoRoutes } from './src/routes/alerta-saldo';
 import { setupMenuPastaEmPastaRoutes } from './src/routes/menu-pasta-em-pasta';
 import { setupClientesMapaRoutes } from './src/routes/clientes-mapa';
+import { setupClienteHistoricoRoutes } from './src/routes/cliente-historico';
+import { setupFechamentoDetalheRoutes } from './src/routes/fechamento-detalhe';
+import { setupGerentesRoutes } from './src/routes/gerentes';
 import { setupFechamentoRoutes, mesFechado, mesFechadoDoLancamento, msgMesFechado, foraDeMesFechado } from "./src/routes/fechamento";
 import { migrateBillCategory } from "./src/routes/bill-category";
 import { setupBolaoRoutes } from "./src/routes/bolao";
@@ -531,6 +534,9 @@ async function startServer() {
     poolConfig.ssl = { rejectUnauthorized: false };
   }
 
+  // "timestamp" sem fuso é gravado em UTC (NOW() no Neon). Sem isto o pg o lê no fuso do processo:
+  // na produção (UTC) dá certo, no Mac (BRT) o horário aparecia 3 h adiantado na tela.
+  pg.types.setTypeParser(1114, (s: string) => new Date(s.replace(' ', 'T') + 'Z'));
   const pool = new Pool(poolConfig);
 
   pool.on('error', (err, client) => {
@@ -3305,17 +3311,32 @@ async function startServer() {
                   `SELECT * FROM crm_sequence_steps WHERE sequence_id = $1 ORDER BY order_index ASC`,
                   [cfg.sequence_id]
                 );
-                // Mesmo cálculo do botão "Sequência" no CRM: day_offset é o intervalo
-                // desde o passo anterior. O `|| 1` antigo ainda transformava dia 0 em dia 1.
+                // Mesmo cálculo do botão "Sequência" no CRM (handleApplySequence): day_offset é o
+                // intervalo desde o passo anterior e, com skip_weekends, sábado e domingo não contam
+                // na espera. Antes a automação contava dias corridos (18/11/2026, pedido do Jean).
+                // "Hoje" é o dia em São Paulo — a produção roda em UTC e, depois das 21h, a data
+                // UTC já é amanhã.
+                const seqInfo = await pool.query(`SELECT skip_weekends FROM crm_sequences WHERE id = $1`, [cfg.sequence_id]);
+                const pularFds = seqInfo.rows[0]?.skip_weekends ?? true;
+                const hojeSP = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }); // AAAA-MM-DD
+                const base = new Date(`${hojeSP}T12:00:00Z`);
+                const somarDias = (dias: number) => {
+                  const d = new Date(base);
+                  let somados = 0;
+                  while (somados < dias) {
+                    d.setUTCDate(d.getUTCDate() + 1);
+                    const dow = d.getUTCDay();
+                    if (!pularFds || (dow !== 0 && dow !== 6)) somados++;
+                  }
+                  return d.toISOString().slice(0, 10);
+                };
                 let diasAcumulados = 0;
                 for (const step of seqSteps.rows) {
                   diasAcumulados += Number(step.day_offset ?? 0);
-                  const dueDate = new Date();
-                  dueDate.setDate(dueDate.getDate() + diasAcumulados);
                   await pool.query(
                     `INSERT INTO crm_comercial_tasks (lead_id, title, type, due_date, start_time, observations)
                      VALUES ($1, $2, $3, $4, $5, $6)`,
-                    [leadId, step.title || '', step.type || 'Tarefa', dueDate.toISOString().slice(0, 10),
+                    [leadId, step.title || '', step.type || 'Tarefa', somarDias(diasAcumulados),
                      step.time_of_day || '09:00', step.observations || null]
                   );
                 }
@@ -6674,9 +6695,9 @@ app.get("/api/todos", async (req, res) => {
       const reasonsStr = Array.isArray(exit_reasons) ? exit_reasons.join(', ') : (exit_reasons || '');
 
       await pool.query(
-        `INSERT INTO churn ("CLIENTE", "day_exit", "Evitavel - inevitavel", "gestor", "LTV", "SQUAD", "Motivo de saída", "day", "comments")
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [client_name, exitDateStr, churn_type || null, gestor || null, ltv, squad || null, reasonsStr || null, startDateStr, comments || null]
+        `INSERT INTO churn ("CLIENTE", "day_exit", "Evitavel - inevitavel", "gestor", "LTV", "SQUAD", "Motivo de saída", "day", "comments", client_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [client_name, exitDateStr, churn_type || null, gestor || null, ltv, squad || null, reasonsStr || null, startDateStr, comments || null, client_id || null]
       );
       res.json({ success: true });
     } catch (err) {
@@ -6919,9 +6940,11 @@ app.get("/api/todos", async (req, res) => {
   app.get("/api/churn/:clientName", async (req, res) => {
     const { clientName } = req.params;
     try {
+      const clientId = req.query.client_id ? String(req.query.client_id) : null;
       const result = await pool.query(
-        `SELECT * FROM churn WHERE "CLIENTE" = $1 ORDER BY day_exit DESC LIMIT 1`,
-        [clientName]
+        `SELECT * FROM churn WHERE ($2::text IS NOT NULL AND client_id = $2) OR "CLIENTE" = $1
+          ORDER BY ($2::text IS NOT NULL AND client_id = $2) DESC, day_exit DESC LIMIT 1`,
+        [clientName, clientId]
       );
       if (result.rows.length > 0) {
         res.json(result.rows[0]);
@@ -8297,6 +8320,9 @@ app.get("/api/todos", async (req, res) => {
           r.id,
           r.asaas_id,
           COALESCE(p.name, r.customer_name) AS customer_name,
+          -- cadastro do GrapeHub (nome igual ao de Clientes Ativos); o do Asaas segue em customer_name
+          cg.id AS client_id,
+          cg.name AS client_name_internal,
           COALESCE(p.cnpjcpf, r.customer_cpfcnpj) AS customer_cpfcnpj,
           r.billing_type,
           r.status,
@@ -8310,6 +8336,7 @@ app.get("/api/todos", async (req, res) => {
           r.raw_json
         FROM fin_receivables r
         LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
+        LEFT JOIN clients cg ON cg.id = p.grapehub_client_id
         WHERE r.due_date >= $1 AND r.due_date < $2
           AND r.status IN ('Pendente', 'PENDING', 'OVERDUE')
         ORDER BY r.due_date ASC
@@ -8326,6 +8353,9 @@ app.get("/api/todos", async (req, res) => {
           r.id,
           r.asaas_id,
           COALESCE(p.name, r.customer_name) AS customer_name,
+          -- cadastro do GrapeHub (nome igual ao de Clientes Ativos); o do Asaas segue em customer_name
+          cg.id AS client_id,
+          cg.name AS client_name_internal,
           COALESCE(p.cnpjcpf, r.customer_cpfcnpj) AS customer_cpfcnpj,
           r.billing_type,
           r.status,
@@ -8339,6 +8369,7 @@ app.get("/api/todos", async (req, res) => {
           r.raw_json->>'anticipated' AS anticipated
         FROM fin_receivables r
         LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
+        LEFT JOIN clients cg ON cg.id = p.grapehub_client_id
         WHERE r.due_date >= $1 AND r.due_date < $2
           AND (
             r.status IN ('Confirmado', 'CONFIRMED', 'RECEIVED', 'RECEIVED_IN_CASH')
@@ -8417,6 +8448,9 @@ app.get("/api/todos", async (req, res) => {
           c.name AS client_name_internal,
           c.squad,
           n.note AS note,
+          pr.promessa_data,
+          pr.promessa_em,
+          ct.ultimo_contato,
           -- Aggregated data
           COUNT(r.id) AS total_charges,
           SUM(r.value::numeric) AS total_value,
@@ -8424,6 +8458,8 @@ app.get("/api/todos", async (req, res) => {
           MAX(r.due_date) AS latest_due_date,
           (CURRENT_DATE - MIN(r.due_date)) AS max_days_overdue,
           -- Raw charges as JSON
+          to_char((uc.quando AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD HH24:MI') AS ultima_cobranca,
+          uc.tipo AS ultima_cobranca_tipo,
           json_agg(json_build_object(
             'id', r.id,
             'asaas_id', r.asaas_id,
@@ -8438,8 +8474,30 @@ app.get("/api/todos", async (req, res) => {
         LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
         LEFT JOIN clients c ON c.id = p.grapehub_client_id
         LEFT JOIN fin_inadimplente_notes n ON n.customer_id = r.customer_id
+        LEFT JOIN LATERAL (
+          SELECT k.meta->>'promessa_data' AS promessa_data, k.created_at AS promessa_em
+            FROM crm_comments k
+           WHERE k.client_id = c.id AND k.meta->>'resultado' = 'prometeu' AND k.meta->>'promessa_data' IS NOT NULL
+           ORDER BY k.created_at DESC LIMIT 1
+        ) pr ON true
+        LEFT JOIN LATERAL (
+          SELECT MAX(k.created_at) AS ultimo_contato FROM crm_comments k
+           WHERE k.client_id = c.id AND k.user_id <> 'sistema'
+             AND k.type IN ('Cobrança manual','Contato realizado','Promessa de pagamento','Acordo fechado','Pedido de saída')
+        ) ct ON true
+        -- Última cobrança: a régua (fila ENVIADO) ou uma pessoa (histórico). Horários gravados em UTC.
+        LEFT JOIN LATERAL (
+          SELECT u.quando, u.tipo FROM (
+            SELECT q.sent_at AS quando, 'auto' AS tipo FROM fin_dispatch_queue q
+             WHERE q.customer_asaas_id = r.customer_id AND q.status = 'ENVIADO' AND q.sent_at IS NOT NULL
+            UNION ALL
+            SELECT k.created_at, 'manual' FROM crm_comments k
+             WHERE k.client_id = c.id AND k.user_id <> 'sistema'
+               AND k.type IN ('Cobrança manual','Contato realizado','Promessa de pagamento','Acordo fechado')
+          ) u ORDER BY u.quando DESC LIMIT 1
+        ) uc ON true
         WHERE r.status = 'OVERDUE'
-        GROUP BY r.customer_id, p.name, p.phone, p.cnpjcpf, p.email, c.id, c.name, c.squad, n.note
+        GROUP BY r.customer_id, p.name, p.phone, p.cnpjcpf, p.email, c.id, c.name, c.squad, n.note, pr.promessa_data, pr.promessa_em, ct.ultimo_contato, uc.quando, uc.tipo
         ORDER BY max_days_overdue DESC, total_value DESC
       `);
       res.json(result.rows);
@@ -11884,7 +11942,7 @@ app.get("/api/todos", async (req, res) => {
                k.nome as kanban_name
         FROM crm_comercial_leads l
         LEFT JOIN crm_comercial_columns c ON l.coluna::text = c.id::text
-        LEFT JOIN users u ON l.responsavel_id = u.email
+        LEFT JOIN users u ON u.id::text = l.responsavel_id::text  -- responsavel_id guarda o id do usuário (antes cruzava com e-mail e vinha vazio)
         LEFT JOIN crm_comercial_kanbans k ON l.kanban_id::text = k.id::text
         WHERE 1=1
       `;
@@ -19054,6 +19112,9 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   setupMenuPastaEmPastaRoutes(app, pool);
   // Clientes Ativos › Mapa: cidade de cada cliente a partir do texto livre de `location`
   setupClientesMapaRoutes(app, pool);
+  setupClienteHistoricoRoutes(app, pool);
+  setupFechamentoDetalheRoutes(app, pool);
+  setupGerentesRoutes(app, pool);
   migrateCrmReunioes(pool).catch((e: any) => console.error("[crm-reunioes] migrate:", e.message));
   await migrateCursos(pool).catch((e: any) => console.warn('[cursos] migrate:', e.message));
   setupCursosRoutes(app, pool);

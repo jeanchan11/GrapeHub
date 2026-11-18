@@ -350,7 +350,7 @@ export default function RichTextEditor({ content, onChange, systemUsers = [], mi
   }, {} as Record<string, Array<typeof SLASH_COMMANDS[0] & { idx: number }>>);
 
   return (
-    <div ref={wrapperRef} className="relative w-full bg-dark-bg border border-white/10 rounded-xl px-5 py-4 tiptap-wrapper focus-within:border-violet-500/50 transition-colors">
+    <div ref={wrapperRef} className="relative w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-5 py-4 tiptap-wrapper focus-within:border-violet-500/50 transition-colors">
       <style>{`
         /* ── Lista Alternada: remove marcador nativo de <summary> caso ainda exista ── */
         .tiptap-editor summary { list-style: none !important; }

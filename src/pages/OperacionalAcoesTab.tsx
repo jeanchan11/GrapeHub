@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Anel, BarrasPorCategoria, Cartao, CartaoKpi, DivisaoDoKpi, ListaDeBarras } from '../components/graficos';
+import { CarregandoBloco } from '../components/LoadingSpinner';
 
 // ─── Aba Ações e Nichos ───────────────────────────────────────────────────────
 // Cruza o catálogo de ações (e suas pastas/nichos) com o que os parceiros de fato
@@ -24,10 +25,11 @@ const brlCurto = (v: number) => v >= 1000
   ? `${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: v >= 100000 ? 0 : 1 })} mil`
   : Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 
-const COR_BOM = '#10b981', COR_OK = '#38bdf8', COR_RUIM = '#f43f5e';
+// Mesmas cores de resultado do Dashboard Operacional: Bom emerald-600, Ok emerald-500, Ruim rose-500
+const COR_BOM = '#059669', COR_OK = '#10b981', COR_RUIM = '#f43f5e';
 // Fatias do anel de nichos: a cor de destaque primeiro, o resto bem separado
 const PALETA = ['rgb(var(--accent-color))', '#38bdf8', '#34d399', '#f59e0b', '#f472b6', '#94a3b8'];
-const corDoPct = (p: number) => (p >= 60 ? COR_BOM : p >= 40 ? '#f59e0b' : COR_RUIM);
+const corDoPct = (p: number) => (p >= 60 ? COR_OK : p >= 40 ? '#f59e0b' : COR_RUIM);
 
 // Barra Bom / Ok / Ruim proporcional
 const BarraResultado = ({ bom, ok, ruim }: { bom: number; ok: number; ruim: number }) => {
@@ -57,8 +59,8 @@ const SeloPct = ({ pct }: { pct: number | null }) => {
 const SeloResultado = ({ r }: { r: string | null }) => {
   const t = String(r || '').toUpperCase();
   if (!t || t === '-') return <span className="text-[10px] text-slate-400 dark:text-slate-600">sem resultado</span>;
-  const cor = t.includes('BOM') ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-    : t.includes('OK') ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400'
+  const cor = t.includes('BOM') ? 'bg-emerald-600/15 text-emerald-700 dark:text-emerald-300'
+    : t.includes('OK') ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
     : t.includes('RUIM') ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
     : 'bg-slate-500/10 text-slate-500 dark:text-slate-400';
   return <span className={`px-2 py-0.5 rounded-full text-[10.5px] font-medium ${cor}`}>{r}</span>;
@@ -81,7 +83,7 @@ export default function OperacionalTab() {
     return () => { vivo = false; };
   }, []);
 
-  if (carregando) return <div className="py-20 text-center text-sm text-slate-500">Calculando…</div>;
+  if (carregando) return <CarregandoBloco className="py-20" />;
   if (erro) return <div className="py-20 text-center text-sm text-rose-500">{erro}</div>;
   if (!dados) return null;
 

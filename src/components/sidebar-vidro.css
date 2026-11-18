@@ -1,0 +1,97 @@
+/* Menu no estilo do MaternaHub (18/11/2026): painel de vidro flutuante, com brilhos
+   roxos atrás e a pílula do item ativo deslizando entre as páginas.
+   Backup do menu anterior em backup-menu-antes-materna/. */
+
+/* Brilhos fixos no fundo: só aparecem através do menu de vidro e nas margens dele. */
+.gh-fundo { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+/* Sem filter: blur — o radial-gradient já é suave, e o blur de 90px em 700px re-renderizava a cada
+   quadro da animação (queda de FPS ao abrir/recolher o menu, 18/11/2026). Só transform = GPU. */
+.gh-brilho { position: absolute; border-radius: 50%; opacity: .7; will-change: transform; }
+.gh-brilho.b1 {
+  width: 640px; height: 640px; left: -200px; top: -180px;
+  background: radial-gradient(circle, rgb(124 58 237 / .5), transparent 70%);
+  animation: ghDeriva 22s ease-in-out infinite alternate;
+}
+.gh-brilho.b2 {
+  width: 780px; height: 780px; right: -260px; bottom: -320px;
+  background: radial-gradient(circle, rgb(109 40 217 / .45), transparent 70%);
+  animation: ghDeriva 28s ease-in-out infinite alternate-reverse;
+}
+.gh-brilho.b3 {
+  width: 560px; height: 560px; left: 40%; top: 26%;
+  background: radial-gradient(circle, rgb(167 139 250 / .14), transparent 70%);
+}
+@keyframes ghDeriva { to { transform: translate(60px, 40px) scale(1.08); } }
+html.light .gh-brilho { opacity: .3; }
+
+/* Palco: o fundo das páginas fica transparente para o degradê correr por trás de tudo,
+   sem a "emenda" entre o menu e a página.
+   SÓ o invólucro da página (classes de altura de tela): inputs, menus e modais que usam
+   bg-dark-bg continuam opacos — uma regra larga deixava modal transparente. */
+.gh-palco :is(.min-h-screen, .min-h-full, .h-full, .h-screen, .min-h-\[75vh\]):is(.bg-dark-bg, .bg-light-bg),
+html.dark .gh-palco :is(.min-h-screen, .min-h-full, .h-full, .h-screen, .min-h-\[75vh\]).dark\:bg-dark-bg { background-color: transparent !important; }
+
+/* Barra fixa no topo da página (Atividades): vidro, para o degradê aparecer por trás */
+.gh-barra-vidro {
+  background: rgb(var(--dark-bg) / .45);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+}
+html.light .gh-barra-vidro { background: rgb(255 255 255 / .7); }
+@media (prefers-reduced-motion: reduce) { .gh-brilho { animation: none; } }
+
+/* Painel de vidro */
+.gh-vidro {
+  /* ameixa translúcida, como o --vidro do Materna (o --dark-card daqui é cinza demais) */
+  background: rgb(62 42 98 / .5);
+  border: 1px solid rgb(192 165 222 / .16);
+  /* Sem backdrop-filter: atrás do menu só há os brilhos (degradê liso), então o desfoque não
+     mudava nada na tela e custava caro — a largura animada refazia o blur a cada quadro. */
+  box-shadow: 0 1px 0 rgb(255 255 255 / .05) inset, 0 30px 60px -40px rgb(0 0 0 / .8);
+}
+html.light .gh-vidro {
+  background: rgb(255 255 255 / .74);
+  border-color: rgb(124 58 237 / .12);
+  box-shadow: 0 1px 0 rgb(255 255 255 / .9) inset, 0 24px 50px -34px rgb(49 30 90 / .35);
+}
+
+/* Pílula do item ativo — degradê + barra de acento à esquerda */
+.gh-pilula {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 12px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgb(var(--accent-color) / .42), rgb(var(--accent-color) / .22));
+  box-shadow: 0 0 0 1px rgb(167 139 250 / .22) inset, 0 8px 26px -8px rgb(var(--accent-color) / .8);
+}
+.gh-pilula::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: 3px;
+  background: rgb(196 181 253);
+}
+html.light .gh-pilula {
+  background: linear-gradient(180deg, rgb(var(--accent-color) / .92), rgb(var(--accent-color-dark) / .92));
+  box-shadow: 0 8px 22px -10px rgb(var(--accent-color-dark) / .8);
+}
+html.light .gh-pilula::before { background: rgb(237 233 254); }
+
+/* Botão de recolher/abrir: círculo sólido na borda do painel, como no Materna */
+.gh-recolher {
+  background: rgb(36 26 56);
+  border: 1px solid rgb(192 165 222 / .22);
+  color: rgb(203 189 230);
+  box-shadow: 0 6px 16px -4px rgb(0 0 0 / .6);
+}
+.gh-recolher:hover { color: #fff; border-color: rgb(var(--accent-color) / .7); background: rgb(52 36 82); }
+html.light .gh-recolher { background: #fff; border-color: rgb(124 58 237 / .2); color: rgb(100 116 139); box-shadow: 0 6px 16px -6px rgb(49 30 90 / .35); }
+html.light .gh-recolher:hover { color: rgb(124 58 237); }
+
+/* Títulos das seções (COMERCIAL, FINANCEIRO…): lilás legível no escuro */
+.gh-secao { color: rgb(205 190 240 / .78); transition: color .2s; }
+.gh-secao:hover { color: #fff; }
+html.light .gh-secao { color: rgb(100 116 139); }
+html.light .gh-secao:hover { color: rgb(30 41 59); }

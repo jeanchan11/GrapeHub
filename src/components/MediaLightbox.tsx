@@ -2,6 +2,7 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Download, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
+import { motion } from 'motion/react';
 
 export interface LbFile { name?: string; url: string; type?: string; }
 
@@ -28,7 +29,13 @@ const MediaLightbox: React.FC<{ files: LbFile[]; index: number; onClose: () => v
   const isPdf = t === 'application/pdf' || ext === 'pdf';
 
   return createPortal(
-    <div className="fixed inset-0 z-[10000] flex flex-col bg-black/85 backdrop-blur-sm" onClick={onClose}>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.18 }}
+      className="fixed inset-0 z-[10000] flex flex-col bg-black/85 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div className="flex items-center justify-between px-5 py-3 shrink-0" onClick={e => e.stopPropagation()}>
         <p className="text-sm text-white/80 font-medium truncate max-w-[55%]">
           {file.name || 'arquivo'} <span className="text-white/40">· {index + 1}/{files.length}</span>
@@ -64,7 +71,7 @@ const MediaLightbox: React.FC<{ files: LbFile[]; index: number; onClose: () => v
           <button onClick={() => onIndex(index + 1)} className="absolute right-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all z-10"><ChevronRight size={22} /></button>
         )}
       </div>
-    </div>,
+    </motion.div>,
     document.body
   );
 };

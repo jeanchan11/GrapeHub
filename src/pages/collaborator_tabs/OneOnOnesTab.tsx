@@ -3,8 +3,10 @@ import {
   Plus, Edit2, Trash2, Calendar, FileText, ArrowRight,
   MessageSquare, X, Check, CalendarClock, Clock, Trash
 } from 'lucide-react';
-import { motion } from 'framer-motion';
-import LoadingSpinner from '../../components/LoadingSpinner';
+import { motion } from 'motion/react';
+import { CarregandoBloco } from '../../components/LoadingSpinner';
+import { Modal } from '../../components/ui/Modal';
+import { EstadoVazio } from '../../components/ui/EstadoVazio';
 import SplitHeadline from '../../components/SplitHeadline';
 import { useAuth } from '../../contexts/AuthContext';
 import { auth } from '../../firebase';
@@ -67,11 +69,7 @@ function AgendarProximo1on1Modal({ collaboratorId, userEmail, onClose, onSaved }
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
+  // Esc e clique fora: o <Modal> cuida (comportamento igual ao anterior)
 
   const handleSave = async () => {
     if (!data) { setError('Selecione a data do próximo 1:1.'); return; }
@@ -100,12 +98,7 @@ function AgendarProximo1on1Modal({ collaboratorId, userEmail, onClose, onSaved }
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.72)' }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="relative w-full max-w-md bg-white dark:bg-dark-bg/95 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-md" className="max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 dark:border-white/[0.07]">
           <div className="flex items-center gap-3">
@@ -113,11 +106,11 @@ function AgendarProximo1on1Modal({ collaboratorId, userEmail, onClose, onSaved }
               <CalendarClock size={18} className="text-violet-400" />
             </div>
             <div>
-              <h2 className="font-black text-slate-800 dark:text-white text-base">Agendar Próximo 1:1</h2>
+              <h2 className="font-black text-dark-text text-base">Agendar Próximo 1:1</h2>
               <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">Defina a data da próxima reunião</p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
+          <button onClick={onClose} aria-label="Fechar" className="w-8 h-8 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-dark-text transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -131,7 +124,7 @@ function AgendarProximo1on1Modal({ collaboratorId, userEmail, onClose, onSaved }
                 type="date"
                 value={data}
                 onChange={e => setData(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 transition-colors"
+                className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500 transition-colors"
               />
             </div>
             <div>
@@ -140,7 +133,7 @@ function AgendarProximo1on1Modal({ collaboratorId, userEmail, onClose, onSaved }
                 type="time"
                 value={horario}
                 onChange={e => setHorario(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 transition-colors"
+                className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500 transition-colors"
               />
             </div>
           </div>
@@ -152,7 +145,7 @@ function AgendarProximo1on1Modal({ collaboratorId, userEmail, onClose, onSaved }
               onChange={e => setObservacao(e.target.value)}
               rows={3}
               placeholder="Pauta ou ponto a preparar para o 1:1..."
-              className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors resize-none"
+              className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-dark-text placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors resize-none"
             />
           </div>
 
@@ -165,7 +158,7 @@ function AgendarProximo1on1Modal({ collaboratorId, userEmail, onClose, onSaved }
         <div className="px-6 py-4 border-t border-slate-100 dark:border-white/[0.07] flex items-center justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-5 py-2 rounded-xl text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+            className="px-5 py-2 rounded-xl text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-dark-text hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
           >
             Cancelar
           </button>
@@ -178,8 +171,7 @@ function AgendarProximo1on1Modal({ collaboratorId, userEmail, onClose, onSaved }
             Confirmar agendamento
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -319,15 +311,15 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
     }
   };
 
-  if (loading) return <div className="flex justify-center p-8"><LoadingSpinner /></div>;
+  if (loading) return <CarregandoBloco />;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+    <div className="space-y-6">
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
-          <SplitHeadline text="Reuniões " highlight="1:1" className="text-xl font-black text-slate-800 dark:text-white" />
+          <SplitHeadline text="Reuniões " highlight="1:1" className="text-xl font-black text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
             Acompanhamento individual
           </p>
@@ -388,7 +380,7 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
                 <p className="text-[10px] font-bold text-violet-400 uppercase tracking-widest">Próximo 1:1 Agendado</p>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeColor}`}>{badgeLabel}</span>
               </div>
-              <p className="text-base font-black text-slate-800 dark:text-white">
+              <p className="text-base font-black text-dark-text">
                 {dataObj.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
               </p>
               <div className="flex items-center gap-4 mt-1">
@@ -434,18 +426,17 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
 
       {/* ── Lista de 1:1s ── */}
       {items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-slate-500 dark:text-slate-400 bg-slate-50/50 dark:bg-white/[0.02] rounded-2xl border border-slate-100 dark:border-white/5">
-          <MessageSquare size={48} className="mb-4 opacity-50 text-violet-500" />
-          <p className="text-base font-semibold">Nenhum 1:1 registrado ainda.</p>
+        <div className="bg-slate-50/50 dark:bg-white/[0.02] rounded-2xl border border-slate-100 dark:border-white/5">
+          <EstadoVazio Icone={MessageSquare} titulo="Nenhum 1:1 registrado ainda." />
         </div>
       ) : (
         <div className="relative border-l-2 border-violet-500/20 ml-6 space-y-8 pb-8 pt-4">
           {items.map((item) => (
             <div key={item.id} className="relative pl-8">
               {/* Timeline dot */}
-              <div className="absolute -left-[11px] top-1.5 w-5 h-5 rounded-full border-4 border-white dark:border-[#151221] bg-violet-500"></div>
+              <div className="absolute -left-[11px] top-1.5 w-5 h-5 rounded-full border-4 border-white dark:border-dark-card bg-violet-500"></div>
 
-              <div className="bg-white dark:bg-dark-bg p-5 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm hover:border-violet-500/30 transition-all group">
+              <div className="bg-dark-card p-5 rounded-2xl border border-black/10 dark:border-white/10 shadow-sm hover:border-violet-500/30 transition-colors group">
                 <div className="flex items-start justify-between mb-4 pb-4 border-b border-slate-100 dark:border-white/10">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-violet-500/20 text-violet-500 overflow-hidden">
@@ -456,10 +447,10 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
                       )}
                     </div>
                     <div>
-                      <h4 className="font-bold text-slate-800 dark:text-[#F0F0F0] text-sm flex items-center gap-2">
+                      <h4 className="font-bold text-slate-800 dark:text-dark-text text-sm flex items-center gap-2">
                         1:1 com {item.participante_nome}
                       </h4>
-                      <span className="text-xs font-medium text-slate-500 dark:text-[#888] flex items-center gap-1 mt-0.5">
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
                         <Calendar size={12} /> {dataDoBanco(item.data_reuniao).toLocaleDateString('pt-BR')}
                       </span>
                     </div>
@@ -475,10 +466,10 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
                 <div className="space-y-4">
                   {item.anotacoes && (
                     <div className="bg-slate-50 dark:bg-white/[0.02] p-4 rounded-xl border border-slate-100 dark:border-white/5">
-                      <h5 className="text-xs font-bold text-slate-500 dark:text-[#888] mb-2 uppercase flex items-center gap-1">
+                      <h5 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 uppercase flex items-center gap-1">
                         <FileText size={14} /> Anotações
                       </h5>
-                      <p className="text-sm text-slate-700 dark:text-[#F0F0F0] whitespace-pre-wrap">{item.anotacoes}</p>
+                      <p className="text-sm text-slate-700 dark:text-dark-text whitespace-pre-wrap">{item.anotacoes}</p>
                     </div>
                   )}
                   {item.proximos_passos && (
@@ -486,7 +477,7 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
                       <h5 className="text-xs font-bold text-violet-600 dark:text-violet-400 mb-2 uppercase flex items-center gap-1">
                         <ArrowRight size={14} /> Próximos Passos
                       </h5>
-                      <p className="text-sm text-slate-700 dark:text-[#F0F0F0] whitespace-pre-wrap">{item.proximos_passos}</p>
+                      <p className="text-sm text-slate-700 dark:text-dark-text whitespace-pre-wrap">{item.proximos_passos}</p>
                     </div>
                   )}
                 </div>
@@ -498,10 +489,17 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
 
       {/* Modal Registrar / Editar 1:1 */}
       {modalOpen && editingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-[#0D0D0D] w-full max-w-xl rounded-3xl shadow-2xl flex flex-col border border-slate-200 dark:border-[#2A2A2A] overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-[#2A2A2A]">
-              <h2 className="text-lg font-bold text-slate-800 dark:text-white">
+        <Modal
+          isOpen
+          onClose={() => setModalOpen(false)}
+          semCabecalho
+          semPadding
+          maxWidth="max-w-xl"
+          fecharAoClicarFora={false}
+          fecharComEsc={false}
+        >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/10">
+              <h2 className="text-lg font-bold text-dark-text">
                 {editingItem.id ? 'Editar 1:1' : realizando ? 'Realizar 1:1' : 'Registrar 1:1'}
               </h2>
               <button onClick={() => setModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl text-slate-500 transition-colors">
@@ -512,23 +510,23 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
             <form onSubmit={handleSave} className="p-6 space-y-4">
               {/* Data */}
               <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-[#888] mb-1.5 uppercase">Data da Reunião *</label>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase">Data da Reunião *</label>
                 <input
                   type="date" required
                   value={editingItem.data_reuniao ? editingItem.data_reuniao.split('T')[0] : ''}
                   onChange={e => setEditingItem({ ...editingItem, data_reuniao: e.target.value })}
-                  className="w-full bg-slate-50 dark:bg-[#1A1A1A] border border-slate-200 dark:border-[#2A2A2A] rounded-xl px-4 py-2.5 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500"
+                  className="w-full bg-slate-50 dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500"
                 />
               </div>
 
               {/* Anotações */}
               <div>
-                <label className="block text-xs font-bold text-slate-500 dark:text-[#888] mb-1.5 uppercase">Anotações Livres</label>
+                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase">Anotações Livres</label>
                 <textarea
                   value={editingItem.anotacoes || ''}
                   onChange={e => setEditingItem({ ...editingItem, anotacoes: e.target.value })}
                   rows={4}
-                  className="w-full bg-slate-50 dark:bg-[#1A1A1A] border border-slate-200 dark:border-[#2A2A2A] rounded-xl px-4 py-2.5 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500"
+                  className="w-full bg-slate-50 dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500"
                   placeholder="O que foi discutido?"
                 />
               </div>
@@ -542,7 +540,7 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
                   value={editingItem.proximos_passos || ''}
                   onChange={e => setEditingItem({ ...editingItem, proximos_passos: e.target.value })}
                   rows={3}
-                  className="w-full bg-slate-50 dark:bg-[#1A1A1A] border border-slate-200 dark:border-[#2A2A2A] rounded-xl px-4 py-2.5 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500"
+                  className="w-full bg-slate-50 dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500"
                   placeholder="Ações e acompanhamentos..."
                 />
               </div>
@@ -567,8 +565,7 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* Modal Agendar Próximo 1:1 */}

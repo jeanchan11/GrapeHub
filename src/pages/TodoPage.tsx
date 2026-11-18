@@ -23,6 +23,8 @@ import { CSS } from '@dnd-kit/utilities';
 import { DatePicker } from '../components/ui/DatePicker';
 import confetti from 'canvas-confetti';
 import SplitHeadline from '../components/SplitHeadline';
+import { Abas } from '../components/ui/Abas';
+import { CarregandoBloco } from '../components/LoadingSpinner';
 
 
 
@@ -47,8 +49,8 @@ const SortableTaskRow = ({ task, children }: any) => {
     position: isDragging ? 'relative' as any : 'static' as any,
   };
   return (
-    <div ref={setNodeRef} style={style} className="flex items-center gap-2 p-1.5 hover:bg-white/5 rounded-xl group/task transition-colors border border-transparent hover:border-white/5">
-      <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing hover:text-white text-dark-text/20 flex-shrink-0 opacity-0 group-hover/task:opacity-100 transition-opacity p-0.5">
+    <div ref={setNodeRef} style={style} className="flex items-center gap-2 p-1.5 hover:bg-black/[0.03] dark:hover:bg-white/5 rounded-xl group/task transition-colors border border-transparent hover:border-black/5 dark:hover:border-white/5">
+      <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing hover:text-dark-text text-dark-text/20 flex-shrink-0 opacity-0 group-hover/task:opacity-100 transition-opacity p-0.5">
         <GripVertical size={14} />
       </div>
       {children}
@@ -82,7 +84,7 @@ const AnimatedBar = ({ progress, isDone }: { progress: number; isDone: boolean }
   return (
     <div ref={ref} className="w-full h-1.5 bg-dark-text/10 rounded-full mt-1.5 overflow-hidden">
       <div
-        className={`h-full rounded-full transition-all duration-1000 ease-out ${isDone ? 'bg-emerald-500' : 'bg-violet-500'}`}
+        className={`h-full rounded-full transition-[width] duration-300 ease-out ${isDone ? 'bg-emerald-500' : 'bg-violet-500'}`}
         style={{ width: `${width}%` }}
       />
     </div>
@@ -167,7 +169,7 @@ interface Task {
   order_index?: number;
 }
 
-const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => void }> = ({ activePage, onPageChange }) => {
+const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => void; pageLabel?: string }> = ({ activePage, onPageChange, pageLabel }) => {
   const { userData: authUser } = useAuth();
   const { menu } = useMenu();
   
@@ -1030,8 +1032,8 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
     switch (status) {
       case 'OTIMIZADO': return 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30';
       case 'GARGALO': return 'bg-red-500/20 text-red-500 border-red-500/30';
-      case 'PENDENTE': return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
-      default: return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+      case 'PENDENTE': return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
+      default: return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
     }
   };
 
@@ -1139,40 +1141,32 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
         {/* Header */}
         <div className="flex flex-row justify-between items-center">
           <div>
-            <SplitHeadline
-              text="To Do "
-              highlight="Gestor"
-              subtitle="Controle diário de campanhas e tarefas"
-              className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1"
-              subtitleClassName="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5"
-            />
+            {(() => {
+              // Template reaproveitado: o título vem do menu (pageLabel); "To Do Gestor" é a reserva
+              const nome = (pageLabel || 'To Do Gestor').trim();
+              const i = nome.lastIndexOf(' ');
+              return <SplitHeadline text={nome.slice(0, i + 1)} highlight={nome.slice(i + 1)} subtitle="Controle diário de campanhas e tarefas" />;
+            })()}
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="flex bg-white dark:bg-white/5 p-1 rounded-xl border border-slate-200 dark:border-white/10">
-              <button
-                onClick={() => setViewType('kanban')}
-                className={`p-1.5 rounded-lg transition-colors ${viewType === 'kanban' ? 'bg-white dark:bg-white/10 text-violet-500 shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-gray-300'}`}
-                title="Visualização Kanban"
-              >
-                <Columns size={18} />
-              </button>
-              <button
-                onClick={() => setViewType('list')}
-                className={`p-1.5 rounded-lg transition-colors ${viewType === 'list' ? 'bg-white dark:bg-white/10 text-violet-500 shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-gray-300'}`}
-                title="Visualização em Lista"
-              >
-                <List size={18} />
-              </button>
-            </div>
+            <Abas
+              variante="segmentado"
+              abas={[
+                { id: 'kanban' as const, rotulo: 'Kanban', Icone: Columns },
+                { id: 'list' as const, rotulo: 'Lista', Icone: List },
+              ]}
+              ativa={viewType}
+              onChange={id => setViewType(id as 'kanban' | 'list')}
+            />
 
-            <div className="flex items-center gap-3 text-sm font-medium bg-white dark:bg-white/5 px-4 py-2 rounded-xl border border-slate-200 dark:border-white/10">
-              <span className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+            <div className="flex items-center gap-3 text-sm font-medium bg-dark-card px-4 py-2 rounded-xl border border-black/10 dark:border-white/10">
+              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                 <CheckCircle2 size={16} />
                 {totalOptimized} Otimizados
               </span>
-              <span className="text-slate-300 dark:text-gray-600">〜</span>
-              <span className="flex items-center gap-1.5 text-slate-500 dark:text-gray-400">
+              <span className="text-slate-300 dark:text-slate-600">·</span>
+              <span className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
                 <Circle size={16} />
                 {totalPending} Pendentes
               </span>
@@ -1181,44 +1175,14 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
         </div>
 
         {/* Ativos / Arquivadas Tabs */}
-        <div className="flex items-center gap-1 bg-white dark:bg-white/5 p-1 rounded-xl border border-slate-200 dark:border-white/10 w-fit">
-          <button
-            onClick={() => setTodoTab('ativos')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
-              todoTab === 'ativos'
-                ? 'bg-violet-500 text-white shadow-lg shadow-violet-500/25'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10'
-            }`}
-          >
-            <Circle size={14} />
-            Ativos
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-              todoTab === 'ativos'
-                ? 'bg-white/20 text-white'
-                : 'bg-slate-200 dark:bg-white/10 text-slate-500 dark:text-slate-400'
-            }`}>
-              {totalAtivos}
-            </span>
-          </button>
-          <button
-            onClick={() => setTodoTab('arquivadas')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
-              todoTab === 'arquivadas'
-                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10'
-            }`}
-          >
-            <Archive size={14} />
-            Arquivadas
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-              todoTab === 'arquivadas'
-                ? 'bg-white/20 text-white'
-                : 'bg-slate-200 dark:bg-white/10 text-slate-500 dark:text-slate-400'
-            }`}>
-              {totalArquivadas}
-            </span>
-          </button>
-        </div>
+        <Abas
+          abas={[
+            { id: 'ativos' as const, rotulo: 'Ativos', Icone: Circle, contador: totalAtivos },
+            { id: 'arquivadas' as const, rotulo: 'Arquivadas', Icone: Archive, contador: totalArquivadas },
+          ]}
+          ativa={todoTab}
+          onChange={id => setTodoTab(id as 'ativos' | 'arquivadas')}
+        />
 
         {/* Filters — custom dropdowns */}
         <div className="flex items-center gap-3 w-fit">
@@ -1228,7 +1192,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
             <button
               id="group-filter-btn"
               onClick={() => { setGroupDropdownOpen(v => !v); setStatusDropdownOpen(false); }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all bg-white dark:bg-dark-card text-slate-700 dark:text-dark-text hover:border-violet-400 dark:hover:border-violet-500/50 ${groupDropdownOpen ? 'border-violet-400 dark:border-violet-500/60 ring-2 ring-violet-400/20' : 'border-slate-200 dark:border-white/10'}`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all bg-dark-card text-slate-700 dark:text-dark-text hover:border-violet-400 dark:hover:border-violet-500/50 ${groupDropdownOpen ? 'border-violet-400 dark:border-violet-500/60 ring-2 ring-violet-400/20' : 'border-black/10 dark:border-white/10'}`}
             >
               <span>{selectedGroup === 'all' ? 'Todos os Grupos' : selectedGroup}</span>
               <ChevronDown size={14} className={`transition-transform duration-200 text-slate-400 dark:text-dark-text/50 ${groupDropdownOpen ? 'rotate-180' : ''}`} />
@@ -1237,7 +1201,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
             {groupDropdownOpen && (
               <div style={{ position: 'absolute', width: 0, height: 0 }}>
                 <div 
-                  className="z-[9999] min-w-[180px] rounded-xl border border-slate-200 dark:border-white/10 shadow-xl overflow-hidden bg-white dark:bg-dark-card"
+                  className="z-[9999] min-w-[180px] rounded-xl border border-black/10 dark:border-white/10 shadow-xl overflow-hidden bg-dark-card"
                   style={{ position: 'absolute', top: '6px', left: 0 }}
                 >
                   {[{ value: 'all', label: 'Todos os Grupos' }, ...uniqueGroups.map(g => ({ value: g, label: g }))].map(opt => (
@@ -1263,7 +1227,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
             <button
               id="status-filter-btn"
               onClick={() => { setStatusDropdownOpen(v => !v); setGroupDropdownOpen(false); }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all bg-white dark:bg-dark-card text-slate-700 dark:text-dark-text hover:border-violet-400 dark:hover:border-violet-500/50 ${statusDropdownOpen ? 'border-violet-400 dark:border-violet-500/60 ring-2 ring-violet-400/20' : 'border-slate-200 dark:border-white/10'}`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all bg-dark-card text-slate-700 dark:text-dark-text hover:border-violet-400 dark:hover:border-violet-500/50 ${statusDropdownOpen ? 'border-violet-400 dark:border-violet-500/60 ring-2 ring-violet-400/20' : 'border-black/10 dark:border-white/10'}`}
             >
               <span>{
                 selectedStatus === 'all' ? 'Todos os Status'
@@ -1277,7 +1241,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
             {statusDropdownOpen && (
               <div style={{ position: 'absolute', width: 0, height: 0 }}>
                 <div 
-                  className="z-[9999] min-w-[180px] rounded-xl border border-slate-200 dark:border-white/10 shadow-xl overflow-hidden bg-white dark:bg-dark-card"
+                  className="z-[9999] min-w-[180px] rounded-xl border border-black/10 dark:border-white/10 shadow-xl overflow-hidden bg-dark-card"
                   style={{ position: 'absolute', top: '6px', left: 0 }}
                 >
                   {[
@@ -1310,9 +1274,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
 
       {/* Content */}
       {loading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="animate-spin text-purple-500" size={32} />
-        </div>
+        <CarregandoBloco />
       ) : todoTab === 'arquivadas' ? (
         /* ── Arquivadas: flat task list ─────────────────────────── */
         <div className="pb-6 pt-2">
@@ -1323,9 +1285,9 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
               <p className="text-dark-text/25 text-sm mt-1">Tarefas concluídas aparecerão aqui</p>
             </div>
           ) : (
-            <div className="bg-dark-card border border-white/[0.06] rounded-2xl overflow-hidden">
+            <div className="bg-dark-card border border-black/10 dark:border-white/[0.06] rounded-2xl overflow-hidden">
               {/* Header */}
-              <div className="grid grid-cols-[1fr_200px_140px] gap-4 px-5 py-3 border-b border-white/[0.06]">
+              <div className="grid grid-cols-[1fr_200px_140px] gap-4 px-5 py-3 border-b border-black/10 dark:border-white/[0.06]">
                 <span className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest">Tarefa</span>
                 <span className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest text-right">Parceiro</span>
                 <span className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest text-right">Concluída em</span>
@@ -1345,7 +1307,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                   return (
                     <div 
                       key={task.id} 
-                      className="grid grid-cols-[1fr_200px_140px] gap-4 px-5 py-3 border-b border-white/[0.04] last:border-b-0 hover:bg-white/[0.02] transition-colors group cursor-pointer"
+                      className="grid grid-cols-[1fr_200px_140px] gap-4 px-5 py-3 border-b border-black/5 dark:border-white/[0.04] last:border-b-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors group cursor-pointer"
                       onClick={() => openTaskDetail(task)}
                     >
                       {/* Task title with check */}
@@ -1479,7 +1441,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                             {openTagDropdown === task.id && createPortal(
                               <div
                                 id="tag-dropdown-portal"
-                                className="fixed bg-white dark:bg-[#1A1A24] border border-gray-200 dark:border-white/10 rounded-lg shadow-xl py-1 z-[9999] min-w-[120px]"
+                                className="fixed bg-dark-card border border-black/10 dark:border-white/10 rounded-lg shadow-xl py-1 z-[9999] min-w-[120px]"
                                 style={(() => {
                                   const btn = document.getElementById(`tag-btn-${task.id}`);
                                   if (!btn) return { top: 0, left: 0 };
@@ -1488,7 +1450,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                                 })()}
                               >
                                 {['Facebook', 'Google', 'CRM', 'Otimização'].map(option => (
-                                  <button key={option} onClick={() => { updateTaskField(task.id, 'tags', [option] as any); setOpenTagDropdown(null); }} className="w-full text-left px-3 py-1.5 text-[10px] text-gray-700 dark:text-dark-text hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">{option}</button>
+                                  <button key={option} onClick={() => { updateTaskField(task.id, 'tags', [option] as any); setOpenTagDropdown(null); }} className="w-full text-left px-3 py-1.5 text-[10px] text-slate-700 dark:text-dark-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors">{option}</button>
                                 ))}
                               </div>,
                               document.body
@@ -1508,7 +1470,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                     return (
                       <div className="flex items-center gap-2 mt-1">
                         <input type="text" value={addingTaskSectionTitle} onChange={(e) => setAddingTaskSectionTitle(e.target.value)}
-                          placeholder="Nova tarefa..." className="flex-1 bg-dark-card border border-white/10 rounded-lg px-3 py-1.5 text-xs text-dark-text focus:outline-none focus:border-violet-500"
+                          placeholder="Nova tarefa..." className="flex-1 bg-dark-card border border-black/10 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-dark-text focus:outline-none focus:border-violet-500"
                           onKeyDown={(e) => { if (e.key === 'Enter') handleAddTaskToSection(pid, sectionId); if (e.key === 'Escape') { setAddingTaskToSection(null); setAddingTaskSectionTitle(''); } }} autoFocus />
                         <button onClick={() => handleAddTaskToSection(pid, sectionId)} className="bg-violet-600 hover:bg-violet-700 text-white p-1.5 rounded-lg"><Check size={14}/></button>
                         <button onClick={() => { setAddingTaskToSection(null); setAddingTaskSectionTitle(''); }} className="text-dark-text/40 hover:text-red-400 p-1.5"><X size={14}/></button>
@@ -1625,11 +1587,11 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
 
                         </div>
                       )}
-                      <div className="pt-2 border-t border-white/[0.04]">
+                      <div className="pt-2 border-t border-black/5 dark:border-white/[0.04]">
                         {addingSectionToProject === pid ? (
                           <div className="flex items-center gap-2">
                             <input autoFocus type="text" value={newSectionName} onChange={(e) => setNewSectionName(e.target.value)}
-                              placeholder="Nome da seção..." className="flex-1 bg-dark-card border border-white/10 rounded-lg px-3 py-1.5 text-xs text-dark-text focus:outline-none focus:border-violet-500"
+                              placeholder="Nome da seção..." className="flex-1 bg-dark-card border border-black/10 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-dark-text focus:outline-none focus:border-violet-500"
                               onKeyDown={(e) => { if (e.key === 'Enter') handleAddSection(pid); if (e.key === 'Escape') { setAddingSectionToProject(null); setNewSectionName(''); } }} />
                             <button onClick={() => handleAddSection(pid)} className="bg-violet-600 hover:bg-violet-700 text-white p-1.5 rounded-lg"><Check size={14}/></button>
                             <button onClick={() => { setAddingSectionToProject(null); setNewSectionName(''); }} className="text-dark-text/40 hover:text-red-400 p-1.5"><X size={14}/></button>
@@ -1649,7 +1611,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                 return (
                   <div className="p-3 space-y-1.5">
                     {allProjectTasks.map(renderTaskRowCard)}
-                    <div className="pt-2 mt-2 border-t border-white/[0.06]">
+                    <div className="pt-2 mt-2 border-t border-black/10 dark:border-white/[0.06]">
                       {renderAddInput(null)}
                     </div>
                   </div>
@@ -1658,9 +1620,9 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
 
               return (
                 <div key={pid} className={viewType === 'list'
-                  ? 'flex flex-col border-b border-white/[0.06] last:border-0'
-                  : 'flex flex-col rounded-2xl bg-dark-card border border-white/[0.06] hover:border-violet-500/25 transition-all shadow-sm flex-shrink-0'}>
-                  <div className={viewType === 'list' ? 'px-2 py-2 cursor-pointer hover:bg-white/[0.03] transition-colors' : 'p-4 cursor-pointer'} onClick={() => {
+                  ? 'flex flex-col border-b border-black/10 dark:border-white/[0.06] last:border-0'
+                  : 'flex flex-col rounded-2xl bg-dark-card border border-black/10 dark:border-white/[0.06] hover:border-violet-500/25 transition-all shadow-sm flex-shrink-0'}>
+                  <div className={viewType === 'list' ? 'px-2 py-2 cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.03] transition-colors' : 'p-4 cursor-pointer'} onClick={() => {
                     const newExpanded = !isClientExpanded;
                     setExpandedClients(prev => ({ ...prev, [groupName + pid]: newExpanded }));
                     if (newExpanded && pid !== 'no-project') {
@@ -1714,7 +1676,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                         initial={{ height: 0, opacity: 0, overflow: 'hidden' as any }}
                         animate={{ height: 'auto', opacity: 1, transitionEnd: { overflow: 'visible' } }}
                         exit={{ height: 0, opacity: 0, overflow: 'hidden' as any }}
-                        className={viewType === 'list' ? 'bg-dark-bg/30 pl-6' : 'border-t border-white/[0.06] bg-dark-bg/50 rounded-b-2xl'}
+                        className={viewType === 'list' ? 'bg-dark-bg/30 pl-6' : 'border-t border-black/10 dark:border-white/[0.06] bg-dark-bg/50 rounded-b-2xl'}
                       >
                         {renderExpandedContentForCard()}
                       </motion.div>
@@ -1727,7 +1689,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
 
             if (viewType === 'kanban') {
               return (
-                <div key={groupName} className="flex-1 min-w-[340px] max-w-[500px] rounded-3xl bg-dark-bg/40 border border-white/[0.06] p-4 flex flex-col gap-3 max-h-full overflow-y-auto custom-scrollbar">
+                <div key={groupName} className="flex-1 min-w-[340px] max-w-[500px] rounded-2xl bg-dark-card border border-black/10 dark:border-white/[0.06] p-4 flex flex-col gap-3 max-h-full overflow-y-auto custom-scrollbar">
                    <div className="flex items-center justify-between px-1 mb-1">
                      <h3 className="text-[11px] font-bold text-dark-text uppercase tracking-widest">{groupName}</h3>
                      <span className="text-[10px] bg-dark-text/10 px-2 py-0.5 rounded-full text-dark-text/60 font-bold">{filteredClients.length}</span>
@@ -1741,8 +1703,8 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
             }
 
             return (
-              <div key={groupName} className="bg-dark-bg/40 border border-white/[0.06] rounded-3xl overflow-hidden mb-6 group/grp">
-                <div className="w-full flex items-center justify-between p-4 hover:bg-white/[0.02] transition-colors">
+              <div key={groupName} className="bg-dark-card border border-black/10 dark:border-white/[0.06] rounded-2xl overflow-hidden mb-6 group/grp">
+                <div className="w-full flex items-center justify-between p-4 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
                   <button
                     onClick={() => setExpandedGroups(prev => ({ ...prev, [groupName]: !isGroupExpanded }))}
                     className="flex items-center gap-3 flex-1 min-w-0"
@@ -1792,10 +1754,10 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
         
           <DragOverlay dropAnimation={null}>
             {activeTask ? (
-              <div className="opacity-90 shadow-2xl scale-105 rounded-xl bg-[#1E1E2D] border border-white/10 p-2 min-w-[250px]">
+              <div className="opacity-90 shadow-2xl scale-105 rounded-xl bg-dark-card border border-black/10 dark:border-white/10 p-2 min-w-[250px]">
                 <div className="flex items-center gap-2">
                   <div className="text-violet-400 cursor-grabbing"><GripVertical size={14} /></div>
-                  <span className="text-xs text-white truncate">{activeTask.title}</span>
+                  <span className="text-xs text-dark-text truncate">{activeTask.title}</span>
                 </div>
               </div>
             ) : null}
@@ -1873,14 +1835,14 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
               <span>Clientes ({batchClientIds.length} selecionados)</span>
               <button 
                 onClick={() => setBatchClientIds(projects.map(p => p.id))}
-                className="text-purple-500 hover:text-purple-600 dark:text-purple-400 dark:hover:text-purple-300 text-xs normal-case"
+                className="text-violet-500 hover:text-violet-600 dark:text-violet-400 dark:hover:text-violet-300 text-xs normal-case"
               >
                 Selecionar Todos
               </button>
             </label>
-            <div className="max-h-48 overflow-y-auto bg-gray-50 dark:bg-neutral-900 darker:bg-black border border-gray-200 dark:border-neutral-700 darker:border-neutral-800 rounded-xl p-2 space-y-1">
+            <div className="max-h-48 overflow-y-auto bg-slate-50 dark:bg-dark-card darker:bg-black border border-black/10 dark:border-white/10 darker:border-neutral-800 rounded-xl p-2 space-y-1">
               {projects.map(p => (
-                <label key={p.id} className="flex items-center gap-3 p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 darker:hover:bg-neutral-900 rounded-lg cursor-pointer transition-colors">
+                <label key={p.id} className="flex items-center gap-3 p-2 hover:bg-black/5 dark:hover:bg-white/5 darker:hover:bg-neutral-900 rounded-lg cursor-pointer transition-colors">
                   <input 
                     type="checkbox"
                     checked={batchClientIds.includes(p.id)}
@@ -1888,9 +1850,9 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                       if (e.target.checked) setBatchClientIds([...batchClientIds, p.id]);
                       else setBatchClientIds(batchClientIds.filter(id => id !== p.id));
                     }}
-                    className="rounded border-gray-300 dark:border-gray-600 text-purple-600 focus:ring-purple-500 bg-transparent"
+                    className="rounded border-slate-300 dark:border-slate-600 text-violet-600 focus:ring-violet-500 bg-transparent"
                   />
-                  <span className="text-sm text-gray-700 dark:text-gray-200">{p.partner} <span className="text-gray-500 text-xs ml-2">({p.group || 'Sem Grupo'})</span></span>
+                  <span className="text-sm text-slate-700 dark:text-slate-200">{p.partner} <span className="text-slate-500 text-xs ml-2">({p.group || 'Sem Grupo'})</span></span>
                 </label>
               ))}
             </div>

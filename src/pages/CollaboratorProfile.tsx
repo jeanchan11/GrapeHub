@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, Save, Copy, Check, Info, TrendingUp, BrainCircuit, MessageSquare, Users, Briefcase, FileText, X, Download, ClipboardList } from 'lucide-react';
-import LoadingSpinner from '../components/LoadingSpinner';
+import { CarregandoPagina } from '../components/LoadingSpinner';
+import { Modal } from '../components/ui/Modal';
+import { Abas } from '../components/ui/Abas';
 import { useAuth } from '../contexts/AuthContext';
 import SplitHeadline from '../components/SplitHeadline';
 import { toast } from '@/src/lib/toast';
@@ -116,7 +118,7 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
     }
   };
 
-  if (loading) return <div className="flex justify-center items-center min-h-[75vh] w-full"><LoadingSpinner size="lg" /></div>;
+  if (loading) return <CarregandoPagina />;
   if (!collab) return null;
 
   const tabs = [
@@ -149,7 +151,7 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
               )}
             </div>
             <div>
-              <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">{collab.name}</h1>
+              <h1 className="text-2xl font-black text-dark-text tracking-tight">{collab.name}</h1>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">{collab.role || 'Sem Cargo'}</span>
                 {collab.seniority_level && (
@@ -174,7 +176,7 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
                   <Save size={16} /> Salvar Alterações
                 </button>
               ) : (
-                <button onClick={() => setIsEditMode(true)} className="bg-slate-200 dark:bg-white/[0.05] hover:bg-slate-300 dark:hover:bg-white/10 text-slate-700 dark:text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors">
+                <button onClick={() => setIsEditMode(true)} className="bg-slate-200 dark:bg-white/[0.05] hover:bg-slate-300 dark:hover:bg-white/10 text-dark-text px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors">
                   Editar Perfil
                 </button>
               )}
@@ -183,29 +185,16 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 overflow-x-auto mb-6 pb-2 scrollbar-hide border-b border-slate-200 dark:border-white/10">
-        {tabs.map(tab => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setTabAndUrl(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-t-xl text-sm font-bold transition-all border-b-2 ${
-                isActive 
-                  ? 'border-violet-500 text-violet-600 dark:text-violet-400 bg-white dark:bg-dark-card' 
-                  : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-              }`}
-            >
-              <Icon size={16} /> {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* Abas */}
+      <Abas
+        className="mb-6"
+        abas={tabs.map(tab => ({ id: tab.id, rotulo: tab.label, Icone: tab.icon }))}
+        ativa={activeTab}
+        onChange={setTabAndUrl}
+      />
 
       {/* Content */}
-      <div className="bg-white dark:bg-dark-card rounded-b-2xl rounded-tr-2xl border border-slate-200 dark:border-white/10 shadow-sm p-6 min-h-[400px] overflow-hidden flex flex-col">
+      <div className="bg-white dark:bg-dark-card rounded-2xl border border-black/10 dark:border-white/10 shadow-sm p-6 min-h-[400px] overflow-hidden flex flex-col">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
@@ -217,9 +206,9 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
           >
             {/* Visão Geral */}
             {activeTab === 'geral' && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="space-y-6">
                 <div>
-                  <SplitHeadline text="Visão " highlight="Geral" className="text-xl font-black text-slate-800 dark:text-white" />
+                  <SplitHeadline text="Visão " highlight="Geral" className="text-xl font-black text-dark-text" />
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
                     Resumo e Gráficos do Colaborador
                   </p>
@@ -235,9 +224,9 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
 
         {/* Informações */}
         {activeTab === 'informacoes' && isAdmin && !fromMinhaEquipe && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="space-y-8">
             <div>
-              <SplitHeadline text="Informações " highlight="Básicas" className="text-xl font-black text-slate-800 dark:text-white" />
+              <SplitHeadline text="Informações " highlight="Básicas" className="text-xl font-black text-dark-text" />
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
                 Dados pessoais e contratuais
               </p>
@@ -245,39 +234,39 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
 
             {/* Informações Básicas */}
             <div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 bg-slate-50/50 dark:bg-dark-bg p-5 rounded-2xl border border-slate-100 dark:border-white/10">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 bg-slate-50/50 dark:bg-white/[0.03] p-5 rounded-2xl border border-slate-100 dark:border-white/10">
                 
                 <div className="col-span-2">
                   <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Nome Completo</label>
                   {isEditMode ? (
-                    <input value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500" />
+                    <input value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500" />
                   ) : (
-                    <div className="text-sm font-medium text-slate-800 dark:text-white">{collab.name}</div>
+                    <div className="text-sm font-medium text-dark-text">{collab.name}</div>
                   )}
                 </div>
 
                 <div className="col-span-2 sm:col-span-1">
                   <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Grupo</label>
                   {isEditMode ? (
-                    <input value={formData.group_name || ''} onChange={e => setFormData({...formData, group_name: e.target.value})} className="w-full bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500" />
+                    <input value={formData.group_name || ''} onChange={e => setFormData({...formData, group_name: e.target.value})} className="w-full bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500" />
                   ) : (
-                    <div className="text-sm font-medium text-slate-800 dark:text-white">{collab.group_name || '-'}</div>
+                    <div className="text-sm font-medium text-dark-text">{collab.group_name || '-'}</div>
                   )}
                 </div>
 
                 <div className="col-span-2 sm:col-span-1">
                   <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Cargo</label>
                   {isEditMode ? (
-                    <input value={formData.role || ''} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500" />
+                    <input value={formData.role || ''} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500" />
                   ) : (
-                    <div className="text-sm font-medium text-slate-800 dark:text-white">{collab.role || '-'}</div>
+                    <div className="text-sm font-medium text-dark-text">{collab.role || '-'}</div>
                   )}
                 </div>
 
                 <div className="col-span-2 sm:col-span-1">
                   <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Chave PIX</label>
                   {isEditMode ? (
-                    <input value={formData.pix_key || ''} onChange={e => setFormData({...formData, pix_key: e.target.value})} className="w-full bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500" />
+                    <input value={formData.pix_key || ''} onChange={e => setFormData({...formData, pix_key: e.target.value})} className="w-full bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500" />
                   ) : (
                     collab.pix_key ? (
                       <div
@@ -299,27 +288,27 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
                 <div className="col-span-2 sm:col-span-1">
                   <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Remuneração</label>
                   {isEditMode ? (
-                    <input value={formData.remuneration || ''} onChange={e => setFormData({...formData, remuneration: e.target.value})} className="w-full bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500" />
+                    <input value={formData.remuneration || ''} onChange={e => setFormData({...formData, remuneration: e.target.value})} className="w-full bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500" />
                   ) : (
-                    <div className="text-sm font-medium text-slate-800 dark:text-white">{collab.remuneration || '-'}</div>
+                    <div className="text-sm font-medium text-dark-text">{collab.remuneration || '-'}</div>
                   )}
                 </div>
 
                 <div className="col-span-2 sm:col-span-1">
                   <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Vale Transporte</label>
                   {isEditMode ? (
-                    <input value={formData.transport_voucher || ''} onChange={e => setFormData({...formData, transport_voucher: e.target.value})} className="w-full bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500" />
+                    <input value={formData.transport_voucher || ''} onChange={e => setFormData({...formData, transport_voucher: e.target.value})} className="w-full bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500" />
                   ) : (
-                    <div className="text-sm font-medium text-slate-800 dark:text-white">{collab.transport_voucher || '-'}</div>
+                    <div className="text-sm font-medium text-dark-text">{collab.transport_voucher || '-'}</div>
                   )}
                 </div>
 
                 <div className="col-span-2 sm:col-span-1">
                   <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Data Nasc.</label>
                   {isEditMode ? (
-                    <input type="date" value={formData.birth_date || ''} onChange={e => setFormData({...formData, birth_date: e.target.value})} className="w-full bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-700 dark:text-white focus:outline-none focus:border-violet-500" />
+                    <input type="date" value={formData.birth_date || ''} onChange={e => setFormData({...formData, birth_date: e.target.value})} className="w-full bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500" />
                   ) : (
-                    <div className="text-sm font-medium text-slate-800 dark:text-white">{collab.birth_date || '-'}</div>
+                    <div className="text-sm font-medium text-dark-text">{collab.birth_date || '-'}</div>
                   )}
                 </div>
 
@@ -329,10 +318,10 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
             {/* Form Data Seção */}
             {collab.form_data && Object.keys(collab.form_data).length > 0 && (
               <div>
-                <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                <h3 className="text-lg font-bold text-dark-text mb-4 flex items-center gap-2">
                   <Briefcase size={18} className="text-violet-500" /> Informações do Formulário
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/50 dark:bg-dark-bg p-5 rounded-2xl border border-slate-100 dark:border-white/10">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/50 dark:bg-white/[0.03] p-5 rounded-2xl border border-slate-100 dark:border-white/10">
                   {Object.entries(collab.form_data).map(([key, value]) => {
                     const excludedFields = ['Concordo com os termos acima', 'Nome Completo', 'Declaração de Veracidade', 'Data Atual'];
                     if (excludedFields.includes(key)) return null;
@@ -363,9 +352,9 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
                     }
 
                     return (
-                      <div key={key} className="bg-white dark:bg-dark-bg p-3.5 rounded-xl border border-slate-100 dark:border-white/5">
+                      <div key={key} className="bg-white dark:bg-white/[0.03] p-3.5 rounded-xl border border-slate-100 dark:border-white/5">
                         <label className="text-xs font-bold text-slate-400 mb-1.5 block leading-tight">{key}</label>
-                        <div className="text-sm font-medium text-slate-800 dark:text-white whitespace-pre-wrap break-all">
+                        <div className="text-sm font-medium text-dark-text whitespace-pre-wrap break-all">
                           {filePreview ? (
                             <button
                               onClick={() => setPreviewFile(filePreview)}
@@ -402,12 +391,11 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
 
       {/* Preview Modal */}
       {previewFile && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-dark-bg w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl flex flex-col border border-slate-200 dark:border-white/10 overflow-hidden animate-in zoom-in-95 duration-200">
+        <Modal isOpen onClose={() => setPreviewFile(null)} semCabecalho semPadding maxWidth="max-w-4xl" className="max-h-[90vh]" fecharAoClicarFora={false}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/5">
               <div className="flex items-center gap-3 min-w-0">
                 <FileText className="text-violet-500 shrink-0" size={24} />
-                <h2 className="text-lg font-bold text-slate-800 dark:text-white truncate">{previewFile.name}</h2>
+                <h2 className="text-lg font-bold text-dark-text truncate">{previewFile.name}</h2>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <a 
@@ -427,7 +415,7 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
                 </button>
               </div>
             </div>
-            <div className="flex-1 bg-slate-100 dark:bg-[#151221] overflow-hidden relative min-h-[50vh]">
+            <div className="flex-1 bg-slate-100 dark:bg-dark-card overflow-hidden relative min-h-[50vh]">
               {previewFile.url.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i) ? (
                 <div className="w-full h-full flex items-center justify-center p-4">
                   <img src={previewFile.url} alt={previewFile.name} className="max-w-full max-h-full object-contain rounded-lg shadow-sm" />
@@ -440,8 +428,7 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
                 />
               )}
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

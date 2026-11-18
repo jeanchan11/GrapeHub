@@ -125,10 +125,10 @@ const MultiOptionPicker: React.FC<MultiOptionPickerProps> = ({
         onClick={() => setOpen(v => !v)}
         className={`flex items-center gap-1.5 rounded-lg transition-all cursor-pointer border max-w-[220px] ${
           compact ? 'px-2 py-1' : 'px-2.5 py-1.5'
-        } text-[10px] font-bold uppercase tracking-wider hover:bg-white/5`}
+        } text-[10px] font-bold uppercase tracking-wider hover:bg-black/5 dark:hover:bg-white/5`}
         style={ativo
-          ? { background: 'rgba(124,58,237,0.15)', borderColor: 'rgba(124,58,237,0.45)', color: '#a78bfa' }
-          : { background: 'transparent', borderColor: compact ? 'transparent' : 'rgba(255,255,255,0.1)', color: '#94a3b8' }}
+          ? { background: 'rgba(124,58,237,0.15)', borderColor: 'rgba(124,58,237,0.45)', color: '#8b5cf6' }
+          : { background: 'transparent', borderColor: compact ? 'transparent' : 'rgb(var(--dark-text) / 0.12)', color: '#94a3b8' }}
         title={values.length > 1 ? values.join(', ') : undefined}
       >
         <span className="truncate">{resumo}</span>
@@ -150,12 +150,12 @@ const MultiOptionPicker: React.FC<MultiOptionPickerProps> = ({
         <div
           ref={menuRef}
           data-picker-menu
-          className="fixed z-[100000] bg-dark-card border border-white/10 rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in slide-in-from-top-1 duration-150"
+          className="fixed z-[100000] bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden flex flex-col"
           style={{ position: 'fixed', top: pos.top, left: pos.left, minWidth: pos.minWidth, maxHeight: pos.maxHeight }}
         >
           {showSearch && (
-            <div className="p-2 border-b border-white/5 shrink-0">
-              <div className="flex items-center gap-2 bg-white/5 rounded-lg px-2.5 py-1.5">
+            <div className="p-2 border-b border-black/5 dark:border-white/5 shrink-0">
+              <div className="flex items-center gap-2 bg-black/[0.03] dark:bg-white/5 rounded-lg px-2.5 py-1.5">
                 <Search size={13} className="text-slate-400 shrink-0" />
                 <input
                   ref={searchRef}
@@ -168,7 +168,7 @@ const MultiOptionPicker: React.FC<MultiOptionPickerProps> = ({
                 />
                 {query && (
                   <button type="button" onClick={() => { setQuery(''); searchRef.current?.focus(); }}
-                    className="text-slate-400 hover:text-white shrink-0">
+                    className="text-slate-400 hover:text-dark-text shrink-0">
                     <X size={12} />
                   </button>
                 )}
@@ -180,7 +180,7 @@ const MultiOptionPicker: React.FC<MultiOptionPickerProps> = ({
             <button
               type="button"
               onClick={() => onChange([])}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-400 hover:bg-white/5 transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
             >
               <span className="w-3.5 h-3.5 shrink-0" />
               <span className="flex-1 text-left font-medium">{allLabel}</span>
@@ -194,11 +194,11 @@ const MultiOptionPicker: React.FC<MultiOptionPickerProps> = ({
                   key={opt.label}
                   type="button"
                   onClick={() => toggle(opt.label)}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-dark-text hover:bg-white/5 transition-colors"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-dark-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                 >
                   <span
                     className={`w-3.5 h-3.5 rounded shrink-0 border flex items-center justify-center transition-all ${
-                      on ? 'bg-violet-500 border-violet-500' : 'border-white/20'
+                      on ? 'bg-violet-500 border-violet-500' : 'border-black/20 dark:border-white/20'
                     }`}
                   >
                     {on && <Check size={10} className="text-white" strokeWidth={3} />}
@@ -215,14 +215,14 @@ const MultiOptionPicker: React.FC<MultiOptionPickerProps> = ({
           </div>
 
           {values.length > 0 && (
-            <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-t border-white/5">
+            <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-t border-black/5 dark:border-white/5">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                 {values.length} {itemNoun}
               </span>
               <button
                 type="button"
                 onClick={() => onChange([])}
-                className="text-[10px] font-bold uppercase tracking-wider text-violet-400 hover:text-violet-300 transition-colors"
+                className="text-[10px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 transition-colors"
               >
                 Limpar
               </button>

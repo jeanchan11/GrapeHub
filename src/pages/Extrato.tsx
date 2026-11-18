@@ -8,6 +8,9 @@ import OptionPicker from '../components/ui/OptionPicker';
 import { createPortal } from 'react-dom';
 import { Search, ArrowUp, ArrowDown, FileText, Calendar, ChevronDown, ChevronUp, Check, Tag, AlertTriangle, ShieldAlert, Users, TrendingUp, TrendingDown, X, MessageSquare, Copy, ExternalLink, Pencil, Zap, ToggleLeft, ToggleRight, Trash2, Plus, Loader2, Wand2, Link2, EyeOff, Eye, Upload, SlidersHorizontal, Wallet } from 'lucide-react';
 import { toast } from '@/src/lib/toast';
+import { Modal } from '@/src/components/ui/Modal';
+import { CarregandoBloco } from '@/src/components/LoadingSpinner';
+import { CartaoKpi } from '@/src/components/graficos';
 
 // ── Types ──────────────────────────────────────────────
 interface ExtratoItem {
@@ -432,11 +435,9 @@ function CategoryPicker({ item, onSave }: { item: ExtratoItem; onSave: (id: numb
           ? 'Sem categoria no banco — este lançamento fica de fora do DFC. Clique para classificar.'
           : isManual ? 'Categoria manual — clique para alterar' : 'Categoria automática — clique para fixar'}
       >
-        {/* O ícone genérico 📁 é igual em quase todas e só roubava espaço do nome;
-            fica o ⚠️ (que é informação) e os ícones específicos, se houver. */}
-        {semCategoria
-          ? <span>⚠️</span>
-          : cat.icon && cat.icon !== '📁' && <span>{cat.icon}</span>}
+        {/* Só o alerta de "sem categoria" leva ícone (18/11/2026: os emojis por
+            categoria saíram — o nome já diz qual é). */}
+        {semCategoria && <AlertTriangle size={11} className="shrink-0" />}
         {/* 200px cabem ~34 caracteres: medido em set/2026, mostra o nome inteiro
             em 95% dos lançamentos (eram 21% com 90px). O resto aparece no title. */}
         <span className="max-w-[200px] truncate" title={semCategoria ? 'Sem categoria' : cat.name}>
@@ -448,91 +449,6 @@ function CategoryPicker({ item, onSave }: { item: ExtratoItem; onSave: (id: numb
     </div>
   );
 }
-
-// ── SubGroup ─────────────────────────────────────────────
-const SubGroup = ({ label, items, formatCurr }: { label: string; items: any[]; formatCurr: (v: number) => string }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const total = items.reduce((s: number, i: any) => s + i.value, 0);
-  return (
-    <div className="mb-1 border border-white/5 rounded-lg overflow-hidden">
-      <button
-        onClick={() => setIsOpen(v => !v)}
-        className="w-full flex items-center justify-between px-3 py-2 bg-dark-card-hover hover:bg-white/5 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-semibold text-slate-300">{label}</span>
-          <span className="text-[10px] text-slate-500">{items.length} itens</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] font-bold text-dark-text">{formatCurr(total)}</span>
-          {isOpen ? <ChevronUp size={12} className="text-slate-500" /> : <ChevronDown size={12} className="text-slate-500" />}
-        </div>
-      </button>
-      {isOpen && (
-        <div className="divide-y divide-white/5">
-          {items.map((item: any, idx: number) => (
-            <div key={idx} className="flex items-center justify-between px-4 py-2 hover:bg-dark-card rounded-lg transition-colors">
-              <div className="flex flex-col">
-                <span className="text-xs font-medium text-dark-text">{item.description}</span>
-                <span className="text-[10px] text-slate-500">{item.date}</span>
-              </div>
-              <span className="text-xs font-bold text-dark-text">{formatCurr(item.value)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ── CollapsibleGroup ─────────────────────────────────────
-const CollapsibleGroup = ({ category, items, total, icon, formatCurr }: any) => {
-  const [isOpen, setIsOpen] = useState(false);
-
-  const isCartao = category === 'Cartão de Crédito';
-  const isFacebook = (desc: string) => /facebook|facebk/i.test(desc ?? '');
-  const facebook   = isCartao ? items.filter((i: any) => isFacebook(i.description)) : [];
-  const aplicativos = isCartao ? items.filter((i: any) => !isFacebook(i.description)) : [];
-
-  return (
-    <div className="mb-2 border border-white/10 rounded-xl overflow-hidden">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-4 bg-dark-card hover:bg-dark-card-hover transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-xl">{icon}</span>
-          <span className="text-sm font-bold text-dark-text">{category}</span>
-          <span className="text-[10px] text-slate-500 font-normal ml-2">{items.length} itens</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className="text-sm font-bold text-dark-text">{formatCurr(total)}</span>
-          {isOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-        </div>
-      </button>
-      {isOpen && (
-        <div className="bg-dark-bg p-2 space-y-1 border-t border-white/10">
-          {isCartao ? (
-            <>
-              {facebook.length > 0 && <SubGroup label="Facebook" items={facebook} formatCurr={formatCurr} />}
-              {aplicativos.length > 0 && <SubGroup label="Aplicativos" items={aplicativos} formatCurr={formatCurr} />}
-            </>
-          ) : (
-            items.map((item: any, idx: number) => (
-              <div key={idx} className="flex items-center justify-between p-3 hover:bg-dark-card rounded-lg transition-colors">
-                <div className="flex flex-col">
-                  <span className="text-xs font-medium text-dark-text">{item.description}</span>
-                  <span className="text-[10px] text-slate-500">{item.date}</span>
-                </div>
-                <span className="text-xs font-bold text-dark-text">{formatCurr(item.value)}</span>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
 
 // ── Calendar helpers ────────────────────────────────────
 const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -869,10 +785,8 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
 
   if (!open) return null;
 
-  return createPortal(
-    <div className="fixed inset-0 z-[9990] flex items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div className="relative bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+  return (
+    <Modal isOpen={open} onClose={onClose} semCabecalho semPadding maxWidth="max-w-2xl" className="max-h-[85vh]">
         {/* Header */}
         <div className="px-6 py-5 border-b border-slate-200 dark:border-white/5 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -902,7 +816,7 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 min-h-0 overflow-y-auto p-6">
           {/* ── Tab: Rules ── */}
           {tab === 'rules' && !showForm && (
             <div className="space-y-3">
@@ -911,7 +825,7 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
                 <Plus size={14} /> Nova Regra
               </button>
               {loading ? (
-                <div className="flex justify-center py-8"><Loader2 size={20} className="text-violet-500 animate-spin" /></div>
+                <CarregandoBloco className="py-8" />
               ) : rules.length === 0 ? (
                 <div className="text-center py-8">
                   <Zap size={32} className="mx-auto text-slate-300 dark:text-white/10 mb-2" />
@@ -1140,7 +1054,7 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
 
               {/* Apply button */}
               <button onClick={handleApply} disabled={applying || pendingCount === 0 || rules.filter(r => r.is_active).length === 0}
-                className="w-full h-11 flex items-center justify-center gap-2 px-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-colors">
+                className="w-full h-11 flex items-center justify-center gap-2 px-4 bg-violet-600 hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-colors">
                 {applying ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
                 Aplicar Regras Agora
               </button>
@@ -1164,14 +1078,12 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
             </div>
           )}
         </div>
-      </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }
 
 // ── Component ────────────────────────────────────────────
-export default function Extrato() {
+export default function Extrato({ pageLabel }: { pageLabel?: string } = {}) {
   const [activeTab, setActiveTab] = useState<TabType>('Extrato');
 
   // ── Extrato tab state ──
@@ -1490,7 +1402,12 @@ export default function Extrato() {
       {/* ── Header ── */}
       <div className="flex flex-wrap items-center justify-between gap-4 px-6 md:px-8 pt-8 pb-5">
         <div className="min-w-0">
-          <SplitHeadline text="Extra" highlight="to" className="text-2xl font-black tracking-tight text-dark-text" />
+          {(() => {
+            // Título do menu quando o App passar pageLabel; reserva = o título de sempre.
+            if (!pageLabel?.trim()) return <SplitHeadline text="Extra" highlight="to" />;
+            const nome = pageLabel.trim(); const i = nome.lastIndexOf(' ');
+            return <SplitHeadline text={i > 0 ? nome.slice(0, i + 1) : ''} highlight={i > 0 ? nome.slice(i + 1) : nome} />;
+          })()}
           <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
             {activeTab === 'Extrato' ? (rangeLabel || 'Todas as movimentações bancárias') : `Referência: ${monthLabel}`}
           </p>
@@ -1546,47 +1463,27 @@ export default function Extrato() {
               { label: 'Total Entradas', value: totalEntradas, Icone: TrendingUp,   cor: '#10b981', contexto: 'Realizadas no período', alerta: false },
               { label: 'Total Saídas',   value: totalSaidas,   Icone: TrendingDown, cor: '#f43f5e', contexto: 'Realizadas no período', alerta: false },
               { label: 'Resultado',       value: resultado,     Icone: Wallet,       cor: '#8b5cf6', contexto: 'Entradas − saídas',      alerta: resultado < 0 },
-            ].map(({ label, value, Icone, cor, contexto, alerta }) => (
-              <div key={label} className={`px-5 py-4 rounded-2xl border transition-colors duration-200 ${
-                !loading && alerta ? 'bg-rose-500/[0.06] border-rose-500/20' : 'bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5'}`}>
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `${cor}1a`, color: cor }}><Icone size={14} /></div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{label}</p>
-                </div>
-                {loading
-                  ? <div className="h-8 w-32 bg-slate-100 dark:bg-white/5 rounded-lg animate-pulse" />
-                  : <p className={`text-2xl font-bold tabular-nums ${alerta ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>{formatCurrency(value)}</p>
-                }
-                <p className="text-[11px] text-slate-500 mt-0.5">{contexto}</p>
-              </div>
+            ].map(({ label, value, contexto, alerta }) => (
+              <CartaoKpi key={label} titulo={label} alerta={!loading && alerta}
+                valor={loading
+                  ? <span className="block h-8 w-32 mt-1 bg-slate-100 dark:bg-white/5 rounded-lg animate-pulse" />
+                  : <span className={`text-[clamp(22px,2vw,34px)] ${alerta ? 'text-rose-500' : ''}`}>{formatCurrency(value)}</span>}
+                apoio={contexto} />
             ))}
             {/* Anticipation KPI Card — bruto e taxas ficam à vista na linha de
                 contexto; antes só apareciam ao passar o mouse. */}
-            <div className="px-5 py-4 rounded-2xl border bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5 transition-colors duration-200">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 text-violet-500"><Link2 size={14} /></div>
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Antecipações no Mês</p>
-                {!loading && anticipationStats && anticipationStats.count_pares > 0 && (
-                  <span className="ml-auto inline-flex items-center h-5 px-2 rounded-full bg-slate-500/10 text-slate-500 dark:text-slate-400 text-[10px] font-semibold whitespace-nowrap"
-                    title={`${anticipationStats.count_pares} pares identificados`}>
-                    {anticipationStats.count_pares} pares identificados
-                  </span>
-                )}
-              </div>
-              {loading || !anticipationStats
-                ? <div className="h-8 w-32 bg-slate-100 dark:bg-white/5 rounded-lg animate-pulse" />
-                : (
-                  <>
-                    <p className="text-2xl font-bold tabular-nums text-slate-900 dark:text-white">{formatCurrency(anticipationStats.liquido)}</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                      Bruto: {formatCurrency(anticipationStats.antecipado_bruto)}
-                      <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
-                      <span className="text-rose-500">Taxas: -{formatCurrency(anticipationStats.taxas_antecipacao)}</span>
-                    </p>
-                  </>
-                )
-              }
-            </div>
+            <CartaoKpi titulo="Antecipações no Mês"
+              pilula={!loading && anticipationStats && anticipationStats.count_pares > 0 ? `${anticipationStats.count_pares} pares identificados` : undefined}
+              valor={loading || !anticipationStats
+                ? <span className="block h-8 w-32 mt-1 bg-slate-100 dark:bg-white/5 rounded-lg animate-pulse" />
+                : <span className="text-[clamp(22px,2vw,34px)]">{formatCurrency(anticipationStats.liquido)}</span>}
+              apoio={loading || !anticipationStats ? undefined : (
+                <>
+                  Bruto: {formatCurrency(anticipationStats.antecipado_bruto)}
+                  <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
+                  <span className="text-rose-500">Taxas: -{formatCurrency(anticipationStats.taxas_antecipacao)}</span>
+                </>
+              )} />
           </div>
 
           {/* Filters — só a busca, o botão Filtros e o Conciliar ficam à vista.
@@ -1730,7 +1627,7 @@ export default function Extrato() {
                   {lastImport ? `Última importação: ${new Date(lastImport).toLocaleDateString('pt-BR')}` : 'Nenhuma importação ainda'}
                 </span>
                 <button onClick={() => { setOfxFile(null); setOfxResult(null); setShowOfxModal(true); }}
-                  className="h-10 flex items-center gap-1.5 px-3 rounded-xl border bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400 text-xs font-semibold hover:bg-blue-500/15 transition-colors">
+                  className="h-10 flex items-center gap-1.5 px-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 text-xs font-semibold hover:text-dark-text hover:border-violet-500/40 transition-colors">
                   <Upload size={13} /> Importar OFX
                 </button>
               </>
@@ -1801,7 +1698,7 @@ export default function Extrato() {
                           <p className={`text-[13px] font-medium truncate ${item.is_anticipation_pair || item.is_reversed_pair ? 'text-slate-400 dark:text-slate-500' : 'text-dark-text'}`}>{item.description || '—'}</p>
                           {item.is_reversed_pair && (
                             <span className="shrink-0 inline-flex items-center gap-1 h-5 px-2 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[10px] font-semibold">
-                              ✕ Cancelado
+                              <X size={10} /> Cancelado
                             </span>
                           )}
                           {item.is_anticipation_pair && (
@@ -1868,11 +1765,8 @@ export default function Extrato() {
 
       {/* ── Transaction Detail Modal ── */}
 
-      {selectedTransaction && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setSelectedTransaction(null)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div className="relative w-full max-w-lg mx-4 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden"
-            onClick={(e) => e.stopPropagation()}>
+      {selectedTransaction && (
+        <Modal isOpen onClose={() => setSelectedTransaction(null)} semCabecalho semPadding maxWidth="max-w-lg">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/5">
               <div className="flex items-center gap-3">
@@ -2066,9 +1960,7 @@ export default function Extrato() {
                 )}
               </button>
             </div>
-          </div>
-        </div>,
-        document.body
+        </Modal>
       )}
     <ReconciliationModal
       open={showRulesModal}
@@ -2086,12 +1978,9 @@ export default function Extrato() {
     />
 
     {/* OFX Import Modal */}
-    {showOfxModal && createPortal(
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowOfxModal(false)}>
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-        <div className="relative bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+    <Modal isOpen={showOfxModal} onClose={() => setShowOfxModal(false)} semCabecalho maxWidth="max-w-md">
           <div className="flex items-center justify-between mb-5">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Importar Extrato <span className="text-blue-600 dark:text-blue-400">Sicredi</span></h3>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Importar Extrato <span className="text-violet-600 dark:text-violet-400">Sicredi</span></h3>
             <button onClick={() => setShowOfxModal(false)} className="w-9 h-9 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10"><X size={16} /></button>
           </div>
 
@@ -2110,39 +1999,36 @@ export default function Extrato() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl p-8 text-center hover:border-blue-500/40 transition-colors">
+              <div className="border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl p-8 text-center hover:border-violet-500/40 transition-colors">
                 <Upload size={28} className="mx-auto text-slate-400 mb-3" />
                 <p className="text-xs text-slate-500 mb-3">Selecione o arquivo CSV ou OFX do Sicredi</p>
                 <input
                   type="file"
                   accept=".csv,.CSV,.ofx,.OFX"
                   onChange={e => setOfxFile(e.target.files?.[0] || null)}
-                  className="block mx-auto text-xs text-slate-500 file:mr-3 file:h-9 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-500/10 file:text-blue-600 dark:file:text-blue-400 hover:file:bg-blue-500/20 file:cursor-pointer file:transition-all"
+                  className="block mx-auto text-xs text-slate-500 file:mr-3 file:h-9 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-violet-500/10 file:text-violet-600 dark:file:text-violet-400 hover:file:bg-violet-500/20 file:cursor-pointer file:transition-all"
                 />
               </div>
               {ofxFile && (
-                <div className="flex items-center gap-2 h-10 px-3 bg-blue-500/[0.06] border border-blue-500/20 rounded-xl">
-                  <FileText size={14} className="text-blue-500" />
-                  <span className="text-xs text-blue-600 dark:text-blue-400 font-medium flex-1 truncate">{ofxFile.name}</span>
+                <div className="flex items-center gap-2 h-10 px-3 bg-violet-500/[0.06] border border-violet-500/20 rounded-xl">
+                  <FileText size={14} className="text-violet-500" />
+                  <span className="text-xs text-violet-600 dark:text-violet-400 font-medium flex-1 truncate">{ofxFile.name}</span>
                   <span className="text-[10px] text-slate-500">{(ofxFile.size / 1024).toFixed(1)} KB</span>
                 </div>
               )}
               <button
                 onClick={handleOfxUpload}
                 disabled={!ofxFile || ofxUploading}
-                className="w-full h-10 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-sm font-bold text-white transition-colors"
+                className="w-full h-10 flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-sm font-bold text-white transition-colors"
               >
                 {ofxUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                 {ofxUploading ? 'Importando...' : 'Importar'}
               </button>
             </div>
           )}
-        </div>
-      </div>,
-      document.body
-    )}
+    </Modal>
 
-    {conciliando && createPortal(
+    {conciliando && (
       <ModalConciliacao
         itens={pendentes}
         onFechar={() => setConciliando(false)}
@@ -2160,8 +2046,7 @@ export default function Extrato() {
           } : item));
           setDespesasRefreshKey(k => k + 1);
         }}
-      />,
-      document.body
+      />
     )}
     </>
   );

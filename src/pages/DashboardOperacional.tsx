@@ -16,6 +16,9 @@ import OperacionalAcoesTab from './OperacionalAcoesTab';
 import { auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { Modal } from '../components/ui/Modal';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
+import { Abas } from '../components/ui/Abas';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types  (matching real API response shape)
@@ -52,12 +55,14 @@ interface ProjectRow {
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 // Raw color map — keys normalized to lowercase for lookup
+// Cores de status do padrão (18/11/2026): Ok = emerald-500 (#10b981) e Ruim = rose-500 (#f43f5e),
+// as mesmas dos gráficos desta página e da aba Ações e Nichos.
 const RESULT_COLOR_MAP: Record<string, string> = {
-  'resultado ok':           '#2ecc8f',
-  'resultado ruim':         '#f74c4c',
-  'resultado bom':          '#059669',   // verde fechado — Bom é melhor que Ok, que usa o menta #2ecc8f
-  'campanha pausada':       '#f5c842',
-  'testando':               '#4c8ef7',
+  'resultado ok':           '#10b981',
+  'resultado ruim':         '#f43f5e',
+  'resultado bom':          '#059669',   // emerald-600 — Bom é melhor que Ok (emerald-500)
+  'campanha pausada':       '#f59e0b',
+  'testando':               '#0ea5e9',
   'aguardando criativos':   '#94a3b8',
   'aguardando artigo':      '#94a3b8',
   'aguardando lp':          '#94a3b8',
@@ -331,7 +336,7 @@ const CountUp = ({ value, prefix = '', suffix = '', className = '', format = fal
 
 function Spinner() {
   return (
-    <div className="flex items-center justify-center min-h-[75vh] w-full bg-dark-bg">
+    <div className="flex items-center justify-center min-h-screen w-full bg-dark-bg">
       <LoadingSpinner size="lg" />
     </div>
   );
@@ -1048,7 +1053,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
             value={commentSearch}
             onChange={e => setCommentSearch(e.target.value)}
             placeholder="Buscar por parceiro, otimização, autor..."
-            className="w-full bg-dark-bg border border-white/10 rounded-xl pl-9 pr-8 py-2 text-xs text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors"
+            className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl pl-9 pr-8 py-2 text-xs text-dark-text placeholder-slate-500 focus:outline-none focus:border-violet-500/50 transition-colors"
           />
           {commentSearch && (
             <button onClick={() => setCommentSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-dark-text transition-colors" title="Limpar busca">
@@ -1057,7 +1062,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
           )}
         </div>
         {filteredComments.length === 0 ? (
-          <div className="text-center text-slate-500 text-sm py-6">{commentQuery ? 'Nenhum comentário encontrado 🔍' : 'Nenhum comentário registrado 📝'}</div>
+          <EstadoVazio Icone={commentQuery ? Search : MessageSquare} titulo={commentQuery ? 'Nenhum comentário encontrado' : 'Nenhum comentário registrado'} className="py-6" />
         ) : (
           <div className="space-y-3 flex-1 overflow-y-auto pr-1 min-h-0">
             {(commentQuery ? filteredComments : filteredComments.slice(0, 40)).map((c, idx) => {
@@ -1066,11 +1071,11 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                 <div 
                   key={c.id} 
                   className="p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 transition-colors"
-                  style={{ animation: 'rowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
+                  style={{ animation: 'rowFadeIn 0.3s ease both', animationDelay: `${Math.min(idx, 8) * 0.04}s` }}
                 >
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0 border border-slate-300 dark:border-white/10">
+                      <div className="w-7 h-7 rounded-full overflow-hidden bg-slate-200 dark:bg-dark-card shrink-0 border border-slate-300 dark:border-white/10">
                         {c.opt.authorPhoto ? (
                           <img src={c.opt.authorPhoto} alt={c.opt.author || ''} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : dbUser?.picture ? (
@@ -1126,7 +1131,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                         </button>
                         <button
                           onClick={() => handleSaveEdit(c.project.id, c.productId, c.opt.id)}
-                          className="px-3 py-1.5 text-xs font-bold text-white bg-violet-500 hover:bg-violet-600 rounded-lg transition-colors"
+                          className="px-3 py-1.5 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-xl transition-colors"
                         >
                           Salvar
                         </button>
@@ -1181,7 +1186,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                         </button>
                         <button
                           onClick={() => handleSaveReply(c.project.id, c.productId, c.opt.id)}
-                          className="px-3 py-1.5 text-xs font-bold text-white bg-violet-500 hover:bg-violet-600 rounded-lg transition-colors"
+                          className="px-3 py-1.5 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-xl transition-colors"
                         >
                           Responder
                         </button>
@@ -1201,7 +1206,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                         }`}
                       >
                         {c.opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user') ? (
-                          <span>👍</span>
+                          <ThumbsUp size={14} fill="currentColor" className="text-violet-500" />
                         ) : (
                           <ThumbsUp size={14} />
                         )}
@@ -1237,7 +1242,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4">
         <div>
-          <SplitHeadline text="Dashboard " highlight={isSingleHeadMode ? 'Head' : 'Operacional'} className="text-2xl font-black tracking-tight text-dark-text" />
+          <SplitHeadline text="Dashboard " highlight={isSingleHeadMode ? 'Head' : 'Operacional'} />
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
             {isSingleHeadMode
               ? 'Visão geral de projetos'
@@ -1246,29 +1251,27 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
         </div>
         <button
           onClick={() => fetchData(true)}
-          className={`w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:bg-dark-card-hover flex items-center justify-center transition-colors ${spinning ? 'animate-spin' : ''}`}
+          title="Atualizar"
+          className="w-9 h-9 rounded-xl bg-dark-card border border-black/10 dark:border-white/10 hover:bg-dark-card-hover flex items-center justify-center transition-colors"
         >
-          <RefreshCw size={14} className="text-slate-400" />
+          <RefreshCw size={14} className={`text-slate-400 ${spinning ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
       {/* ── Abas: Visão Geral / Risco de Churn / Churn (modo operação) ──── */}
       {isHeadsMode && (
-        <div className="px-6 md:px-8 pb-6 flex flex-wrap gap-1 border-b border-white/5">
-          {([['geral', 'Visão Geral', LayoutDashboard], ['acoes', 'Ações e Nichos', Layers], ['risco', 'Risco de Churn', ShieldAlert], ['churn', 'Churn', UserX], ['tokens', 'Erros de Token', KeyRound]] as const).map(([key, label, Icon]) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-sm font-bold transition-all border-b-2 -mb-px ${
-                tab === key
-                  ? 'border-violet-500 text-violet-600 dark:text-violet-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-white'
-              }`}
-            >
-              <Icon size={15} />
-              {label}
-            </button>
-          ))}
+        <div className="px-6 md:px-8">
+          <Abas
+            abas={[
+              { id: 'geral', rotulo: 'Visão Geral', Icone: LayoutDashboard },
+              { id: 'acoes', rotulo: 'Ações e Nichos', Icone: Layers },
+              { id: 'risco', rotulo: 'Risco de Churn', Icone: ShieldAlert },
+              { id: 'churn', rotulo: 'Churn', Icone: UserX },
+              { id: 'tokens', rotulo: 'Erros de Token', Icone: KeyRound },
+            ]}
+            ativa={tab}
+            onChange={(id) => setTab(id as typeof tab)}
+          />
         </div>
       )}
 
@@ -1285,7 +1288,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
               : 'bg-white dark:bg-dark-card border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5'
           }`}
         >
-          <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400">
+          <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-dark-card flex items-center justify-center text-slate-500 dark:text-slate-400">
             <Users size={14} />
           </div>
           <div className="text-left">
@@ -1310,7 +1313,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                   : 'bg-white dark:bg-dark-card border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5'
               }`}
             >
-              <div className="w-8 h-8 rounded-full border border-slate-200 dark:border-white/10 overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 rounded-full border border-slate-200 dark:border-white/10 overflow-hidden bg-slate-100 dark:bg-dark-card flex items-center justify-center shrink-0">
                 {avatar ? (
                   <img src={avatar} alt={firstName} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                 ) : (
@@ -1332,8 +1335,8 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
       {isSingleHeadMode && <div className="pb-4" />}
 
       {error && (
-        <div className="mx-6 md:mx-8 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">
-          ⚠ {error}
+        <div className="mx-6 md:mx-8 mb-4 bg-rose-500/10 border border-rose-500/30 rounded-xl px-4 py-3 text-rose-500 dark:text-rose-400 text-sm flex items-center gap-2">
+          <AlertTriangle size={15} className="shrink-0" /> {error}
         </div>
       )}
 
@@ -1542,8 +1545,8 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
         const catColor = getResultColor(selectedResultCategory);
 
         return (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedResultCategory(null)}>
-            <div className="w-full max-w-2xl bg-dark-bg border border-dark-text/10 shadow-2xl rounded-3xl flex flex-col max-h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+          <Modal isOpen onClose={() => setSelectedResultCategory(null)} semCabecalho semPadding maxWidth="max-w-2xl">
+            <div className="w-full flex flex-col max-h-[85vh] overflow-hidden">
               <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-dark-text/5 shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="w-4 h-4 rounded-full" style={{ background: catColor, boxShadow: `0 0 10px ${catColor}` }} />
@@ -1558,14 +1561,14 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                 </div>
                 <button
                   onClick={() => setSelectedResultCategory(null)}
-                  className="w-10 h-10 rounded-2xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors"
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors"
                 >
                   <X size={20} />
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-6 space-y-3">
                 {matchingProjects.length === 0 ? (
-                  <div className="text-center text-slate-500 py-10 text-sm font-medium">Nenhum projeto encontrado.</div>
+                  <EstadoVazio titulo="Nenhum projeto encontrado." className="py-10" />
                 ) : (
                   matchingProjects.map(p => {
                     const gest = findUser(p.responsible);
@@ -1573,7 +1576,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                       <div
                         key={p.id}
                         onClick={() => setSelectedProject(p)}
-                        className="bg-dark-card border border-white/5 hover:border-violet-500/30 p-4 rounded-2xl flex items-center justify-between transition-all group cursor-pointer"
+                        className="bg-black/[0.03] dark:bg-white/5 border border-black/5 dark:border-white/5 hover:border-violet-500/30 p-4 rounded-2xl flex items-center justify-between transition-colors group cursor-pointer"
                         title="Ver detalhes do projeto"
                       >
                         <div className="flex flex-col gap-1 min-w-0">
@@ -1584,10 +1587,10 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                           <div className="text-right">
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Gestor</p>
                             <div className="flex items-center gap-1.5 justify-end">
-                              <div className="w-5 h-5 rounded-full overflow-hidden bg-slate-800 shrink-0">
+                              <div className="w-5 h-5 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0">
                                 {gest?.picture ? <img src={gest.picture} alt="" className="w-full h-full object-cover" /> : null}
                               </div>
-                              <span className="text-xs font-semibold text-slate-300">{gest?.name || p.responsible}</span>
+                              <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{gest?.name || p.responsible}</span>
                             </div>
                           </div>
                         </div>
@@ -1597,7 +1600,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                 )}
               </div>
             </div>
-          </div>
+          </Modal>
         );
       })()}
 
@@ -1625,8 +1628,8 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
         const recentOpts = opts.slice(0, 6);
 
         return (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setSelectedProject(null)}>
-            <div className="w-full max-w-2xl bg-dark-bg border border-dark-text/10 shadow-2xl rounded-3xl flex flex-col max-h-[88vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+          <Modal isOpen onClose={() => setSelectedProject(null)} semCabecalho semPadding maxWidth="max-w-2xl">
+            <div className="w-full flex flex-col max-h-[88vh] overflow-hidden">
               {/* Header */}
               <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-dark-text/5 shrink-0">
                 <div className="min-w-0 pr-4">
@@ -1638,14 +1641,14 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                       </span>
                     )}
                     {p.status && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/5 text-slate-300 border border-white/10 capitalize">{p.status}</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-black/[0.03] dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-black/10 dark:border-white/10 capitalize">{p.status}</span>
                     )}
                     {p.squad && (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20">{p.squad}</span>
                     )}
                   </div>
                 </div>
-                <button onClick={() => setSelectedProject(null)} className="w-10 h-10 rounded-2xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors shrink-0">
+                <button onClick={() => setSelectedProject(null)} className="w-10 h-10 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors shrink-0">
                   <X size={20} />
                 </button>
               </div>
@@ -1659,7 +1662,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                     { label: 'ROI', value: p.roi || '—' },
                     { label: 'Última atualização', value: p.lastUpdate || '—' },
                   ].map(s => (
-                    <div key={s.label} className="bg-dark-card border border-white/5 rounded-xl px-3 py-2.5">
+                    <div key={s.label} className="bg-black/[0.03] dark:bg-white/5 border border-black/5 dark:border-white/5 rounded-xl px-3 py-2.5">
                       <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">{s.label}</p>
                       <p className="text-xs font-bold text-dark-text truncate" title={s.value}>{s.value}</p>
                     </div>
@@ -1675,7 +1678,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                         const pr = (prod as any).projectResult || prod.status;
                         const prColor = getResultColor(pr);
                         return (
-                          <div key={prod.id || i} className="bg-dark-card border border-white/5 rounded-xl px-3 py-2.5 flex items-center justify-between gap-3">
+                          <div key={prod.id || i} className="bg-black/[0.03] dark:bg-white/5 border border-black/5 dark:border-white/5 rounded-xl px-3 py-2.5 flex items-center justify-between gap-3">
                             <div className="min-w-0">
                               <p className="text-xs font-bold text-dark-text truncate">{prod.name}</p>
                               <p className="text-[10px] text-slate-500 truncate">
@@ -1700,12 +1703,12 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                   ) : (
                     <div className="space-y-2">
                       {recentOpts.map((o, i) => (
-                        <div key={o.id || i} className="bg-dark-card border border-white/5 rounded-xl px-3 py-2.5">
+                        <div key={o.id || i} className="bg-black/[0.03] dark:bg-white/5 border border-black/5 dark:border-white/5 rounded-xl px-3 py-2.5">
                           <div className="flex items-center justify-between mb-1 gap-2">
                             <span className="text-[10px] font-bold text-slate-400 truncate">{o.author || 'Sistema'} · {o.productName}</span>
                             <span className="text-[9px] text-slate-500 shrink-0">{formatDateShort(o.date)}{o.time ? ` ${o.time}` : ''}</span>
                           </div>
-                          <p className="text-xs text-slate-300 whitespace-pre-wrap break-words leading-relaxed">{o.message}</p>
+                          <p className="text-xs text-slate-600 dark:text-slate-300 whitespace-pre-wrap break-words leading-relaxed">{o.message}</p>
                         </div>
                       ))}
                     </div>
@@ -1713,7 +1716,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                 </div>
               </div>
             </div>
-          </div>
+          </Modal>
         );
       })()}
 

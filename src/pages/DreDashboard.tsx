@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Wallet, Scale } from 'lucide-react';
+import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Wallet, Scale, AlertTriangle } from 'lucide-react';
+import { CartaoKpi } from '../components/graficos';
+import { CarregandoBloco } from '../components/LoadingSpinner';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, ResponsiveContainer, Cell,
@@ -113,19 +116,18 @@ const DreDashboard: React.FC = () => {
     </span>
   );
 
-  const Card: React.FC<{ label: string; valor: string; sub?: string; Icone: any; cor: string; alerta?: boolean }> = ({ label, valor, sub, Icone, cor, alerta }) => (
-    <div className={`px-5 py-4 rounded-2xl border ${alerta ? 'bg-rose-500/[0.06] border-rose-500/20' : 'bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5'}`}>
-      <div className="flex items-center gap-2 mb-2">
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${cor}1a`, color: cor }}><Icone size={14} /></div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{label}</p>
-      </div>
-      <p className={`text-2xl font-bold tabular-nums ${alerta ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>{valor}</p>
-      {sub && <p className={`text-[11px] mt-0.5 leading-snug ${alerta ? 'text-rose-400' : 'text-slate-500'}`}>{sub}</p>}
-    </div>
+  // 18/11/2026: desenho do CartaoKpi (graficos.tsx); ícone e cor saíram, `alerta` ficou.
+  const Card: React.FC<{ label: string; valor: string; sub?: string; Icone: any; cor: string; alerta?: boolean }> = ({ label, valor, sub, alerta }) => (
+    <CartaoKpi
+      titulo={label}
+      alerta={alerta}
+      valor={<span className={`text-[clamp(22px,2vw,34px)] ${alerta ? 'text-rose-500' : ''}`}>{valor}</span>}
+      apoio={sub ? <span className="block whitespace-normal leading-snug">{sub}</span> : undefined}
+    />
   );
 
-  if (loading) return <div className="py-20 text-center text-sm text-slate-500">Carregando…</div>;
-  if (!data) return <div className="py-20 text-center text-sm text-slate-500">Não foi possível carregar o DFC.</div>;
+  if (loading) return <CarregandoBloco className="py-20" />;
+  if (!data) return <EstadoVazio Icone={AlertTriangle} titulo="Não foi possível carregar o DFC." className="py-20" />;
 
   return (
     <div className="space-y-5">
@@ -152,8 +154,8 @@ const DreDashboard: React.FC = () => {
       </div>
 
       {serie.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 py-20 text-center text-sm text-slate-500">
-          Nenhum lançamento em {year}.
+        <div className="gf-cartao">
+          <EstadoVazio titulo={`Nenhum lançamento em ${year}.`} className="py-20" />
         </div>
       ) : (
         <>
@@ -191,7 +193,7 @@ const DreDashboard: React.FC = () => {
           </div>
 
           {/* Evolução mensal */}
-          <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 p-5">
+          <div className="gf-cartao p-5">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
               <div className="mr-auto">
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">Faturamento x Custos</h3>
@@ -215,7 +217,7 @@ const DreDashboard: React.FC = () => {
           </div>
 
           {/* Resultado por mês */}
-          <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 p-5">
+          <div className="gf-cartao p-5">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
               <div className="mr-auto">
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">Resultado por mês</h3>
@@ -239,7 +241,7 @@ const DreDashboard: React.FC = () => {
           </div>
 
           {/* Detalhe mensal */}
-          <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 overflow-hidden">
+          <div className="gf-cartao overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 dark:border-white/5">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">Detalhe mensal</h3>
             </div>

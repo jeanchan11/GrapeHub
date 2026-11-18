@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Search, ChevronDown } from 'lucide-react';
+import { Check, Search, ChevronDown, AlertTriangle } from 'lucide-react';
 
 // Seletor de categoria do PLANO DE CONTAS (o que o DRE usa), com a natureza de
 // cada conta à vista. Usado na conciliação do Extrato e no cadastro de Contas a
@@ -246,14 +246,15 @@ export const CategoriaDreInline: React.FC<{
             : 'border-dashed border-amber-500/50 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20'
         }`}
       >
-        <span className="truncate">{salvando ? 'Salvando…' : atual ? atual.nome : `⚠️ ${vazio}`}</span>
+        {!salvando && !atual && <AlertTriangle size={11} className="shrink-0" />}
+        <span className="truncate">{salvando ? 'Salvando…' : atual ? atual.nome : vazio}</span>
         <ChevronDown size={10} className={`shrink-0 transition-transform ${aberto ? 'rotate-180' : ''}`} />
       </button>
       {aberto && pos && createPortal(
         <div
           ref={menuRef}
           data-picker-menu
-          className="fixed z-[100000] w-[320px] rounded-xl border border-white/10 bg-dark-card shadow-2xl overflow-hidden"
+          className="fixed z-[100000] w-[320px] rounded-xl border border-black/10 dark:border-white/10 bg-dark-card shadow-2xl overflow-hidden"
           style={{ top: pos.top, left: pos.left }}
         >
           <ListaCategorias folhas={folhas} valorId={valorId} aoEscolher={escolher} sugestaoNatureza={sugestaoNatureza} />

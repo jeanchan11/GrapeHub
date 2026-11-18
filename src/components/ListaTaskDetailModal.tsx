@@ -4,9 +4,11 @@ import {
   ChevronDown, ChevronRight, FileText, Paperclip,
   ImageIcon, MessageSquare, Eye, Calendar, Download
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { confirmDialog } from '@/src/lib/confirm';
+import { Modal } from './ui/Modal';
+import MediaLightbox from './MediaLightbox';
 
 // ─── Types ──────────────────────────────────────────────────
 interface Subtask {
@@ -290,18 +292,7 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
 
   return (
     <>
-      {/* Overlay */}
-      <div
-        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto pt-10 pb-10"
-        onClick={(e) => e.target === e.currentTarget && onClose()}
-      >
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          transition={{ duration: 0.25 }}
-          className="w-full max-w-4xl mx-4 bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden"
-        >
+      <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-4xl" className="max-h-[85vh]" fecharComEsc={!lightboxUrl}>
           {/* ── Header ── */}
           <div className="px-6 py-4 border-b border-black/10 dark:border-white/5 flex items-center justify-between shrink-0">
             <div className="flex-1 min-w-0">
@@ -311,6 +302,7 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
                   value={editNameVal}
                   onChange={e => setEditNameVal(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') saveTaskName(); if (e.key === 'Escape') setEditingName(false); }}
+                  data-segura-esc
                   onBlur={saveTaskName}
                   className="text-lg font-bold text-dark-text bg-transparent border-b-2 border-violet-500 outline-none w-full"
                 />
@@ -474,6 +466,7 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
                       value={newSubTitle}
                       onChange={e => setNewSubTitle(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') addSubtask(); if (e.key === 'Escape') setAddingSubtask(false); }}
+                      data-segura-esc
                       placeholder="Título da subtarefa..."
                       className="flex-1 bg-dark-bg border border-black/10 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-dark-text outline-none focus:border-violet-500/50 placeholder-slate-600"
                     />
@@ -639,46 +632,12 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
               </div>
             </div>
           </div>
-        </motion.div>
-      </div>
+      </Modal>
 
       {/* Lightbox */}
-      <AnimatePresence>
-        {lightboxUrl && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4"
-            onClick={() => setLightboxUrl(null)}
-          >
-            <div className="absolute top-4 right-4 flex items-center gap-2">
-              <button
-                className="p-2 bg-black/5 dark:bg-white/20 rounded-full text-dark-text hover:bg-black/5 dark:hover:bg-white/30 transition-colors"
-                onClick={(e) => { e.stopPropagation(); downloadImage(lightboxUrl); }}
-                title="Baixar imagem"
-              >
-                <Download size={22} />
-              </button>
-              <button
-                className="p-2 bg-black/5 dark:bg-white/20 rounded-full text-dark-text hover:bg-black/5 dark:hover:bg-white/30 transition-colors"
-                onClick={() => setLightboxUrl(null)}
-                title="Fechar"
-              >
-                <X size={24} />
-              </button>
-            </div>
-            <motion.img
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              src={lightboxUrl}
-              alt="Preview"
-              className="max-w-full max-h-[90vh] rounded-xl shadow-2xl object-contain"
-              onClick={e => e.stopPropagation()}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {lightboxUrl && (
+        <MediaLightbox files={[{ url: lightboxUrl, name: 'imagem', type: 'image/' }]} index={0} onIndex={() => {}} onClose={() => setLightboxUrl(null)} />
+      )}
     </>
   );
 }

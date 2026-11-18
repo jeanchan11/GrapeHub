@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { Plus, CheckCircle2, X, Copy, Trash2, Loader2, KeyRound, Edit2 } from 'lucide-react';
+import { CarregandoBloco } from '../components/LoadingSpinner';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
+import { designSystem } from '../design-system';
 import { Modal } from '../components/ui/Modal';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
@@ -16,7 +19,10 @@ interface PasswordItem {
   created_at: string;
 }
 
-const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
+const SenhasPage: React.FC<{ activePage: string; pageLabel?: string }> = ({ activePage, pageLabel }) => {
+  // O template `senhas` serve várias páginas do menu: o título vem do nome no menu
+  const nomePagina = (pageLabel || '').trim() || 'Logins e Senhas';
+  const corte = nomePagina.lastIndexOf(' ');
   const { userData } = useAuth();
   const [passwords, setPasswords] = useState<PasswordItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,21 +132,18 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <SplitHeadline
-            text="Logins e "
-            highlight="Senhas"
+            text={corte > 0 ? nomePagina.slice(0, corte + 1) : ''}
+            highlight={corte > 0 ? nomePagina.slice(corte + 1) : nomePagina}
             subtitle="Gerenciador de Acessos"
-            className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1"
             subtitleClassName="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5"
           />
         </div>
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="animate-spin text-purple-500" size={32} />
-        </div>
+        <CarregandoBloco />
       ) : (
-        <div className="bg-white dark:bg-[#11111b] border border-slate-200 dark:border-white/5 shadow-sm dark:shadow-none rounded-xl overflow-hidden">
+        <div className="bg-dark-card border border-black/10 dark:border-white/10 shadow-sm rounded-2xl overflow-hidden">
           <div className="p-2 space-y-1">
             {passwords.map((item, idx) => (
               <motion.div
@@ -148,8 +151,8 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                 initial={{ opacity: 0, y: -18, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{
-                  duration: 0.35,
-                  delay: idx * 0.06,
+                  duration: 0.3,
+                  delay: Math.min(idx, 8) * 0.04,
                   ease: [0.32, 0.72, 0, 1],
                 }}
               >
@@ -157,17 +160,17 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                   className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors"
                   onClick={() => openEditModal(item)}
                 >
-                  <div className="w-8 h-8 rounded-full border border-purple-500/50 flex items-center justify-center bg-purple-500/10 text-purple-500">
+                  <div className="w-8 h-8 rounded-full border border-violet-500/40 flex items-center justify-center bg-violet-500/10 text-violet-500">
                     <KeyRound size={16} />
                   </div>
                   
                   <div className="flex-1">
-                    <span className="text-sm font-medium text-slate-800 dark:text-gray-200">
+                    <span className="text-sm font-medium text-dark-text">
                       {item.service_name}
                     </span>
                   </div>
                   
-                  <button className="text-xs text-slate-400 dark:text-gray-500 hover:text-purple-500 transition-colors">
+                  <button className="text-xs text-slate-500 dark:text-slate-400 hover:text-violet-500 transition-colors">
                     Ver dados
                   </button>
                 </div>
@@ -175,30 +178,28 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
             ))}
             
             {passwords.length === 0 && (
-              <div className="p-8 text-center text-slate-500 text-sm">
-                Nenhuma senha cadastrada ainda.
-              </div>
+              <EstadoVazio Icone={KeyRound} titulo="Nenhuma senha cadastrada ainda." />
             )}
 
             <div className="p-3 mt-2">
               <button 
                 onClick={openNewModal}
-                className="text-sm text-slate-500 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 flex items-center gap-2 font-medium transition-colors"
+                className={designSystem.button.secundario}
               >
-                <Plus size={16} /> ADICIONAR SENHA
+                <Plus size={16} /> Adicionar senha
               </button>
             </div>
           </div>
         </div>
       )}
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}>
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} semCabecalho semPadding maxWidth="max-w-lg">
         <div className="p-6 space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-slate-800 dark:text-white">
+            <h2 className="text-lg font-bold text-dark-text">
               {editingItem ? 'Dados de Acesso' : 'Nova Senha'}
             </h2>
-            <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white">
+            <button onClick={() => setIsModalOpen(false)} aria-label="Fechar" className="p-2 -mr-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
               <X size={20} />
             </button>
           </div>
@@ -212,10 +213,10 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                   value={serviceName}
                   onChange={(e) => setServiceName(e.target.value)}
                   placeholder="Ex: Hostgator"
-                  className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg px-4 py-2 text-slate-800 dark:text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none transition-all"
+                  className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2 text-dark-text focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition-all"
                 />
               ) : (
-                <div className="py-2 text-slate-800 dark:text-white font-medium">{serviceName}</div>
+                <div className="py-2 text-dark-text font-medium">{serviceName}</div>
               )}
             </div>
 
@@ -228,11 +229,11 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                     placeholder="https://exemplo.com/login"
-                    className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg pl-4 pr-10 py-2 text-slate-800 dark:text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none transition-all"
+                    className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl pl-4 pr-10 py-2 text-dark-text focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition-all"
                   />
                   <button 
                     onClick={() => copyToClipboard(url)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-purple-500 rounded-md transition-colors"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-violet-500 rounded-md transition-colors"
                     title="Copiar link"
                   >
                     <Copy size={14} />
@@ -241,7 +242,7 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
               ) : (
                 <div className="flex items-center justify-between py-2 group">
                   {url ? (
-                    <a href={url.startsWith('http') ? url : `https://${url}`} target="_blank" rel="noreferrer" className="text-purple-500 hover:underline truncate mr-2 block max-w-full">
+                    <a href={url.startsWith('http') ? url : `https://${url}`} target="_blank" rel="noreferrer" className="text-violet-500 hover:underline truncate mr-2 block max-w-full">
                       {url}
                     </a>
                   ) : (
@@ -250,7 +251,7 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                   {url && (
                     <button 
                       onClick={() => copyToClipboard(url)}
-                      className="p-1.5 text-slate-400 hover:text-purple-500 rounded-md transition-colors opacity-100 md:opacity-0 group-hover:opacity-100 shrink-0"
+                      className="p-1.5 text-slate-400 hover:text-violet-500 rounded-md transition-colors opacity-100 md:opacity-0 group-hover:opacity-100 shrink-0"
                       title="Copiar link"
                     >
                       <Copy size={14} />
@@ -269,11 +270,11 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                     value={login}
                     onChange={(e) => setLogin(e.target.value)}
                     placeholder="E-mail ou usuário"
-                    className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg pl-4 pr-10 py-2 text-slate-800 dark:text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none transition-all"
+                    className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl pl-4 pr-10 py-2 text-dark-text focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition-all"
                   />
                   <button 
                     onClick={() => copyToClipboard(login)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-purple-500 rounded-md transition-colors"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-violet-500 rounded-md transition-colors"
                     title="Copiar login"
                   >
                     <Copy size={14} />
@@ -281,10 +282,10 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                 </div>
               ) : (
                 <div className="flex items-center justify-between py-2 group">
-                  <span className="text-slate-800 dark:text-white">{login}</span>
+                  <span className="text-dark-text">{login}</span>
                   <button 
                     onClick={() => copyToClipboard(login)}
-                    className="p-1.5 text-slate-400 hover:text-purple-500 rounded-md transition-colors opacity-100 md:opacity-0 group-hover:opacity-100"
+                    className="p-1.5 text-slate-400 hover:text-violet-500 rounded-md transition-colors opacity-100 md:opacity-0 group-hover:opacity-100"
                     title="Copiar login"
                   >
                     <Copy size={14} />
@@ -302,11 +303,11 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Senha"
-                    className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg pl-4 pr-10 py-2 text-slate-800 dark:text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none transition-all font-mono"
+                    className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl pl-4 pr-10 py-2 text-dark-text focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition-all font-mono"
                   />
                   <button 
                     onClick={() => copyToClipboard(password)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-purple-500 rounded-md transition-colors"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-violet-500 rounded-md transition-colors"
                     title="Copiar senha"
                   >
                     <Copy size={14} />
@@ -314,10 +315,10 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                 </div>
               ) : (
                 <div className="flex items-center justify-between py-2 group">
-                  <span className="text-slate-800 dark:text-white font-mono">{password}</span>
+                  <span className="text-dark-text font-mono">{password}</span>
                   <button 
                     onClick={() => copyToClipboard(password)}
-                    className="p-1.5 text-slate-400 hover:text-purple-500 rounded-md transition-colors opacity-100 md:opacity-0 group-hover:opacity-100"
+                    className="p-1.5 text-slate-400 hover:text-violet-500 rounded-md transition-colors opacity-100 md:opacity-0 group-hover:opacity-100"
                     title="Copiar senha"
                   >
                     <Copy size={14} />
@@ -331,7 +332,7 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
             {isEditing && editingItem ? (
               <button 
                 onClick={() => handleDelete(editingItem.id)}
-                className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+                className="text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
               >
                 <Trash2 size={16} /> Excluir
               </button>
@@ -343,7 +344,7 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
               <button 
                 onClick={handleSave}
                 disabled={isSubmitting || !serviceName.trim()}
-                className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
+                className="bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white px-6 py-2 rounded-xl font-semibold transition-colors flex items-center gap-2"
               >
                 {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
                 Concluir
@@ -351,7 +352,7 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
             ) : (
               <button 
                 onClick={() => setIsEditing(true)}
-                className="bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 text-slate-800 dark:text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
+                className="bg-black/5 hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/20 text-dark-text px-6 py-2 rounded-xl font-semibold transition-colors flex items-center gap-2"
               >
                 <Edit2 size={18} />
                 Editar

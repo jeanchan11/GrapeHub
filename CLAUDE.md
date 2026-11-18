@@ -27,6 +27,10 @@ aqui** — é o que evita repetir contexto para a próxima sessão.
 Três estados no `<html>`: `light`, `dark`, `dark.darker`. Use os tokens do projeto
 (`bg-dark-bg`, `bg-dark-card`, `text-dark-text`, `border-black/10 dark:border-white/10`),
 nunca cores fixas. A preferência fica em `App.tsx` (`'system' | 'light' | 'darker'`).
+Em 18/11/2026 foram trocadas 121 cores fixas do modo escuro em 31 arquivos (`dark:bg-slate-800/60`,
+`dark:bg-slate-900`, `dark:bg-gray-900`, hex como `#1A1625`, `#1A1A1A`, `#1a1a2e`) por `bg-dark-card`,
+`bg-dark-bg` e `white/[x]` — destoavam do roxo do tema (cartões azul-acinzentados em Atividades).
+Fora da troca de propósito: formulários públicos e testes (DISC, Sabotadores), que não ficam no menu.
 
 ## Arquitetura
 
@@ -135,6 +139,32 @@ nunca cores fixas. A preferência fica em `App.tsx` (`'system' | 'light' | 'dark
 
 ## Armadilhas de front
 
+- **Padrão de design (18/11/2026)** — auditoria e migração em `docs/auditoria-design-2026-11-18/`
+  (`GUIA-MIGRACAO.md` é a regra; relatórios por área). Use SEMPRE: popup = `ui/Modal` (portal, z-[1000],
+  Esc só no de cima via pilha, clique fora desligável com `fecharAoClicarFora`, `semCabecalho`/`semPadding`
+  para miolo próprio); confirmação = `confirmDialog`/`promptDialog` (`lib/confirm`, Esc não vaza para o
+  popup de baixo); abas = `ui/Abas` (sublinhado na página, `segmentado` em filtro — nunca fundo violeta
+  cheio); título = `SplitHeadline` sem className (2xl) com `pageLabel` em template reaproveitado;
+  carregamento = `CarregandoPagina`/`CarregandoBloco` (`LoadingSpinner.tsx`); vazio = `ui/EstadoVazio`;
+  indicador = `CartaoKpi`; botões = `designSystem.button.principal|secundario`. Toast no canto de baixo
+  (o de cima é do ActivityToastStack). 114 arquivos migrados; backup do front antes da migração em
+  `../grapehub-backup-design-20261118/`.
+  Cor de resultado: "Ok" é verde (#10b981) nos dashboards, mas em **Projetos** (`projectResults`) o
+  "RESULTADO OK" fica **âmbar de propósito** (decisão do Jean, 18/11/2026) — separa Ok de Bom na lista diária.
+  **Automações, Sequências e Leads redesenhados do zero** (18/11/2026; relatórios `automacoes.md`, `sequencias.md`,
+  `leads.md` na mesma pasta; originais em `backup-menu-antes-materna/redesign-crm/`). Código novo em
+  `src/components/{automacoes,sequencias,leads}/`. Achados: `leads-list` cruzava `responsavel_id` com e-mail (é o
+  `users.id`) — corrigido; a ação de automação "Iniciar sequência" conta dias corridos e ignora `skip_weekends`
+  (o botão do lead respeita); o botão "Sequência" do lead grava datas em UTC (depois das 21h adianta um dia).
+  Os dois foram corrigidos no mesmo dia (automação pula fim de semana e usa o dia de São Paulo).
+  **Página inicial e login refeitos (18/11/2026)**: o GrapeHub é só do time interno — `LandingPage.tsx` fala da
+  operação (nada de financeiro, nada de cliente) e `LoginView.tsx` só tem "Entrar com Google". O login de cliente
+  por e-mail/senha (`useClientSession`) saiu da tela; o código do portal continua no projeto, sem porta de entrada.
+  Depois do login aparece a recepção `BoasVindas.tsx` (só quando o login acabou de acontecer nesta aba — marca em
+  sessionStorage gravada pelo LoginView; desligável em Configurações). **Configurações** = `src/pages/Configuracoes.tsx`
+  (perfil com foto/telefone/bio, tema, menu recolhido, recepção, "Meu acesso" com as páginas liberadas, sair;
+  administração só para superadmin). `Placeholders.tsx` (Notificações falsa + Configurações antigas) foi apagado.
+
 - **`motion.div` anima valores de `style`.** Menu em portal posicionado via `style={{top,left}}`
   num `motion.div` entra deslizando da tela. Ponha `position/top/left/zIndex` numa `div` comum
   por fora e deixe só opacity/scale no `motion.div`.
@@ -145,6 +175,10 @@ nunca cores fixas. A preferência fica em `App.tsx` (`'system' | 'light' | 'dark
   agendada e realizada um dia para trás). Use `dataDoBanco()` de `src/lib/dataBanco.ts` (pega
   AAAA-MM-DD e fixa meio-dia local) e `hojeLocal()` no lugar de `toISOString().split('T')[0]`,
   que depois das 21h devolve amanhã. Outras telas com DATE podem ter o mesmo defeito.
+- **Coluna `timestamp` (sem fuso) está em UTC** — `NOW()` no Neon (fuso GMT). O pg a lia no fuso do
+  processo: produção (UTC) certa, Mac (BRT) 3 h adiantado na tela ("mandei 13:19, aparece 16:19",
+  17/11/2026). Hoje `server.ts` fixa `pg.types.setTypeParser(1114, …+'Z')`. Em SQL, converter com
+  `(col AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo'`.
 - **Regex dentro de template literal de SQL**: `'^\d{4}'` vira `'^d{4}'` no Postgres e casa com
   zero linhas, silenciosamente. Use classes explícitas: `'^[0-9]{4}'`.
 - Comentário JSX dentro de `{cond && (` quebra o build (TS1005) — ponha acima da condicional.
@@ -160,6 +194,24 @@ nunca cores fixas. A preferência fica em `App.tsx` (`'system' | 'light' | 'dark
   Aba Ações e Nichos (`OperacionalAcoesTab.tsx`): explorador — lista de nichos mínima à esquerda (nome, nº de
   produtos, % positivo em texto colorido; o Jean pediu sem barras) e, à direita, resumo do nicho + ações em blocos;
   clicar num bloco abre "Quem roda". Troca de head anima (CountUp do valor atual, `d`/altura/largura em transição).
+  **Métricas do Comercial › Vendas** (18/11/2026, `CrmMetricas.tsx`) também usa o módulo: Receita, Vendas, Ticket
+  médio e Perdas em `CartaoKpi`, Origem das vendas, Motivos de perda (`Anel`) e a lista em `Cartao`. Os dois
+  gráficos do ano (Fechamentos e Valores por mês, recharts barra + linha) **ficam como estão** — o Jean gosta
+  deles; só a moldura virou `Cartao`. Pré vendas, Marketing (`MarketingDashboard`, embutido) e Funil
+  (`FunilCompleto`; o desenho do funil em si, `FunilVisual`, ficou igual) passaram para o mesmo módulo no mesmo dia.
+- **Menu no estilo do MaternaHub** (18/11/2026, em teste — o Jean pode desistir): painel de vidro
+  flutuante (`gh-vidro`, 14px de margem, 264/76 px), pílula do ativo que desliza entre páginas
+  (`motion` `layoutId="gh-pilula"`, também na seção do modo recolhido) e brilhos roxos atrás
+  (`gh-fundo` no `App.tsx`). O `<main>` é `relative` **sem z-index**: com `z-[1]` ele virava um contexto de
+  empilhamento e todo popup aberto dentro da página (fixed, z-[100]…) ficava preso abaixo do menu (z-50) —
+  o menu aparecia por cima do modal (18/11/2026). Sendo posicionado e vindo depois no DOM, já pinta acima dos brilhos.
+  **Desempenho**: nada de `filter: blur` nos brilhos nem `backdrop-filter` no menu, e a margem do `<main>` não
+  anima — os três juntos derrubavam o FPS ao abrir/recolher (o blur era refeito a cada quadro e a página inteira
+  re-layoutava). Visualmente não mudam nada: atrás do menu só há degradê liso. A página desliza junto com o menu por
+  FLIP (`useLayoutEffect` no `App.tsx`: margem muda de uma vez, `translateX(delta)` → 0 em 0,3 s e o transform é
+  removido no fim — transform deixado no `<main>` prenderia os popups `fixed` à página). CSS em
+  `src/components/sidebar-vidro.css`. **Backup do menu anterior** em `backup-menu-antes-materna/`
+  (`LEIA.md` diz como voltar). O original é `../MaternaHub/client/src/components/layout/Sidebar.tsx`.
 - **Etiqueta em linha de lista de tarefas** (aprovada pelo Jean em 06/10/2026): pílula com
   bolinha da cor, texto normal, sem borda, vazio = traço que vira "+ Adicionar" no hover.
   Use `PilulaTag` (só mostrar) ou `<OptionPicker variant="tag">` (escolher), ambos em
@@ -242,6 +294,39 @@ Não há CI. O processo é manual e tem uma pegadinha:
   **conversão personalizada** para ele. A conversão "Reunião marcada" (777593924849494) está
   morta desde 26/08/2025 (regra no Calendly; hoje é cal.com) — reunião vem do CRM.
 - **Anthropic SDK** já instalado e em uso no servidor (`ANTHROPIC_API_KEY` no `.env`).
+- **Gerentes de IA** (18/11/2026, substituem o Fred): página template `gerentes` (`src/pages/Gerentes.tsx`),
+  servidor `src/routes/gerentes.ts`. Gerentes (CEO = id `assistente`, Financeiro, Comercial, Marketing, Operacional — sem "Gerente" no nome, decisão do Jean 18/11), modelo
+  `claude-opus-5-5` com loop de ferramentas **só de leitura** (caixa, previsão, inadimplentes, contas a pagar,
+  meses fechados, funil, leads parados, tarefas, fechamentos, carteira, evolução, retenção). A única escrita é
+  `propor_decisao` → fila `ia_para_decidir` (aba "Para decidir"; aprovar/descartar é gente). Conversas por pessoa em
+  `ia_gerentes_conversas/_mensagens` (só texto; thinking não é guardado). Relatório das 7h (São Paulo) em
+  `ia_gerentes_relatorios`: a vaga do dia é reservada com INSERT … ON CONFLICT antes de chamar a IA, então dev e
+  produção (mesmo banco) não geram em dobro; vaga presa em `gerando` há 15 min é retomada. `GERENTES_ROTINA=off`
+  desliga. Permissão só no servidor: assistente e financeiro = superadmin; comercial = superadmin/admin/
+  gerente-comercial/diretor-*; operacional = superadmin/admin/diretor-operacional/gerente-operacional.
+  Custo medido em 18/11: pergunta ≈ US$ 0,04 (18 s); relatório ≈ US$ 0,10 (4 por dia).
+  **O modelo às vezes escreve `<invoke name=…>` no texto em vez de chamar a ferramenta** (aconteceu no 1º relatório
+  do operacional: as decisões não entraram na fila). O loop detecta, pede uma vez para chamar de verdade e limpa as
+  tags do texto. Os botões do Fred saíram do Dashboard Financeiro e do CRM Comercial (backup em
+  `backup-menu-antes-materna/fred/`); a rota `/api/ai/chat` e `components/AIChat` ficaram sem uso.
+  **Gerente de marketing** (mesmo dia): aquisição da própria Grape — `anuncios_grape` lê a conta Captação na Meta
+  (`META_GRAPE_ACCESS_TOKEN`) por campanha ou por anúncio e casa com os leads do CRM pela UTM **sem emoji** (a Meta
+  troca o prefixo: "✖️ [CBO] ESCALA" na Meta = "🟣 [CBO] ESCALA" na UTM); o mesmo criativo em duas campanhas é somado
+  antes de casar, senão os leads do CRM contam em dobro. Papéis: superadmin/admin/gerente-marketing/diretor-*.
+  **Gráficos**: o gerente escreve um bloco ` ```grafico ` com JSON (`tipo` linha|area|barras|barras_empilhadas|pizza,
+  `x`, `series`, `unidade`, `referencia`) e a página desenha com recharts (`GraficoIA` em `Gerentes.tsx`).
+  **`<aside>` ganha fundo no tema escuro** (regra `html.darker aside` no `index.html`, feita para o menu antigo):
+  coluna de página não pode ser `<aside>`, vira um retângulo escuro.
+  **Memória** (mesmo dia): `ia_gerentes_memoria` (soft delete por `ativo`). O gerente anota sozinho com a ferramenta
+  `lembrar` quando a pessoa conta algo que deve valer depois; `esquecer` desativa; `buscar_conversas` procura em todas
+  as conversas da pessoa. As anotações entram no 2º bloco do system (depois do `cache_control`, para não quebrar o
+  cache) — o assistente vê as de todos. Descartar com motivo na fila também vira anotação. O relatório do dia recebe o
+  relatório anterior para dizer o que mudou. Aba Memória na página para ver, escrever e apagar.
+  **Aprovar ("Vou fazer") vira tarefa da própria página** (coluna direita: Decidir | Em andamento | Feitos), com
+  responsável (`users.email`) e prazo (padrão: urgente +2 dias, semana +7, quando der +14). Status de
+  `ia_para_decidir`: pendente → aprovado (= em andamento) → feito; descartado à parte. Nada é executado no sistema; os
+  gerentes acompanham as em andamento no relatório das 7h (atrasadas e se o número melhorou). Não vai para Atividades
+  do Comercial — decisão do Jean (18/11).
 
 ## Decisões em vigor
 
@@ -502,8 +587,8 @@ Não há CI. O processo é manual e tem uma pegadinha:
   aba): categoria folha do grupo em foco, mês × média dos até 3 anteriores; alerta quando sobe
   ≥ 25% **e** ≥ R$ 300 (ou custo novo ≥ R$ 300). Sai das linhas do `/api/financeiro/dre`.
   Setembro/2026 contra jun–ago: 7 alertas, +R$ 9.111 (Material de Escritório +R$ 2.784,
-  Custos de IA +R$ 2.131…). **O sino de Notificações da Sidebar é falso**: `badge: 12`
-  fixo no código, sem fonte — não serve para alertas até ganhar backend.
+  Custos de IA +R$ 2.131…). O sino de Notificações (badge `12` fixo, sem fonte) **foi removido** do menu em
+  18/11/2026 — uma central de avisos de verdade seria projeto à parte.
 
 - **Fluxo de Caixa: a linha de saldo é o banco, não o DRE** (`/api/financeiro/fluxo-diario`).
   O saldo inicial do mês é calculado de trás para frente a partir do saldo real do Asaas
@@ -610,6 +695,41 @@ Não há CI. O processo é manual e tem uma pegadinha:
   o Jean usa a etiqueta para separar o faturamento previsível (aba Ativos / "Assinaturas ativas") de quem
   está em risco, e decide à mão quando alguém sai da conta. Em 13/11: 7 ativos nos dois; o kanban tem mais
   7 já inativos (TKA e 6 em "Aguardando pagamento").
+
+- **Histórico único do cliente** (17/11/2026, `src/routes/cliente-historico.ts`): a espinha é
+  `crm_comments` (client_id = `clients.id`), o mesmo "Histórico" de Retenção, Clientes Ativos e agora
+  Contas a Receber › Inadimplentes. **Toda ação grava nele sozinha**: régua (`COBRANÇA`, `dispatch.ts`),
+  botão WA de Inadimplentes (`Cobrança manual` + "Como foi?" → `PATCH /api/crm-comments/:id/resultado`;
+  promessa exige data, fica em `meta.promessa_data`), troca de etapa (`Mudança de Status`), aviso prévio,
+  checklist, arquivamento, concluir saída e churn (`Saída`, com `meta.evento`). Coluna nova `meta JSONB`.
+  Eventos novos vão por `POST /api/clientes/:id/historico` (autor = e-mail do TOKEN). "Pedido de saída"
+  registrado sugere levar o cliente para a etapa `pedido_finalizacao` — **nunca liga a etiqueta
+  quarentena** (decisão do Jean). Contato = tipos em `TIPOS_CONTATO`; cobrança automática não conta.
+  `GET /api/fin/silencio?dias=15` (card "Atraso sem contato" na Agenda) só olha cliente **Ativo**.
+  Migrado com backup `crm_comments|churn|fin_inadimplente_notes_backup_20261117`: 46 `cobranca` →
+  `COBRANÇA`; as 6 "Anotações de cobrança" viraram `Observação` (`meta.origem='anotacao-cobranca'`);
+  80 `Atualização` de aviso prévio → `Saída`. O campo de data disparava um registro a cada dígito do ano
+  ("14/05/2", "14/05/202"…): hoje ano < 2000 não grava. `churn.client_id` novo: 69 de 340 ligados pelo
+  nome; os outros 271 não têm cliente com aquele nome. **Nome**: Contas a Receber mostrava o nome do
+  Asaas (a pessoa que paga) — 8 de 13 inadimplentes tinham outro nome no cadastro. Hoje as três abas
+  mostram o do GrapeHub e o do Asaas embaixo; a fila da régua achava o cliente PELO NOME e errava.
+
+- **Popup do fechamento** (Métricas do Comercial › Lista de Fechamentos, 18/11/2026,
+  `FechamentoPopup.tsx` + `src/routes/fechamento-detalhe.ts`): clique na linha abre anúncio (UTMs),
+  perfil e jornada do lead. `fechamentos` **não tem id do lead** — o vínculo é pelo nome (`lead_nome`,
+  senão nome fantasia/nome), a mesma regra da lista. Origem (campanhas | indicação) e "tirar da lista"
+  só para superadmin, admin, gerente-comercial e diretor-*; tirar copia a linha inteira para
+  `fechamentos_removidos` antes do DELETE e não mexe no lead; tudo em `fechamentos_log`. Lead movido de
+  novo para "ganho" gera outro fechamento (auto-insert em `server.ts`). A coluna `day` é DATE: a lista
+  mostrava um dia antes em produção — agora passa por `dataDoBanco()`.
+- **"Agenda Financeira" × "Dashboard Financeiro"** (13/11/2026): a página `dashboard-financeiro`
+  (template `superadmin-dashboard`, resumo do dia) foi renomeada no menu para **Agenda Financeira**; o
+  cabeçalho agora vem do `pageLabel`. O **Dashboard Financeiro** novo é o template `painel-financeiro`
+  (`src/pages/PainelFinanceiro.tsx`): faturamento/despesas/resultado do `/api/financeiro/dre` com as
+  convenções do Dashboard do DFC (despesas = |02|+|04|+|05|), padrão = último mês fechado, principais
+  despesas por categoria folha, "custos subindo" (`alertasCusto.ts`), fôlego = caixa ÷ despesa média 3m,
+  recorrência pela regra de Clientes Ativos (13/11: previsível R$ 87.304 em 58 assinaturas; retenção
+  R$ 11.327 em 7). A linha no menu ainda precisa ser criada (Gerenciar Páginas) depois do deploy.
 
 - **"Dashboard Financeiro" é um RESUMO DO DIA** (página `dashboard-financeiro`, template
   `superadmin-dashboard`, esclarecido pelo Jean em 09/10/2026): contas a pagar de hoje, cobranças

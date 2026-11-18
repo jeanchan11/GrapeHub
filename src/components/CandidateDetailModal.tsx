@@ -25,6 +25,9 @@ import {
   ExternalLink,
   Save
 } from 'lucide-react';
+import { Modal } from './ui/Modal';
+import { CarregandoBloco } from './LoadingSpinner';
+import { confirmDialog } from '../lib/confirm';
 
 const SABOTEURS = [
   { key: 'critico', name: 'Crítico', emoji: '🔨', color: 'from-rose-500 to-red-600' },
@@ -133,6 +136,19 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
   const [newNote, setNewNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{ msg: string; onConfirm: () => void; color?: string } | null>(null);
+  // A pergunta é desenhada pelo confirmDialog padrão (antes: caixa #1a1a2e própria).
+  // Os handlers seguem pondo {msg, onConfirm, color} no estado, como antes.
+  useEffect(() => {
+    if (!confirmAction) return;
+    let vivo = true;
+    confirmDialog({
+      title: 'Confirmar ação',
+      message: confirmAction.msg,
+      confirmText: 'Confirmar',
+      danger: confirmAction.color !== 'emerald',
+    }).then(ok => { if (!vivo) return; if (ok) confirmAction.onConfirm(); else setConfirmAction(null); });
+    return () => { vivo = false; };
+  }, [confirmAction]);
   const [historyCommentOpen, setHistoryCommentOpen] = useState(false);
   const [historyComment, setHistoryComment] = useState('');
 
@@ -242,15 +258,8 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-slate-900/50 dark:bg-black/60 backdrop-blur-sm transition-opacity" 
-        onClick={onClose} 
-      />
-
-      {/* Modal Container */}
-      <div className="relative w-full max-w-6xl h-[90vh] bg-light-card dark:bg-dark-card rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-slate-200 dark:border-white/10 animate-in fade-in zoom-in-95 duration-200">
+    // Clique fora fecha (como antes). Sem Esc: antes não havia, e o popup tem anotações digitadas.
+    <Modal isOpen onClose={onClose} semCabecalho semPadding maxWidth="max-w-6xl" className="h-[90vh]" fecharComEsc={false}>
         
         {/* Header */}
         <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-dark-card shrink-0">
@@ -259,7 +268,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
               {candidate.nome.charAt(0).toUpperCase()}
             </div>
             <div>
-              <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+              <h2 className="text-xl font-bold text-dark-text flex items-center gap-2">
                 {candidate.nome}
               </h2>
               <div className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
@@ -319,7 +328,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                 Sabotadores
               </button>
               <button
-                className={`pb-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap px-1 ${activeTab === 'disc' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                className={`pb-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap px-1 ${activeTab === 'disc' ? 'border-violet-500 text-violet-600 dark:text-violet-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
                 onClick={() => setActiveTab('disc')}
               >
                 <UsersIcon size={14} className="inline mr-1.5 -mt-0.5" />
@@ -335,10 +344,10 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
               {activeTab === 'historico' && (
                 <div className="max-w-3xl mx-auto">
                   <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-sm font-bold text-slate-800 dark:text-white">Histórico</h3>
+                    <h3 className="text-sm font-bold text-dark-text">Histórico</h3>
                     <button
                       onClick={() => setHistoryCommentOpen(true)}
-                      className="flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-violet-400 hover:text-white bg-violet-500/10 hover:bg-violet-600 border border-violet-500/20 hover:border-violet-600 rounded-lg transition-all"
+                      className="flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-violet-600 dark:text-violet-400 hover:text-white bg-violet-500/10 hover:bg-violet-600 border border-violet-500/20 hover:border-violet-600 rounded-lg transition-colors"
                     >
                       <Plus size={13} /> Adicionar Comentário
                     </button>
@@ -346,17 +355,17 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
 
                   {/* Comment Popup */}
                   {historyCommentOpen && (
-                    <div className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl p-4 mb-6 shadow-lg">
+                    <div className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl p-4 mb-6 shadow-lg">
                       <div className="flex items-center gap-2 mb-3">
                         <MessageSquare size={14} className="text-violet-500" />
-                        <span className="text-xs font-bold text-slate-800 dark:text-white">Novo Comentário</span>
+                        <span className="text-xs font-bold text-dark-text">Novo Comentário</span>
                       </div>
                       <textarea
                         autoFocus
                         value={historyComment}
                         onChange={e => setHistoryComment(e.target.value)}
                         placeholder="Escreva uma observação sobre o candidato..."
-                        className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 resize-none transition-colors"
+                        className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2.5 text-sm text-dark-text placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 resize-none transition-colors"
                         rows={3}
                         onKeyDown={e => {
                           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && historyComment.trim()) {
@@ -371,7 +380,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                         <div className="flex gap-2">
                           <button
                             onClick={() => { setHistoryCommentOpen(false); setHistoryComment(''); }}
-                            className="px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                            className="px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors"
                           >Cancelar</button>
                           <button
                             onClick={() => {
@@ -391,7 +400,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                   )}
                   <div className="relative ml-3">
                     {/* Timeline line */}
-                    <div className="absolute left-0 top-2 bottom-0 w-px bg-slate-200 dark:bg-slate-700"></div>
+                    <div className="absolute left-0 top-2 bottom-0 w-px bg-slate-200 dark:bg-white/10"></div>
 
                     {history.length === 0 ? (
                       <div className="text-slate-500 py-4 pl-8 text-sm">Nenhum histórico registrado.</div>
@@ -414,7 +423,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                               <div className={`absolute -left-[5px] top-5 w-[10px] h-[10px] rounded-full ${dotColor} ring-4 ring-slate-50 dark:ring-dark-bg z-10`} />
 
                               {/* Card */}
-                              <div className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl p-4 shadow-sm">
+                              <div className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl p-4 shadow-sm">
                                 {/* Action badges */}
                                 <div className="flex items-center gap-2 flex-wrap mb-2">
                                   {isStatusChange && toCol ? (
@@ -434,7 +443,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                                       </span>
                                     </div>
                                   ) : (
-                                    <span className="text-sm font-bold text-slate-800 dark:text-white">
+                                    <span className="text-sm font-bold text-dark-text">
                                       {item.action}
                                     </span>
                                   )}
@@ -473,7 +482,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                       <FileText className="text-violet-500" size={16} />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-slate-800 dark:text-white">Respostas do Candidato</h3>
+                      <h3 className="text-sm font-bold text-dark-text">Respostas do Candidato</h3>
                       <p className="text-[10px] text-slate-400 uppercase tracking-wider">{Object.keys(candidate.form_data).filter(k => candidate.form_data[k] !== '').length} campos preenchidos</p>
                     </div>
                   </div>
@@ -492,7 +501,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                       return (
                         <div key={key}>
                           <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1 font-medium">{formattedKey}</span>
-                          <div className={`font-semibold text-sm text-slate-800 dark:text-white ${isLong ? 'whitespace-pre-wrap' : ''}`}>
+                          <div className={`font-semibold text-sm text-dark-text ${isLong ? 'whitespace-pre-wrap' : ''}`}>
                             {String(val)}
                           </div>
                           <div className="h-px bg-slate-200 dark:bg-white/5 w-full mt-4"></div>
@@ -512,18 +521,18 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                         <Brain className="text-violet-500" size={16} />
                       </div>
                       <div>
-                        <h3 className="text-sm font-bold text-slate-800 dark:text-white">Avaliação dos Sabotadores</h3>
+                        <h3 className="text-sm font-bold text-dark-text">Avaliação dos Sabotadores</h3>
                         <p className="text-[10px] text-slate-400 uppercase tracking-wider">Inteligência Positiva — Shirzad Chamine</p>
                       </div>
                     </div>
                   </div>
 
                   {sabLoading ? (
-                    <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" /></div>
+                    <CarregandoBloco className="py-12" />
                   ) : (
                     <>
                       {/* Bar Chart */}
-                      <div className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-5 mb-5">
+                      <div className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-5 mb-5">
                         <ResponsiveContainer width="100%" height={260}>
                           <BarChart
                             data={SABOTEURS.map(s => ({ name: s.name, emoji: s.emoji, score: sabScores[s.key] || 0, key: s.key }))}
@@ -567,7 +576,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                         {SABOTEURS.map(sab => {
                           const score = sabScores[sab.key] || 0;
                           return (
-                            <div key={sab.key} className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl p-3 text-center hover:border-violet-500/30 transition-all">
+                            <div key={sab.key} className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl p-3 text-center hover:border-violet-500/30 transition-all">
                               <span className="text-lg">{sab.emoji}</span>
                               <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-1 truncate">{sab.name}</p>
                               <input
@@ -597,17 +606,17 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
               {activeTab === 'disc' && (
                 <div className="max-w-3xl mx-auto">
                   <div className="flex items-center gap-2 mb-6">
-                    <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                      <UsersIcon className="text-blue-500" size={16} />
+                    <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
+                      <UsersIcon className="text-violet-500" size={16} />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-slate-800 dark:text-white">Perfil Comportamental DISC</h3>
+                      <h3 className="text-sm font-bold text-dark-text">Perfil Comportamental DISC</h3>
                       <p className="text-[10px] text-slate-400 uppercase tracking-wider">Dominância • Influência • Estabilidade • Conformidade</p>
                     </div>
                   </div>
 
                   {discLoading ? (
-                    <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" /></div>
+                    <CarregandoBloco className="py-12" />
                   ) : !discHasData ? (
                     <div className="text-center py-16">
                       <UsersIcon size={40} className="mx-auto mb-4 text-slate-300 dark:text-slate-600" />
@@ -617,7 +626,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                   ) : (
                     <>
                       {/* DISC Chart */}
-                      <div className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-5 mb-5">
+                      <div className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-5 mb-5">
                         <ResponsiveContainer width="100%" height={260}>
                           <BarChart
                             data={[
@@ -656,7 +665,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                           { key: 'S', name: 'Estabilidade', color: '#10b981', score: discData.s_score, desc: 'Colaborativo' },
                           { key: 'C', name: 'Conformidade', color: '#3b82f6', score: discData.c_score, desc: 'Analítico' },
                         ].map(p => (
-                          <div key={p.key} className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl p-4 text-center">
+                          <div key={p.key} className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl p-4 text-center">
                             <div className="w-10 h-10 rounded-xl mx-auto mb-2 flex items-center justify-center text-white text-lg font-black" style={{ background: p.color }}>{p.key}</div>
                             <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{p.name}</p>
                             <p className="text-2xl font-black mt-1" style={{ color: p.color }}>{p.score}%</p>
@@ -681,18 +690,18 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
               <div className="space-y-4">
                 <div>
                   <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1">Nome Completo</span>
-                  <div className="font-semibold text-sm text-slate-800 dark:text-white">{candidate.nome}</div>
+                  <div className="font-semibold text-sm text-dark-text">{candidate.nome}</div>
                 </div>
                 <div>
                   <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1">Contato</span>
-                  <div className="font-semibold text-sm text-slate-800 dark:text-white flex items-center gap-2">
+                  <div className="font-semibold text-sm text-dark-text flex items-center gap-2">
                     {candidate.contato?.includes('@') ? <Mail size={12} className="text-slate-400"/> : <Phone size={12} className="text-slate-400"/>}
                     {candidate.contato || 'Não informado'}
                   </div>
                 </div>
                 <div>
                   <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1">Data de Criação</span>
-                  <div className="font-semibold text-sm text-slate-800 dark:text-white flex items-center gap-2">
+                  <div className="font-semibold text-sm text-dark-text flex items-center gap-2">
                     <Calendar size={12} className="text-slate-400"/>
                     {new Date(candidate.created_at).toLocaleDateString('pt-BR')}
                   </div>
@@ -734,13 +743,13 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
               <div className="space-y-3">
                 <button
                   onClick={() => { const baseUrl = window.location.origin; navigator.clipboard.writeText(`${baseUrl}/?disc-test=${candidate.id}`); setDiscLinkCopied(true); setTimeout(() => setDiscLinkCopied(false), 2000); }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-bold rounded-xl transition-all border border-slate-200 dark:border-white/10 hover:border-blue-500/30 bg-white dark:bg-dark-bg hover:bg-blue-500/5 text-slate-600 dark:text-slate-300"
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-bold rounded-xl transition-all border border-slate-200 dark:border-white/10 hover:border-violet-500/30 bg-white dark:bg-white/5 hover:bg-violet-500/5 text-slate-600 dark:text-slate-300"
                 >
-                  {discLinkCopied ? <><Check size={13} className="text-emerald-400" /> Link Copiado!</> : <><Copy size={13} className="text-blue-400" /> Copiar Link DISC</>}
+                  {discLinkCopied ? <><Check size={13} className="text-emerald-400" /> Link Copiado!</> : <><Copy size={13} className="text-violet-500" /> Copiar Link DISC</>}
                 </button>
                 <a
                   href={`/?disc-test=${candidate.id}`} target="_blank" rel="noopener noreferrer"
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium rounded-xl transition-all border border-slate-200 dark:border-white/10 hover:border-blue-500/30 bg-white dark:bg-dark-bg hover:bg-blue-500/5 text-slate-500 dark:text-slate-400"
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium rounded-xl transition-all border border-slate-200 dark:border-white/10 hover:border-violet-500/30 bg-white dark:bg-white/5 hover:bg-violet-500/5 text-slate-500 dark:text-slate-400"
                 >
                   <ExternalLink size={13} /> Abrir Teste
                 </a>
@@ -766,7 +775,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                 {candidate.acao && (
                   <div>
                     <span className="text-xs text-slate-500 dark:text-slate-400 block mb-1">Ação Planejada</span>
-                    <div className="font-semibold text-sm text-slate-800 dark:text-white bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-md p-2">
+                    <div className="font-semibold text-sm text-dark-text bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-md p-2">
                       <div className="flex items-center gap-2 text-rose-500">
                         <Clock size={12} />
                         {candidate.data_acao ? new Date(candidate.data_acao).toLocaleDateString('pt-BR') : ''}
@@ -781,32 +790,6 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
           </div>
 
         </div>
-      </div>
-      {/* Custom Confirm Modal */}
-      {confirmAction && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setConfirmAction(null)}>
-          <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                confirmAction.color === 'emerald' ? 'bg-emerald-500/15' : 'bg-rose-500/15'
-              }`}>
-                {confirmAction.color === 'emerald' 
-                  ? <CheckCircle2 size={18} className="text-emerald-400" />
-                  : <Trash2 size={18} className="text-rose-400" />
-                }
-              </div>
-              <h3 className="text-white font-bold text-base">Confirmar Ação</h3>
-            </div>
-            <p className="text-slate-400 text-sm mb-6 leading-relaxed">{confirmAction.msg}</p>
-            <div className="flex gap-3 justify-end">
-              <button onClick={() => setConfirmAction(null)} className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors">Cancelar</button>
-              <button onClick={confirmAction.onConfirm} className={`px-4 py-2 text-sm font-bold text-white rounded-xl transition-colors ${
-                confirmAction.color === 'emerald' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
-              }`}>Confirmar</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </Modal>
   );
 };

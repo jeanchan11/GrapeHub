@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Heart, TrendingUp, AlertTriangle, Calendar, Eye, ChevronRight } from 'lucide-react';
-import LoadingSpinner from '../../components/LoadingSpinner';
+import { motion, AnimatePresence } from 'motion/react';
+import { Users, Heart, TrendingUp, AlertTriangle, Calendar, Eye, ChevronRight, CalendarX } from 'lucide-react';
+import { CarregandoBloco } from '../../components/LoadingSpinner';
+import { EstadoVazio } from '../../components/ui/EstadoVazio';
 import SplitHeadline from '../../components/SplitHeadline';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -150,9 +151,7 @@ export default function MinhaEquipeTab() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-[65vh]">
-        <LoadingSpinner size="lg" />
-      </div>
+      <CarregandoBloco className="min-h-[65vh]" />
     );
   }
 
@@ -172,7 +171,7 @@ export default function MinhaEquipeTab() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 + idx * 0.03 }}
         onClick={() => navigateToProfile(l.id)}
-        className="group bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 hover:border-violet-500/30 rounded-2xl p-4 cursor-pointer transition-all hover:shadow-lg hover:shadow-violet-500/5 relative"
+        className="group bg-dark-card border border-slate-200 dark:border-white/10 hover:border-violet-500/30 rounded-2xl p-4 cursor-pointer transition-colors hover:shadow-sm relative"
       >
         <div className="flex items-center gap-3 mb-3">
           <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 bg-violet-500/20 flex items-center justify-center text-sm font-bold text-violet-400 ring-2 ring-white dark:ring-white/10">
@@ -182,12 +181,12 @@ export default function MinhaEquipeTab() {
             }
           </div>
           <div className="min-w-0 flex-1">
-            <p className="font-bold text-slate-800 dark:text-white text-sm truncate">{l.name}</p>
+            <p className="font-bold text-dark-text text-sm truncate">{l.name}</p>
             <p className="text-xs text-slate-500 truncate">{l.role || '—'}</p>
           </div>
           {l.pulso_hoje && (
             <span className="text-xl shrink-0" title={MOOD_CONFIG[l.pulso_hoje.humor]?.label}>
-              {MOOD_CONFIG[l.pulso_hoje.humor]?.emoji || '❓'}
+              {MOOD_CONFIG[l.pulso_hoje.humor]?.emoji || '—'}
             </span>
           )}
         </div>
@@ -242,11 +241,10 @@ export default function MinhaEquipeTab() {
           <SplitHeadline
             text="Minha "
             highlight="Equipe"
-            className="text-3xl font-black text-slate-800 dark:text-white tracking-tight mb-0"
             subtitle="VISÃO CONSOLIDADA DA LIDERANÇA"
             subtitleClassName="text-slate-500 dark:text-slate-500 text-[10px] font-bold uppercase tracking-[0.2em] mt-1"
           />
-          <span className="bg-violet-500/15 text-violet-400 text-xs font-bold px-3 py-1 rounded-full border border-violet-500/20">
+          <span className="bg-violet-500/15 text-violet-600 dark:text-violet-400 text-xs font-bold px-3 py-1 rounded-full border border-violet-500/20">
             {resumo.total} {resumo.total === 1 ? 'pessoa' : 'pessoas'}
           </span>
         </div>
@@ -257,7 +255,7 @@ export default function MinhaEquipeTab() {
         {/* Total */}
         <motion.div
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}
-          className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col justify-between"
+          className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col justify-between"
         >
           <div className="flex items-center justify-between mb-3">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total no Time</span>
@@ -265,7 +263,7 @@ export default function MinhaEquipeTab() {
               <Users size={16} className="text-violet-400" />
             </div>
           </div>
-          <p className="text-2xl font-black text-slate-800 dark:text-white">{resumo.total}</p>
+          <p className="text-2xl font-black text-dark-text">{resumo.total}</p>
           <p className="text-xs text-slate-500 mt-1">
             {liderados.filter(l => l.tipo === 'direto').length} diretos · {liderados.filter(l => l.tipo === 'indireto').length} indiretos
           </p>
@@ -274,7 +272,7 @@ export default function MinhaEquipeTab() {
         {/* Pulso respondido */}
         <motion.div
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-          className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col justify-between"
+          className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col justify-between"
         >
           <div className="flex items-center justify-between mb-3">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Pulso Respondido</span>
@@ -282,14 +280,14 @@ export default function MinhaEquipeTab() {
               <Heart size={16} className="text-emerald-400" />
             </div>
           </div>
-          <p className="text-2xl font-black text-slate-800 dark:text-white">
+          <p className="text-2xl font-black text-dark-text">
             {resumo.pulso_respondido}/{resumo.pulso_total}
           </p>
           <div className="mt-2 w-full bg-slate-200 dark:bg-white/10 rounded-full h-1.5 overflow-hidden">
             <motion.div
               initial={{ width: 0 }}
               animate={{ width: resumo.pulso_total > 0 ? `${(resumo.pulso_respondido / resumo.pulso_total) * 100}%` : '0%' }}
-              transition={{ duration: 1, ease: 'easeOut' }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
               className="h-full rounded-full bg-emerald-500"
             />
           </div>
@@ -298,7 +296,7 @@ export default function MinhaEquipeTab() {
         {/* Desempenho médio */}
         <motion.div
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-          className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col justify-between"
+          className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col justify-between"
         >
           <div className="flex items-center justify-between mb-3">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Desempenho Médio</span>
@@ -306,7 +304,7 @@ export default function MinhaEquipeTab() {
               <TrendingUp size={16} className="text-amber-400" />
             </div>
           </div>
-          <p className="text-2xl font-black text-slate-800 dark:text-white">
+          <p className="text-2xl font-black text-dark-text">
             {resumo.media_desempenho != null ? resumo.media_desempenho.toFixed(1) : '—'}
             {resumo.media_desempenho != null && <span className="text-sm text-slate-500 font-bold"> /5</span>}
           </p>
@@ -316,7 +314,7 @@ export default function MinhaEquipeTab() {
         {/* Alertas */}
         <motion.div
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-          className={`bg-white dark:bg-dark-bg border rounded-2xl p-5 flex flex-col justify-between ${
+          className={`bg-dark-card border rounded-2xl p-5 flex flex-col justify-between ${
             alertas.length > 0
               ? 'border-red-500/30 dark:border-red-500/20'
               : 'border-slate-200 dark:border-white/10'
@@ -327,10 +325,10 @@ export default function MinhaEquipeTab() {
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
               alertas.length > 0 ? 'bg-red-500/10' : 'bg-slate-500/10'
             }`}>
-              <AlertTriangle size={16} className={alertas.length > 0 ? 'text-red-400' : 'text-slate-400'} />
+              <AlertTriangle size={16} className={alertas.length > 0 ? 'text-rose-500' : 'text-slate-400'} />
             </div>
           </div>
-          <p className={`text-2xl font-black ${alertas.length > 0 ? 'text-red-400' : 'text-slate-800 dark:text-white'}`}>
+          <p className={`text-2xl font-black ${alertas.length > 0 ? 'text-rose-500' : 'text-dark-text'}`}>
             {alertas.length}
           </p>
           <p className="text-xs text-slate-500 mt-1">
@@ -344,9 +342,9 @@ export default function MinhaEquipeTab() {
         {/* Pulso de Hoje */}
         <motion.div
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-6 flex flex-col h-full"
+          className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-6 flex flex-col h-full"
         >
-          <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-5">
+          <h3 className="text-sm font-black text-dark-text uppercase tracking-widest mb-5">
             Pulso de Hoje
           </h3>
 
@@ -362,7 +360,7 @@ export default function MinhaEquipeTab() {
                     <motion.div
                       initial={{ height: 0 }}
                       animate={{ height: Math.max(pct * 0.8, 4) }}
-                      transition={{ duration: 0.8, ease: 'easeOut' }}
+                      transition={{ duration: 0.5, ease: 'easeOut' }}
                       style={{ background: cfg.color }}
                       className="w-full rounded-lg"
                     />
@@ -391,7 +389,7 @@ export default function MinhaEquipeTab() {
                 <span className="text-sm font-medium text-slate-700 dark:text-slate-300 flex-1 truncate">{r.name}</span>
                 {r.respondeu ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-lg">{MOOD_CONFIG[r.humor!]?.emoji || '❓'}</span>
+                    <span className="text-lg">{MOOD_CONFIG[r.humor!]?.emoji || '—'}</span>
                     <span className="text-[10px] text-slate-500">{formatTimeAgo(r.criado_em)}</span>
                   </div>
                 ) : (
@@ -410,18 +408,19 @@ export default function MinhaEquipeTab() {
         {/* Atualizações */}
         <motion.div
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
-          className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-6 flex flex-col h-full"
+          className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-6 flex flex-col h-full"
         >
-          <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-5">
+          <h3 className="text-sm font-black text-dark-text uppercase tracking-widest mb-5">
             Atualizações
           </h3>
 
           {agenda.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center py-10 text-slate-500">
-              <span className="text-4xl mb-3">📅</span>
-              <p className="text-sm font-medium">Nenhuma atualização agendada</p>
-              <p className="text-xs text-slate-400 mt-1">Não há 1:1s, avaliações ou feedbacks pendentes no momento</p>
-            </div>
+            <EstadoVazio
+              Icone={CalendarX}
+              titulo="Nenhuma atualização agendada"
+              descricao="Não há 1:1s, avaliações ou feedbacks pendentes no momento"
+              className="flex-1 py-10"
+            />
           ) : (
             <div className="space-y-3 flex-1 overflow-y-auto scrollbar-hide">
               {agenda.map((item, idx) => {
@@ -490,7 +489,7 @@ export default function MinhaEquipeTab() {
                     {/* Main Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{item.name}</p>
+                        <p className="text-sm font-bold text-dark-text truncate">{item.name}</p>
                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${typeBadgeStyles}`}>
                           {typeBadgeLabel}
                         </span>
@@ -523,7 +522,7 @@ export default function MinhaEquipeTab() {
 
       {/* Grid de Liderados */}
       <div className="space-y-6">
-        <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-2">
+        <h3 className="text-sm font-black text-dark-text uppercase tracking-widest mb-2">
           Equipe Completa
         </h3>
 
@@ -552,11 +551,7 @@ export default function MinhaEquipeTab() {
         )}
 
         {diretos.length === 0 && indiretos.length === 0 && (
-          <div className="text-center py-10 text-slate-500">
-            <Users size={40} className="mx-auto mb-3 text-slate-400" />
-            <p className="text-sm font-medium">Nenhum liderado encontrado</p>
-            <p className="text-xs text-slate-400 mt-1">Conecte colaboradores no organograma para vê-los aqui</p>
-          </div>
+          <EstadoVazio Icone={Users} titulo="Nenhum liderado encontrado" descricao="Conecte colaboradores no organograma para vê-los aqui" className="py-10" />
         )}
       </div>
     </div>

@@ -1,11 +1,15 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import SplitHeadline from '../components/SplitHeadline';
 import EstudioConfig from './EstudioConfig';
 import MediaLightbox, { LbFile } from '../components/MediaLightbox';
 import EsferaDeParticulas from '../components/EsferaDeParticulas';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from '@/src/lib/toast';
+import { confirmDialog } from '@/src/lib/confirm';
+import { Modal } from '../components/ui/Modal';
+import { CarregandoBloco } from '../components/LoadingSpinner';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
 import {
   Sparkles, X, Check, ChevronRight, ChevronLeft, Loader2, Play, Pause,
   Wand2, UserSquare2, Mic, Film, Building2, Download, RefreshCw, Clapperboard, Settings, Coins, Waves, Users,
@@ -193,13 +197,13 @@ const Trilha: React.FC<{ atual: number }> = ({ atual }) => (
             ativo ? 'bg-violet-600/15 border border-violet-500/40' : 'border border-transparent'}`}>
             <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
               feito ? 'bg-emerald-500/20 text-emerald-400'
-                    : ativo ? 'bg-violet-600 text-white' : 'bg-white/5 text-slate-600'}`}>
+                    : ativo ? 'bg-violet-600 text-white' : 'bg-black/5 dark:bg-white/5 text-slate-500 dark:text-slate-600'}`}>
               {feito ? <Check size={12} /> : <Icone size={12} />}
             </div>
             <span className={`text-xs font-bold hidden sm:block ${
               ativo ? 'text-dark-text' : feito ? 'text-emerald-400' : 'text-slate-600'}`}>{p.titulo}</span>
           </div>
-          {i < PASSOS.length - 1 && <div className={`h-px flex-1 min-w-[10px] ${feito ? 'bg-emerald-500/40' : 'bg-white/10'}`} />}
+          {i < PASSOS.length - 1 && <div className={`h-px flex-1 min-w-[10px] ${feito ? 'bg-emerald-500/40' : 'bg-black/10 dark:bg-white/10'}`} />}
         </React.Fragment>
       );
     })}
@@ -394,10 +398,8 @@ const ModalGeracao: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onFechar}>
-      <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-3xl bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl flex flex-col max-h-[92vh]"
-        onClick={e => e.stopPropagation()}>
+    // Assistente em passos: clique fora e Esc perderiam o passo em andamento — fecha só pelo X.
+    <Modal isOpen onClose={onFechar} semCabecalho semPadding maxWidth="max-w-3xl" className="max-h-[92vh]" fecharAoClicarFora={false} fecharComEsc={false}>
 
         <div className="p-5 border-b border-black/10 dark:border-white/10 flex items-center gap-4">
           <div className="flex-1 min-w-0"><Trilha atual={passo} /></div>
@@ -482,8 +484,8 @@ const ModalGeracao: React.FC<{
                   const sel = avatarId === a.id;
                   return (
                     <button key={a.id}
-                      onClick={() => {
-                        if (outro && !window.confirm('Este avatar pertence a outro cliente. Usar mesmo assim?')) return;
+                      onClick={async () => {
+                        if (outro && !(await confirmDialog({ title: 'Avatar de outro cliente', message: 'Este avatar pertence a outro cliente. Usar mesmo assim?', confirmText: 'Usar mesmo assim' }))) return;
                         setAvatarId(a.id);
                       }}
                       className={`text-left rounded-2xl border p-3 transition-colors ${
@@ -773,8 +775,7 @@ const ModalGeracao: React.FC<{
             </button>
           )}
         </div>
-      </motion.div>
-    </div>
+    </Modal>
   );
 };
 
@@ -885,7 +886,7 @@ const CardVideo: React.FC<{ job: VideoJob; onAbrir: () => void }> = ({ job, onAb
         {processando && (
           <>
             <div className="mt-2 h-1.5 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
-              <div className="h-full bg-violet-500 rounded-full transition-all duration-1000" style={{ width: `${pct}%` }} />
+              <div className="h-full bg-violet-500 rounded-full transition-[width] duration-300" style={{ width: `${pct}%` }} />
             </div>
             <p className="text-[10px] text-slate-500 mt-1">Gerando no HeyGen · estimativa</p>
           </>
@@ -1064,10 +1065,7 @@ const ModalGastoPorPessoa: React.FC<{
   const dia = (iso: string) => iso.split('-').reverse().join('/');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onFechar}>
-      <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }}
-        className="w-full max-w-2xl bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl flex flex-col max-h-[85vh]"
-        onClick={e => e.stopPropagation()}>
+    <Modal isOpen onClose={onFechar} semCabecalho semPadding maxWidth="max-w-2xl" className="max-h-[85vh]">
 
         <div className="p-5 border-b border-black/10 dark:border-white/10 flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -1149,8 +1147,7 @@ const ModalGastoPorPessoa: React.FC<{
             a geração é barrada antes de enviar ao HeyGen — que cobra no envio, não na conclusão.
           </p>
         </div>
-      </motion.div>
-    </div>
+    </Modal>
   );
 };
 
@@ -1166,6 +1163,8 @@ const Estudio: React.FC = () => {
   const [config, setConfig] = useState(false);
   const [fila, setFila] = useState<VideoJob[]>([]);
   const [lightbox, setLightbox] = useState<number | null>(null);
+  // Até a 1ª resposta da fila, mostra carregando — e não "Nenhum vídeo gerado ainda".
+  const [carregandoFila, setCarregandoFila] = useState(true);
 
   // O lightbox navega entre os vídeos prontos; os que ainda processam ficam fora.
   const prontos = useMemo(() => fila.filter(j => j.status === 'done' && j.video_url), [fila]);
@@ -1203,6 +1202,7 @@ const Estudio: React.FC = () => {
       const r = await fetch('/api/estudio/videos');
       if (r.ok) setFila(await r.json());
     } catch { /* silencioso: é polling de fundo */ }
+    finally { setCarregandoFila(false); }
   }, []);
 
   useEffect(() => { void carregarFila(); }, [carregarFila]);
@@ -1245,8 +1245,7 @@ const Estudio: React.FC = () => {
       <style>{`@keyframes brilho { 100% { transform: translateX(100%); } }`}</style>
       <div className="px-6 pt-6 pb-4 flex items-center justify-between gap-4 flex-wrap">
         <SplitHeadline text="Estúdio de " highlight="Vídeo"
-          subtitle="Copy, locução e avatar para os anúncios dos clientes"
-          subtitleClassName="text-sm text-gray-500 dark:text-gray-400 mt-1" />
+          subtitle="Copy, locução e avatar para os anúncios dos clientes" />
         <div className="flex items-center gap-3 flex-wrap">
         <IndicadorGastos visaoDaConta={veSaldoDaConta} recarregar={fila.length} />
         {veSaldoDaConta && (
@@ -1261,9 +1260,9 @@ const Estudio: React.FC = () => {
       <div className="px-6 pb-10 space-y-6">
         {/* Botão único e grande: é a ação da página inteira. */}
         <motion.button whileHover={{ y: -2 }} whileTap={{ scale: 0.995 }} onClick={() => setAberto(true)}
-          className="w-full rounded-3xl p-10 sm:p-14 flex flex-col items-center justify-center gap-4 text-center transition-colors
-                     bg-gradient-to-br from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 shadow-2xl shadow-violet-900/30">
-          <div className="w-16 h-16 rounded-2xl bg-white/15 flex items-center justify-center">
+          className="w-full rounded-[22px] p-10 sm:p-14 flex flex-col items-center justify-center gap-4 text-center transition-colors
+                     bg-violet-600 hover:bg-violet-700">
+          <div className="w-16 h-16 rounded-2xl bg-black/[0.07] dark:bg-white/15 flex items-center justify-center">
             <Sparkles size={30} className="text-white" />
           </div>
           <span className="text-2xl sm:text-3xl font-black text-white">Gerar vídeo com IA</span>
@@ -1272,13 +1271,15 @@ const Estudio: React.FC = () => {
           </span>
         </motion.button>
 
-        {filaExibida.length === 0 ? (
-          <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-12 flex flex-col items-center gap-3 text-center">
-            <Clapperboard size={30} className="text-slate-600" />
-            <p className="text-sm font-bold text-dark-text">Nenhum vídeo gerado ainda</p>
-            <p className="text-xs text-slate-500 max-w-md">
-              Os vídeos aparecem aqui enquanto processam e, quando ficam prontos, vão para a aba Criativos do projeto.
-            </p>
+        {carregandoFila && filaExibida.length === 0 ? (
+          <CarregandoBloco />
+        ) : filaExibida.length === 0 ? (
+          <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl">
+            <EstadoVazio
+              Icone={Clapperboard}
+              titulo="Nenhum vídeo gerado ainda"
+              descricao="Os vídeos aparecem aqui enquanto processam e, quando ficam prontos, vão para a aba Criativos do projeto."
+            />
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">

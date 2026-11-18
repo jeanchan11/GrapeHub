@@ -7,10 +7,11 @@ import { MoreVertical, DollarSign, TrendingUp, TrendingDown, AlertCircle, Wallet
 import { PageHeader } from '../components/ui/PageHeader';
 import BotaoSincronizar from '../components/BotaoSincronizar';
 import { designSystem } from '../design-system';
-import { AIChat } from '../components/AIChat/AIChat';
 import { useAuth } from '../contexts/AuthContext';
-import fredImg from '../assets/fred.png';
-import LoadingSpinner from '../components/LoadingSpinner';
+import { CarregandoPagina, CarregandoBloco } from '../components/LoadingSpinner';
+import { Modal } from '../components/ui/Modal';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
+import '../components/graficos.css';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler, LineController, BarController);
 
@@ -81,29 +82,6 @@ interface Despesa {
 
 interface Receita extends Despesa {}
 
-const StatCard = ({ icon: Icon, title, value, subtitle, colorClass, isNegative = false }: { 
-  icon: any, title: string, value: string, subtitle?: string | React.ReactNode, colorClass: string, isNegative?: boolean
-}) => (
-  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
-    <div className="flex items-center justify-between mb-4">
-      <div className={`p-2.5 rounded-2xl ${colorClass}`}>
-        <Icon size={20} className="text-white" />
-      </div>
-      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{title}</p>
-    </div>
-    <div className="flex flex-col mt-auto">
-      <h3 className={`text-3xl font-black tracking-tight mb-3 ${isNegative ? 'text-red-500/80 dark:text-red-400/80' : 'text-dark-text'}`}>
-        {value}
-      </h3>
-      {subtitle && (
-        <div className="pt-3 border-t border-white/10">
-          {subtitle}
-        </div>
-      )}
-    </div>
-  </div>
-);
-
 const CATEGORIES_CONFIG = [
   { name: 'Impostos', icon: '📊', keywords: ['Simples Nacional', 'ISS', 'IRPJ', 'Imposto', 'DAS', 'PIS', 'COFINS', 'CSLL', 'Taxa Municipal', 'Alvará'] },
   { name: 'Salários e Pessoal', icon: '👥', keywords: ['Remuneração', 'Salário', 'Bonificação', 'Business Partner', 'FGTS', 'IRRF', 'Folha', 'Férias', '13º', 'Rescisão', 'Benefício', 'Vale', 'Plano de Saúde', 'Odonto', 'Seguro de Vida'] },
@@ -143,43 +121,6 @@ const categorizeExpense = (description: string) => {
   return { name: 'Outros', icon: '📁' };
 };
 
-const CollapsibleGroup = ({ category, items, total, icon, formatCurrency }: any) => {
-  const [isOpen, setIsOpen] = useState(false);
-  
-  return (
-    <div className="mb-2 border border-white/10 rounded-xl overflow-hidden">
-      <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-4 bg-dark-card hover:bg-dark-card-hover transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-xl">{icon}</span>
-          <span className="text-sm font-bold text-dark-text">{category}</span>
-          <span className="text-[10px] text-slate-500 font-normal ml-2">{items.length} itens</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className="text-sm font-bold text-dark-text">{formatCurrency(total)}</span>
-          {isOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-        </div>
-      </button>
-      
-      {isOpen && (
-        <div className="bg-dark-bg p-2 space-y-1 border-t border-white/10">
-          {items.map((item, idx) => (
-            <div key={idx} className="flex items-center justify-between p-3 hover:bg-dark-card rounded-lg transition-colors">
-              <div className="flex flex-col">
-                <span className="text-xs font-medium text-dark-text">{item.description}</span>
-                <span className="text-[10px] text-slate-500">{item.date}</span>
-              </div>
-              <span className="text-xs font-bold text-dark-text">{formatCurrency(item.value)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
@@ -200,22 +141,21 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     const Linha = ({ rotulo, valor, cls = 'text-slate-800 dark:text-slate-200' }: { rotulo: string; valor: number; cls?: string }) => (
       <div className="flex justify-between items-center gap-4 mb-1">
         <span className="text-slate-600 dark:text-slate-400">{rotulo}</span>
-        <span className={`font-medium ${cls}`}>{formatCurrency(valor)}</span>
+        <span className={`numero ${cls}`}>{formatCurrency(valor)}</span>
       </div>
     );
     const Saldo = ({ rotulo, valor, fraco }: { rotulo: string; valor: number; fraco?: boolean }) => (
-      <div className={`flex justify-between items-center gap-4 font-bold ${fraco ? 'text-xs mt-1' : ''}`}>
+      <div className={`flex justify-between items-center gap-4 font-medium ${fraco ? 'text-xs mt-1' : ''}`}>
         <span className={fraco ? 'text-slate-500' : 'text-slate-700 dark:text-slate-300'}>{rotulo}</span>
-        <span className={`${valor >= 0 ? 'text-emerald-500' : 'text-red-500'} ${fraco ? 'opacity-80' : ''}`}>
+        <span className={`numero ${valor >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${fraco ? 'opacity-80' : ''}`}>
           {valor < 0 ? '- ' : ''}{formatCurrency(Math.abs(valor))}
         </span>
       </div>
     );
 
     return (
-      <div className="bg-white dark:bg-dark-card rounded-[8px] shadow-[0_4px_12px_rgba(0,0,0,0.15)] p-3 border border-slate-100 dark:border-white/10 font-sans text-[13px] min-w-[240px]">
-        <div className="font-bold text-slate-700 dark:text-white mb-2">{label}</div>
-        <hr className="border-slate-200 dark:border-white/5 mb-2" />
+      <div className="gf-dica !p-3 !rounded-xl text-[12.5px] min-w-[240px]">
+        <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-2">{label}</div>
 
         {(temRealizado || !temPrevisto) && (
           <>
@@ -241,9 +181,8 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 const MESES_FULL_FIN = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
-export default function FinanceiroDashboard() {
+export default function FinanceiroDashboard({ pageLabel }: { pageLabel?: string } = {}) {
   const { user, userData } = useAuth();
-  const [showAI, setShowAI] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [fluxo, setFluxo] = useState<FluxoDiario[]>([]);
@@ -298,16 +237,15 @@ export default function FinanceiroDashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[75vh] w-full">
-        <LoadingSpinner size="lg" />
-      </div>
+      <CarregandoPagina />
     );
   }
 
   if (error) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="bg-white/80 dark:bg-dark-bg/80 p-6 rounded-3xl border border-red-200 dark:border-red-900/30 text-red-600 dark:text-red-400 font-sans shadow-2xl">
+        <div className="gf-cartao p-6 flex items-center gap-3 text-sm text-dark-text max-w-md">
+          <AlertTriangle size={18} className="text-rose-500 shrink-0" />
           {error}
         </div>
       </div>
@@ -505,24 +443,12 @@ export default function FinanceiroDashboard() {
         
         {/* Cabeçalho — visual refeito em 09/10/2026 (mesmas informações): controles com 40px de altura */}
         <PageHeader
-          title="Fluxo de"
-          titleAccent="Caixa"
+          title={pageLabel?.trim() && pageLabel.trim().includes(' ') ? pageLabel.trim().slice(0, pageLabel.trim().lastIndexOf(' ')) : (pageLabel?.trim() ? '' : 'Fluxo de')}
+          titleAccent={pageLabel?.trim() ? pageLabel.trim().slice(pageLabel.trim().lastIndexOf(' ') + 1) : 'Caixa'}
           subtitle="Gestão integrada de caixa e indicadores de saúde do negócio"
         >
           <div className="flex items-center gap-2">
             <BotaoSincronizar onDone={() => setVersaoSync(v => v + 1)} />
-            <button
-              onClick={() => setShowAI(o => !o)}
-              className={`h-10 flex items-center gap-2 px-3 rounded-xl border text-xs font-bold transition-all ${
-                showAI
-                  ? 'bg-violet-500 border-violet-500 text-white shadow-lg shadow-violet-500/30'
-                  : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-violet-500 hover:border-violet-500/50'
-              }`}
-              title="Perguntar ao Fred (especialista financeiro IA)"
-            >
-              <img src={fredImg} alt="Fred" className="w-5 h-5 object-contain" />
-              Consultar Fred
-            </button>
             {/* Mês: um controle só, com as setas dentro */}
             <div className="h-10 flex items-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5">
               <button
@@ -567,41 +493,41 @@ export default function FinanceiroDashboard() {
             const a = Math.abs(v);
             return a >= 1000 ? `${v < 0 ? '−' : ''}R$ ${(a / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil` : `R$ ${v.toLocaleString('pt-BR')}`;
           };
+          // Cartões no padrão novo (graficos.css): cartão gf, ícone e rótulo em letra normal, número em
+          // fonte de número, duas linhas de detalhe e a barrinha de progresso. Mesmos valores de antes.
           const Kpi = ({ Icone, cor, rotulo, valor, negativo, linhas, barra }: {
             Icone: any; cor: string; rotulo: string; valor: number; negativo?: boolean;
             linhas: { r: string; v: number; cls: string }[]; barra?: { pct: number; cor: string };
           }) => (
-            <div className={`px-5 py-4 rounded-2xl border ${negativo ? 'bg-rose-500/[0.06] border-rose-500/20' : 'bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5'}`}>
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `${cor}1a`, color: cor }}><Icone size={14} /></div>
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{rotulo}</p>
+            <div className="gf-cartao flex flex-col px-5 py-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: `color-mix(in srgb, ${cor} 14%, transparent)`, color: cor }}><Icone size={17} /></div>
+                <p className="text-[13.5px] font-semibold tracking-tight text-slate-700 dark:text-slate-200">{rotulo}</p>
               </div>
-              <h3 className={`text-2xl font-bold ${negativo ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>{formatCurrency(valor)}</h3>
-              <div className="mt-3 space-y-1">
+              <p className={`numero mt-3 text-[28px] leading-none ${negativo ? 'text-rose-500' : 'text-dark-text'}`}>{formatCurrency(valor)}</p>
+              <div className="mt-3.5 space-y-1.5">
                 {linhas.map(l => (
-                  <div key={l.r} className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500">{l.r}</span>
-                    <span className={`font-semibold ${l.cls}`}>{formatCurrency(l.v)}</span>
+                  <div key={l.r} className="flex items-center justify-between text-[12.5px]">
+                    <span className="text-slate-500 dark:text-slate-400">{l.r}</span>
+                    <span className={`numero ${l.cls}`}>{formatCurrency(l.v)}</span>
                   </div>
                 ))}
               </div>
               {barra && (
-                <div className="flex items-center gap-2 mt-2.5">
-                  <div className="flex-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/5 overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, barra.pct)}%`, background: barra.cor }} />
-                  </div>
-                  <span className="text-[10px] font-bold text-slate-400 w-8 text-right">{barra.pct}%</span>
+                <div className="flex items-center gap-2 mt-3">
+                  <div className="gf-trilho flex-1"><i style={{ width: `${Math.min(100, barra.pct)}%`, background: barra.cor }} /></div>
+                  <span className="numero text-[11px] text-slate-400 w-9 text-right">{barra.pct}%</span>
                 </div>
               )}
             </div>
           );
           const Chip = ({ cor, r, tracejado }: { cor: string; r: string; tracejado?: boolean }) => (
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
-              {tracejado ? <span className="w-4 border-t-2 border-dashed" style={{ borderColor: cor }} /> : <span className="w-2.5 h-2.5 rounded-sm" style={{ background: cor }} />}
+            <span className="inline-flex items-center gap-1.5 text-[12px] text-slate-500 dark:text-slate-400">
+              {tracejado ? <span className="w-4 border-t-2 border-dashed" style={{ borderColor: cor }} /> : <span className="w-2.5 h-2.5 rounded-full" style={{ background: cor }} />}
               {r}
             </span>
           );
-          const eixo = { fill: '#94a3b8', fontSize: 10 };
+          const eixo = { fill: '#94a3b8', fontSize: 10.5, fontFamily: "'Azeret Mono', ui-monospace, monospace" };
 
           return (
           <>
@@ -632,23 +558,23 @@ export default function FinanceiroDashboard() {
             </div>
 
             {/* Movimentação diária */}
-            <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 p-5">
+            <div className="gf-cartao p-5">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
                 <div className="mr-auto">
-                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">Movimentação diária</h2>
-                  <p className="text-[11px] text-slate-500">Clique num dia para ver os lançamentos</p>
+                  <h2 className="text-[15px] font-semibold tracking-tight text-dark-text">Movimentação diária</h2>
+                  <p className="text-[12.5px] text-slate-500 dark:text-slate-400">Clique num dia para ver os lançamentos</p>
                 </div>
-                <Chip cor="#10B981" r="Entradas" />
-                <Chip cor="rgba(16,185,129,0.4)" r="Entradas previstas" />
-                <Chip cor="#EF4444" r="Saídas" />
-                <Chip cor="rgba(239,68,68,0.4)" r="Saídas previstas" />
+                <Chip cor="#10b981" r="Entradas" />
+                <Chip cor="rgba(16,185,129,0.3)" r="Entradas previstas" />
+                <Chip cor="#f43f5e" r="Saídas" />
+                <Chip cor="rgba(244,63,94,0.3)" r="Saídas previstas" />
               </div>
               <div className="h-[280px]" style={{ userSelect: 'none' }} onMouseDown={(e) => e.preventDefault()}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={todosOsDias}
-                    barSize={10}
-                    barGap={2}
+                    barSize={9}
+                    barGap={3}
                     barCategoryGap="22%"
                     style={{ cursor: 'pointer' }}
                     onClick={(data: any) => {
@@ -657,33 +583,33 @@ export default function FinanceiroDashboard() {
                       }
                     }}
                   >
-                    <CartesianGrid vertical={false} stroke="rgba(150, 150, 150, 0.12)" />
+                    <CartesianGrid vertical={false} stroke="rgba(150, 150, 150, 0.14)" strokeDasharray="3 4" />
                     <XAxis dataKey="dia" tickFormatter={(val) => String(val).slice(0, 2)} axisLine={false} tickLine={false} tick={eixo} dy={6} interval={0} />
                     <YAxis axisLine={false} tickLine={false} tick={eixo} width={70} tickFormatter={curto} />
-                    <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(124,58,237,0.06)' }} />
-                    <Bar dataKey="entradas_realizadas" name="Entradas" stackId="entradas" fill="#10B981" radius={[3, 3, 0, 0]} onClick={handleBarClick} />
-                    <Bar dataKey="entradas_previstas" name="Entradas Previstas" stackId="entradas" fill="rgba(16, 185, 129, 0.4)" radius={[3, 3, 0, 0]} onClick={handleBarClick} />
-                    <Bar dataKey="saidas_realizadas" name="Saídas" stackId="saidas" fill="#EF4444" radius={[3, 3, 0, 0]} onClick={handleBarClick} />
-                    <Bar dataKey="saidas_previstas" name="Saídas Previstas" stackId="saidas" fill="rgba(239, 68, 68, 0.4)" radius={[3, 3, 0, 0]} onClick={handleBarClick} />
+                    <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(124,58,237,0.07)', radius: 6 } as any} />
+                    <Bar dataKey="entradas_realizadas" name="Entradas" stackId="entradas" fill="#10b981" radius={[5, 5, 2, 2]} onClick={handleBarClick} />
+                    <Bar dataKey="entradas_previstas" name="Entradas Previstas" stackId="entradas" fill="rgba(16, 185, 129, 0.3)" radius={[5, 5, 2, 2]} onClick={handleBarClick} />
+                    <Bar dataKey="saidas_realizadas" name="Saídas" stackId="saidas" fill="#f43f5e" radius={[5, 5, 2, 2]} onClick={handleBarClick} />
+                    <Bar dataKey="saidas_previstas" name="Saídas Previstas" stackId="saidas" fill="rgba(244, 63, 94, 0.3)" radius={[5, 5, 2, 2]} onClick={handleBarClick} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
             {/* Saúde do caixa */}
-            <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 p-5">
+            <div className="gf-cartao p-5">
               <div className="flex flex-wrap items-start gap-x-4 gap-y-2 mb-4">
                 <div className="mr-auto">
-                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">Saúde do caixa diário</h2>
-                  <p className="text-[11px] text-slate-500">Evolução do saldo acumulado no mês</p>
+                  <h2 className="text-[15px] font-semibold tracking-tight text-dark-text">Saúde do caixa diário</h2>
+                  <p className="text-[12.5px] text-slate-500 dark:text-slate-400">Evolução do saldo acumulado no mês</p>
                 </div>
                 <div className="flex items-center gap-4 self-center">
                   <Chip cor="#8B5CF6" r="Realizado" />
                   <Chip cor="#C4B5FD" r="Previsto" tracejado />
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Saldo projetado (fim do mês)</p>
-                  <p className={`text-xl font-bold ${saldoAcumulado < 0 ? 'text-rose-500' : 'text-violet-600 dark:text-violet-400'}`}>{formatCurrency(saldoAcumulado)}</p>
+                  <p className="text-[12px] text-slate-500 dark:text-slate-400">Saldo projetado no fim do mês</p>
+                  <p className={`numero text-[22px] leading-tight ${saldoAcumulado < 0 ? 'text-rose-500' : 'text-violet-600 dark:text-violet-400'}`}>{formatCurrency(saldoAcumulado)}</p>
                 </div>
               </div>
               <div className="h-[280px]" style={{ cursor: 'pointer' }} onMouseDown={(e) => e.preventDefault()}>
@@ -698,11 +624,11 @@ export default function FinanceiroDashboard() {
                   >
                     <defs>
                       <linearGradient id="gradientRealizado" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.22} />
-                        <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.01} />
+                        <stop offset="0%" stopColor="#8B5CF6" stopOpacity={0.28} />
+                        <stop offset="100%" stopColor="#8B5CF6" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid vertical={false} stroke="rgba(150, 150, 150, 0.12)" />
+                    <CartesianGrid vertical={false} stroke="rgba(150, 150, 150, 0.14)" strokeDasharray="3 4" />
                     <XAxis dataKey="dia" tickFormatter={(val) => String(val || '').slice(0, 2)} axisLine={false} tickLine={false} tick={eixo} dy={6} interval={0} />
                     <YAxis axisLine={false} tickLine={false} tick={eixo} width={70} tickFormatter={curto} />
                     <ReferenceLine y={0} stroke="#f43f5e" strokeOpacity={0.35} strokeDasharray="4 4" />
@@ -712,18 +638,18 @@ export default function FinanceiroDashboard() {
                         if (!active || !payload?.length) return null;
                         const p = payload[0].payload;
                         return (
-                          <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card shadow-xl px-3 py-2 text-xs min-w-[180px]">
-                            <p className="font-bold text-slate-900 dark:text-white mb-1">{p.name}</p>
-                            {p.realizado != null && <p className="flex justify-between gap-4"><span className="text-slate-500">Realizado</span><span className="font-semibold text-violet-600 dark:text-violet-400">{formatCurrency(p.realizado)}</span></p>}
-                            {p.previsto != null && <p className="flex justify-between gap-4"><span className="text-slate-500">Previsto</span><span className="font-semibold text-violet-400">{formatCurrency(p.previsto)}</span></p>}
+                          <div className="gf-dica !px-3 !py-2 !rounded-xl text-[12.5px] min-w-[190px]">
+                            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">{p.name}</p>
+                            {p.realizado != null && <p className="flex justify-between gap-4"><span className="text-slate-500 dark:text-slate-400">Realizado</span><span className="numero text-violet-600 dark:text-violet-400">{formatCurrency(p.realizado)}</span></p>}
+                            {p.previsto != null && <p className="flex justify-between gap-4"><span className="text-slate-500 dark:text-slate-400">Previsto</span><span className="numero text-violet-400">{formatCurrency(p.previsto)}</span></p>}
                           </div>
                         );
                       }}
                     />
                     <Area type="monotone" dataKey="realizado" name="Realizado" stroke="#8B5CF6" strokeWidth={2.5} fill="url(#gradientRealizado)" dot={false}
-                      activeDot={{ r: 5, fill: '#8B5CF6', stroke: '#fff', strokeWidth: 2 }} animationDuration={1000} animationEasing="ease-out" connectNulls={false} />
+                      activeDot={{ r: 5, fill: '#8B5CF6', stroke: '#fff', strokeWidth: 2.5 }} animationDuration={600} animationEasing="ease-out" connectNulls={false} />
                     <Line type="monotone" dataKey="previsto" name="Previsto" stroke="#C4B5FD" strokeWidth={2.5} strokeDasharray="5 5" dot={false}
-                      activeDot={{ r: 5, fill: '#C4B5FD', stroke: '#fff', strokeWidth: 2 }} animationBegin={300} animationDuration={1000} animationEasing="ease-out" connectNulls={false} />
+                      activeDot={{ r: 5, fill: '#C4B5FD', stroke: '#fff', strokeWidth: 2 }} animationBegin={300} animationDuration={600} animationEasing="ease-out" connectNulls={false} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -735,23 +661,10 @@ export default function FinanceiroDashboard() {
       </div>
 
 
-      {/* AIChat — modo inline, sem botão flutuante, controlado pelo header */}
-      <AIChat
-        activePage="financeiro-dashboard"
-        userName={(userData as any)?.nome || userData?.name || user?.displayName || user?.email || undefined}
-        floatingButton={false}
-        externalOpen={showAI}
-        onExternalToggle={() => setShowAI(o => !o)}
-      />
 
       {/* ── Day Popup Modal (Portal) ── */}
-      {dayPopup && ReactDOM.createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-          {/* backdrop */}
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setDayPopup(null)} />
-
-          {/* panel */}
-          <div className="relative z-10 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col">
+      {dayPopup && (
+        <Modal isOpen onClose={() => setDayPopup(null)} semCabecalho semPadding maxWidth="max-w-2xl" className="max-h-[85vh]">
             {/* header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/10">
               <div>
@@ -806,19 +719,14 @@ export default function FinanceiroDashboard() {
             })()}
 
             {/* list */}
-            <div className="overflow-y-auto flex-1">
+            <div className="overflow-y-auto flex-1 min-h-0">
               {dayLoading ? (
-                <div className="flex flex-col items-center justify-center py-16 gap-3">
-                  <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-                  <p className="text-sm text-slate-400">Carregando provisionamentos...</p>
-                </div>
+                <CarregandoBloco />
               ) : dayPopup.items.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16">
-                  <p className="text-sm font-bold text-slate-400">Nenhum lançamento neste dia</p>
-                </div>
+                <EstadoVazio Icone={Calendar} titulo="Nenhum lançamento neste dia" className="py-16" />
               ) : (dayPopup as any).isPrevisto ? (
                 // ── Dias futuros: duas seções separadas ──
-                <div className="divide-y divide-white/5">
+                <div className="divide-y divide-slate-100 dark:divide-white/5">
                   {/* A Receber */}
                   {((dayPopup as any).recebimentos || []).length > 0 && (
                     <>
@@ -826,7 +734,7 @@ export default function FinanceiroDashboard() {
                         <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">↑ A Receber</p>
                       </div>
                       {((dayPopup as any).recebimentos || []).map((item: any, idx: number) => (
-                        <div key={item.id || idx} className="flex items-center gap-4 px-6 py-3.5 hover:bg-white/[0.02] transition-colors">
+                        <div key={item.id || idx} className="flex items-center gap-4 px-6 py-3.5 hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
                           <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-emerald-500/10">
                             <ArrowUp size={14} className="text-emerald-500" />
                           </div>
@@ -847,7 +755,7 @@ export default function FinanceiroDashboard() {
                         <p className="text-[10px] font-bold text-rose-500 uppercase tracking-widest">↓ A Pagar</p>
                       </div>
                       {((dayPopup as any).pagamentos || []).map((item: any, idx: number) => (
-                        <div key={item.id || idx} className="flex items-center gap-4 px-6 py-3.5 hover:bg-white/[0.02] transition-colors">
+                        <div key={item.id || idx} className="flex items-center gap-4 px-6 py-3.5 hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
                           <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-rose-500/10">
                             <ArrowDown size={14} className="text-rose-500" />
                           </div>
@@ -891,9 +799,7 @@ export default function FinanceiroDashboard() {
                 </div>
               )}
             </div>
-          </div>
-        </div>,
-        document.body
+        </Modal>
       )}
     </div>
   );

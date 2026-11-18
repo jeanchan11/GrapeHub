@@ -4,6 +4,8 @@ import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, useDragg
 import { ChevronLeft, ChevronRight, Plus, Calendar, Film, Images, Image as ImageIcon, CircleDot, X, Loader2, CheckCircle2, ListChecks } from 'lucide-react';
 import OptionPicker from './ui/OptionPicker';
 import { toast } from '../lib/toast';
+import { Modal } from './ui/Modal';
+import { designSystem } from '../design-system';
 
 /**
  * Peças da página de postagens do Instagram (template `lista`, página "Postagens IG").
@@ -205,7 +207,7 @@ export const CalendarioPostagens: React.FC<{
   return (
     <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-white/[0.02] p-5">
       <div className="flex items-center gap-3 mb-4">
-        <h3 className="text-base font-bold text-slate-900 dark:text-white">{MESES[mes.m]} <span className="text-slate-400 font-medium">{mes.y}</span></h3>
+        <h3 className="text-base font-bold text-dark-text">{MESES[mes.m]} <span className="text-slate-400 font-medium">{mes.y}</span></h3>
         <span className="text-[11px] text-slate-500">{doMesTotal} {doMesTotal === 1 ? 'postagem' : 'postagens'}</span>
         <div className="flex items-center gap-2 ml-auto">
           {PERFIS.map(p => (
@@ -295,14 +297,20 @@ export const NovaPostagemModal: React.FC<{
     </div>
   );
 
-  return createPortal(
-    <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onFechar}>
-      <div className="w-full max-w-[480px] bg-white dark:bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-black/5 dark:border-white/5">
-          <h3 className="text-base font-bold text-slate-900 dark:text-white">Nova postagem</h3>
-          <button onClick={onFechar} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5"><X size={16} /></button>
-        </div>
-        <div className="px-6 py-5 space-y-4">
+  return (
+    <Modal
+      isOpen
+      onClose={onFechar}
+      title="Nova postagem"
+      maxWidth="max-w-[480px]"
+      footer={<>
+        <button onClick={onFechar} className={designSystem.button.secondary}>Cancelar</button>
+        <button onClick={salvar} disabled={salvando} className={`${designSystem.button.primary} flex items-center gap-2 disabled:opacity-50`}>
+          {salvando && <Loader2 size={13} className="animate-spin" />} Criar postagem
+        </button>
+      </>}
+    >
+        <div className="space-y-4">
           <div>
             <label className={rotulo}>Título / ideia</label>
             <input autoFocus value={titulo} onChange={e => setTitulo(e.target.value)} onKeyDown={e => e.key === 'Enter' && salvar()}
@@ -323,14 +331,6 @@ export const NovaPostagemModal: React.FC<{
             </div>
           </div>
         </div>
-        <div className="flex justify-end gap-2 px-6 py-4 border-t border-black/5 dark:border-white/5">
-          <button onClick={onFechar} className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5">Cancelar</button>
-          <button onClick={salvar} disabled={salvando} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-violet-600 hover:bg-violet-500 disabled:opacity-50 flex items-center gap-2">
-            {salvando && <Loader2 size={13} className="animate-spin" />} Criar postagem
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 };

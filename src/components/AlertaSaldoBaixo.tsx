@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { AlertTriangle, Wallet, X, ArrowRight } from 'lucide-react';
+import { Modal } from './ui/Modal';
 
 /**
  * Popup de saldo baixo para o gestor da página de Projetos (`/api/alertas/saldo-baixo`).
@@ -87,8 +87,6 @@ const AlertaSaldoBaixo: React.FC<{ onAbrirPagina: (pageId: string) => void }> = 
     return () => window.removeEventListener(EVENTO_TESTE_SALDO, abrirTeste);
   }, []);
 
-  if (!aberto || itens.length === 0) return null;
-
   const fechar = (ms: number) => { if (!teste) adiar(itens.map(i => i.project_id), ms); setAberto(false); setTeste(false); testeAberto.current = false; };
   const paginas = Array.from(new Set(itens.map(i => i.page_id)));
 
@@ -99,9 +97,9 @@ const AlertaSaldoBaixo: React.FC<{ onAbrirPagina: (pageId: string) => void }> = 
     return { t: `≈ ${i.dias.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${i.dias < 2 ? 'dia' : 'dias'} de saldo`, c: 'text-amber-500' };
   };
 
-  return createPortal(
-    <div className="fixed inset-0 z-[9100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-[480px] bg-white dark:bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+  // Clique fora NÃO fecha (como antes): fechar adia o alerta, tem de ser gesto explícito (X/botões/Esc = X).
+  return (
+    <Modal isOpen={aberto && itens.length > 0} onClose={() => fechar(60 * 60 * 1000)} semCabecalho semPadding fecharAoClicarFora={false} maxWidth="max-w-[480px]">
         <div className="flex items-start gap-3 px-6 pt-6 pb-4">
           <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
             <AlertTriangle size={20} />
@@ -149,13 +147,11 @@ const AlertaSaldoBaixo: React.FC<{ onAbrirPagina: (pageId: string) => void }> = 
             Lembrar em 4h
           </button>
           <button onClick={() => { fechar(4 * 60 * 60 * 1000); onAbrirPagina(paginas[0]); }}
-            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-violet-600 hover:bg-violet-500 transition-colors">
+            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 transition-colors">
             Abrir projetos
           </button>
         </div>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 };
 

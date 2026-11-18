@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { motion, animate, AnimatePresence } from 'framer-motion';
+import { motion, animate, AnimatePresence } from 'motion/react';
 import { Plus, Edit2, Trash2, Book, Activity, Wrench, Brain, Target, X, Check, Calendar, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
-import LoadingSpinner from '../../components/LoadingSpinner';
+import { CarregandoBloco } from '../../components/LoadingSpinner';
+import { Modal } from '../../components/ui/Modal';
+import { Abas } from '../../components/ui/Abas';
+import { EstadoVazio } from '../../components/ui/EstadoVazio';
 import SplitHeadline from '../../components/SplitHeadline';
 import OptionPicker from '../../components/ui/OptionPicker';
 import { toast } from '@/src/lib/toast';
@@ -39,7 +42,7 @@ const AnimatedNumber = ({ value, suffix = '' }: { value: number, suffix?: string
     const node = nodeRef.current;
     if (node) {
       const controls = animate(0, value, {
-        duration: 1.5,
+        duration: 0.5,
         ease: "easeOut",
         onUpdate(v) {
           node.textContent = Math.floor(v) + suffix;
@@ -155,11 +158,11 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
   // Helper functions
   const getTypeColor = (tipo: string) => {
     switch (tipo) {
-      case 'Técnico': return '#7F77DD';
-      case 'Prática': return '#F0997B';
-      case 'Curso': return '#5DCAA5';
+      case 'Técnico': return '#8b5cf6';
+      case 'Prática': return '#f59e0b';
+      case 'Curso': return '#10b981';
       case 'Comportamental': return '#85B7EB';
-      default: return '#7F77DD';
+      default: return '#8b5cf6';
     }
   };
 
@@ -175,7 +178,7 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
   };
 
   const getProgressBarColor = (progresso: number) => {
-    if (progresso < 40) return 'bg-[#7F77DD]';
+    if (progresso < 40) return 'bg-violet-500';
     if (progresso < 80) return 'bg-amber-500';
     return 'bg-emerald-500';
   };
@@ -197,15 +200,15 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
     return diffDays <= 30;
   };
 
-  if (loading) return <div className="flex justify-center p-8"><LoadingSpinner /></div>;
+  if (loading) return <CarregandoBloco />;
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+    <div className="space-y-6">
       
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
-          <SplitHeadline text="Plano de " highlight="Desenvolvimento" className="text-xl font-black text-slate-800 dark:text-white" />
+          <SplitHeadline text="Plano de " highlight="Desenvolvimento" className="text-xl font-black text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
             Acompanhamento de Evolução e PDI
           </p>
@@ -224,45 +227,45 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         
         {/* Card 1 */}
-        <div className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200 hover:border-[#7F77DD]/30 dark:hover:border-[#7F77DD]/30 hover:shadow-sm">
+        <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200 hover:border-violet-500/30 dark:hover:border-violet-500/30 hover:shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Total de Ações</span>
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-[#7F77DD]/10 text-[#7F77DD]">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-violet-500/10 text-violet-500">
               <Target size={16} />
             </div>
           </div>
           <div>
-            <div className="text-xl font-black text-slate-800 dark:text-white mb-0.5">
+            <div className="text-xl font-black text-dark-text mb-0.5">
               <AnimatedNumber value={totalAcoes} />
             </div>
           </div>
         </div>
 
         {/* Card 2 */}
-        <div className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200 hover:border-[#5DCAA5]/30 dark:hover:border-[#5DCAA5]/30 hover:shadow-sm">
+        <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200 hover:border-emerald-500/30 dark:hover:border-emerald-500/30 hover:shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Progresso Geral</span>
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-[#5DCAA5]/10 text-[#5DCAA5]">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-emerald-500/10 text-emerald-500">
               <Activity size={16} />
             </div>
           </div>
           <div>
-            <div className="text-xl font-black text-slate-800 dark:text-white mb-0.5">
+            <div className="text-xl font-black text-dark-text mb-0.5">
               <AnimatedNumber value={progressoGeral} suffix="%" />
             </div>
           </div>
         </div>
 
         {/* Card 3 */}
-        <div className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200 hover:border-[#F0997B]/30 dark:hover:border-[#F0997B]/30 hover:shadow-sm">
+        <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200 hover:border-amber-500/30 dark:hover:border-amber-500/30 hover:shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Próximo Prazo</span>
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-[#F0997B]/10 text-[#F0997B]">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-amber-500/10 text-amber-500">
               <Calendar size={16} />
             </div>
           </div>
           <div>
-            <div className="text-xl font-black text-slate-800 dark:text-white mb-0.5">
+            <div className="text-xl font-black text-dark-text mb-0.5">
               {proximoPrazo ? new Date(proximoPrazo.prazo).toLocaleDateString('pt-BR') : 'Nenhum'}
             </div>
           </div>
@@ -270,23 +273,17 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-2 p-1 bg-white dark:bg-dark-card rounded-xl border border-slate-200 dark:border-white/10 overflow-x-auto w-full sm:w-auto">
-        {['Todos', 'Em andamento', 'Concluído', 'Pausado'].map(f => (
-          <button
-            key={f}
-            onClick={() => setFilter(f as any)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${filter === f ? 'bg-[#7F77DD] text-white dark:text-dark-text shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-dark-text hover:bg-slate-100 dark:hover:bg-white/5'}`}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
+      <Abas
+        variante="segmentado"
+        abas={(['Todos', 'Em andamento', 'Concluído', 'Pausado'] as const).map(f => ({ id: f, rotulo: f }))}
+        ativa={filter}
+        onChange={(id) => setFilter(id as typeof filter)}
+      />
 
       {/* Cards List */}
       {filteredItems.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-slate-500 dark:text-slate-400 bg-white dark:bg-dark-card/50 rounded-xl border border-slate-200 dark:border-white/10">
-          <Target size={48} className="mb-4 opacity-50 text-[#7F77DD]" />
-          <p className="text-base font-semibold">Nenhuma ação encontrada para este filtro.</p>
+        <div className="bg-dark-card rounded-2xl border border-black/10 dark:border-white/10">
+          <EstadoVazio Icone={Target} titulo="Nenhuma ação encontrada para este filtro." />
         </div>
       ) : (
         <motion.div 
@@ -294,7 +291,7 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
           animate="visible" 
           variants={{
             hidden: { opacity: 0 },
-            visible: { opacity: 1, transition: { staggerChildren: 0.1 } }
+            visible: { opacity: 1, transition: { staggerChildren: 0.04 } }
           }}
           className="grid grid-cols-1 lg:grid-cols-2 gap-5"
         >
@@ -305,7 +302,7 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
               <motion.div 
                 variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
                 key={item.id} 
-                className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden flex flex-col group relative"
+                className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden flex flex-col group relative"
               >
                 <div className="p-5 flex-1">
                   {/* Top: Icon + Titles */}
@@ -323,7 +320,7 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
                           <motion.div 
                             initial={{ width: 0 }}
                             animate={{ width: `${item.progresso}%` }}
-                            transition={{ duration: 1, ease: "easeOut" }}
+                            transition={{ duration: 0.5, ease: "easeOut" }}
                             className={`h-full rounded-full ${getProgressBarColor(item.progresso)}`}
                           />
                         </div>
@@ -346,14 +343,14 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
                       >
                         <div className="pt-4">
                           <div className="flex flex-wrap items-center gap-2 mb-4">
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-[20px] bg-slate-800 text-slate-300 border border-slate-700">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/5 text-slate-500 dark:text-slate-400 border border-black/10 dark:border-white/10">
                               {item.tipo}
                             </span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-[20px] border ${getStatusBadge(item.status)}`}>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getStatusBadge(item.status)}`}>
                               {item.status}
                             </span>
                             {item.prazo && (
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-[20px] border flex items-center gap-1 ${isUrgent ? 'bg-orange-500/10 text-orange-500 border-orange-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'}`}>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${isUrgent ? 'bg-orange-500/10 text-orange-500 border-orange-500/30' : 'bg-black/5 dark:bg-white/5 text-slate-500 dark:text-slate-400 border-black/10 dark:border-white/10'}`}>
                                 <Calendar size={10} />
                                 {new Date(item.prazo).toLocaleDateString('pt-BR')}
                                 {isUrgent && <AlertCircle size={10} className="ml-0.5" />}
@@ -378,7 +375,7 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
                                 <motion.div 
                                   initial={{ width: 0 }}
                                   animate={{ width: `${item.progresso}%` }}
-                                  transition={{ duration: 1, ease: "easeOut" }}
+                                  transition={{ duration: 0.5, ease: "easeOut" }}
                                   className={`h-full rounded-full ${getProgressBarColor(item.progresso)}`}
                                 ></motion.div>
                               </div>
@@ -397,11 +394,11 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
                                         type="checkbox"
                                         checked={etapa.concluida}
                                         onChange={() => etapa.id && handleToggleEtapa(item.id, etapa.id, etapa.concluida)}
-                                        className="peer appearance-none w-5 h-5 border-2 border-[#555] rounded hover:border-[#7F77DD] checked:bg-[#7F77DD] checked:border-[#7F77DD] transition-all cursor-pointer"
+                                        className="peer appearance-none w-5 h-5 border-2 border-black/20 dark:border-white/20 rounded hover:border-violet-500 checked:bg-violet-500 checked:border-violet-500 transition-all cursor-pointer"
                                       />
-                                      <Check size={12} className="absolute text-white dark:text-dark-text opacity-0 peer-checked:opacity-100 pointer-events-none" />
+                                      <Check size={12} className="absolute text-white opacity-0 peer-checked:opacity-100 pointer-events-none" />
                                     </div>
-                                    <span className={`text-sm select-none transition-colors ${etapa.concluida ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-dark-text group-hover/chk:text-slate-900 dark:group-hover/chk:text-white'}`}>
+                                    <span className={`text-sm select-none transition-colors ${etapa.concluida ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-dark-text group-hover/chk:text-dark-text'}`}>
                                       {etapa.titulo}
                                     </span>
                                   </label>
@@ -425,7 +422,7 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
                   
                   {isAdmin && (
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { setEditingItem(item); setModalOpen(true); }} className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-[#7F77DD] hover:bg-[#7F77DD]/10 rounded-lg transition-colors"><Edit2 size={14} /></button>
+                      <button onClick={() => { setEditingItem(item); setModalOpen(true); }} className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-violet-500 hover:bg-violet-500/10 rounded-lg transition-colors"><Edit2 size={14} /></button>
                       <button onClick={() => handleDelete(item.id)} className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors"><Trash2 size={14} /></button>
                     </div>
                   )}
@@ -438,10 +435,18 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
 
       {/* Modal */}
       {modalOpen && editingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-slate-50 dark:bg-dark-bg w-full max-w-xl rounded-2xl shadow-2xl flex flex-col border border-slate-200 dark:border-white/10 overflow-hidden max-h-[90vh] animate-in zoom-in-95 duration-200">
+        <Modal
+          isOpen
+          onClose={() => setModalOpen(false)}
+          semCabecalho
+          semPadding
+          maxWidth="max-w-xl"
+          className="max-h-[90vh]"
+          fecharAoClicarFora={false}
+          fecharComEsc={false}
+        >
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/10">
-              <h2 className="text-lg font-bold text-white dark:text-dark-text">
+              <h2 className="text-lg font-bold text-dark-text">
                 {editingItem.id ? 'Editar Ação de PDI' : 'Nova Ação de PDI'}
               </h2>
               <button onClick={() => setModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl text-slate-500 dark:text-slate-400 hover:text-dark-text transition-colors">
@@ -456,7 +461,7 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
                   autoFocus required
                   value={editingItem.titulo || ''} 
                   onChange={e => setEditingItem({...editingItem, titulo: e.target.value})}
-                  className="w-full bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-white dark:text-dark-text focus:outline-none focus:border-[#7F77DD]"
+                  className="w-full bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500"
                   placeholder="Ex: Curso de Liderança"
                 />
               </div>
@@ -483,7 +488,7 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
                     type="date"
                     value={editingItem.prazo ? editingItem.prazo.split('T')[0] : ''} 
                     onChange={e => setEditingItem({...editingItem, prazo: e.target.value})}
-                    className="w-full bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-white dark:text-dark-text focus:outline-none focus:border-[#7F77DD]"
+                    className="w-full bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500"
                   />
                 </div>
               </div>
@@ -494,7 +499,7 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
                   value={editingItem.descricao || ''} 
                   onChange={e => setEditingItem({...editingItem, descricao: e.target.value})}
                   rows={2}
-                  className="w-full bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-white dark:text-dark-text focus:outline-none focus:border-[#7F77DD]"
+                  className="w-full bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500"
                   placeholder="Detalhes sobre a ação..."
                 />
               </div>
@@ -509,7 +514,7 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
                       const novasEtapas = [...(editingItem.etapas || []), { titulo: '', concluida: false }];
                       setEditingItem({...editingItem, etapas: novasEtapas});
                     }}
-                    className="text-xs font-bold text-[#7F77DD] hover:text-[#9b94ee] flex items-center gap-1"
+                    className="text-xs font-bold text-violet-500 hover:text-violet-600 flex items-center gap-1"
                   >
                     <Plus size={12} /> Adicionar Etapa
                   </button>
@@ -519,7 +524,7 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
                   {(editingItem.etapas || []).map((etapa, idx) => (
                     <div key={idx} className="flex items-center gap-2">
                       <div className="w-5 h-5 flex items-center justify-center shrink-0">
-                        {etapa.concluida ? <Check size={14} className="text-[#5DCAA5]" /> : <div className="w-1.5 h-1.5 rounded-full bg-[#555]"></div>}
+                        {etapa.concluida ? <Check size={14} className="text-emerald-500" /> : <div className="w-1.5 h-1.5 rounded-full bg-black/20 dark:bg-white/20"></div>}
                       </div>
                       <input 
                         required
@@ -529,7 +534,7 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
                           novasEtapas[idx].titulo = e.target.value;
                           setEditingItem({...editingItem, etapas: novasEtapas});
                         }}
-                        className="flex-1 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-sm text-white dark:text-dark-text focus:outline-none focus:border-[#7F77DD]"
+                        className="flex-1 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-sm text-dark-text focus:outline-none focus:border-violet-500"
                         placeholder="Nome da etapa..."
                       />
                       <button 
@@ -575,13 +580,12 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
                 <button type="button" onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-dark-text transition-colors">
                   Cancelar
                 </button>
-                <button type="submit" className="bg-[#7F77DD] hover:bg-[#6b64c4] text-white dark:text-dark-text px-6 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors">
+                <button type="submit" className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors">
                   <Check size={16} /> Salvar
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

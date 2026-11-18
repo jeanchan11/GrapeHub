@@ -1,5 +1,8 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
+import { Modal as ModalBase } from '../components/ui/Modal';
+import { Abas } from '../components/ui/Abas';
+import { CarregandoBloco } from '../components/LoadingSpinner';
 import SplitHeadline from '../components/SplitHeadline';
 import { toast } from '@/src/lib/toast';
 import {
@@ -9,7 +12,9 @@ import {
   ArrowLeft, Plus, Edit2, Trash2, X, ChevronRight,
   GitCompare, CheckSquare, Square, AlertCircle, TrendingUp,
   DollarSign, Users, FileText, Search, Filter, Eye,
-  ArrowUpRight, ArrowDownRight, Minus, Clock, History
+  ArrowUpRight, ArrowDownRight, Minus, Clock, History,
+  Landmark, Building2, ClipboardList, Scale, ShieldCheck, HeartPulse, Briefcase, Lock, Home, Folder, Flame,
+  type LucideIcon
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -54,10 +59,15 @@ const NICHOS = [
   'Consumidor', 'Família', 'Saúde', 'Empresarial', 'Criminal', 'Imobiliário'
 ];
 
-const NICHO_ICONS: Record<string, string> = {
-  'Previdenciário': '🏛️', 'Bancário': '🏦', 'Servidor Público': '📋',
-  'Trabalhista': '⚖️', 'Consumidor': '🛡️', 'Família': '👨‍👩‍👧',
-  'Saúde': '🏥', 'Empresarial': '💼', 'Criminal': '🔒', 'Imobiliário': '🏠'
+// Ícone de cada nicho (lucide — antes eram emojis)
+const NICHO_ICONS: Record<string, LucideIcon> = {
+  'Previdenciário': Landmark, 'Bancário': Building2, 'Servidor Público': ClipboardList,
+  'Trabalhista': Scale, 'Consumidor': ShieldCheck, 'Família': Users,
+  'Saúde': HeartPulse, 'Empresarial': Briefcase, 'Criminal': Lock, 'Imobiliário': Home
+};
+const IconeNicho = ({ nicho, size = 20 }: { nicho: string; size?: number }) => {
+  const Icone = NICHO_ICONS[nicho] || Folder;
+  return <Icone size={size} className="text-violet-500" />;
 };
 
 const INITIAL_ACOES: Acao[] = [
@@ -599,12 +609,14 @@ const INITIAL_ACOES: Acao[] = [
 
 // ─── Status Config ────────────────────────────────────────────────────────────
 
-const STATUS_CONFIG: Record<StatusAcao, { label: string; emoji: string; bg: string; text: string; border: string; order: number }> = {
-  verde:    { label: 'Quente agora',   emoji: '🟢', bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30', order: 0 },
-  amarelo:  { label: 'Com ressalvas',  emoji: '🟡', bg: 'bg-yellow-500/15',  text: 'text-yellow-400',  border: 'border-yellow-500/30',  order: 1 },
-  vermelho: { label: 'Difícil agora',  emoji: '🔴', bg: 'bg-red-500/15',     text: 'text-red-400',     border: 'border-red-500/30',     order: 2 },
-  a_testar: { label: 'A testar',       emoji: '🔵', bg: 'bg-blue-500/15',    text: 'text-blue-400',    border: 'border-blue-500/30',    order: 3 },
+// Status com bolinha da cor (antes 🟢🟡🔴🔵); cores do padrão: emerald / amber / rose / sky
+const STATUS_CONFIG: Record<StatusAcao, { label: string; dot: string; bg: string; text: string; border: string; order: number }> = {
+  verde:    { label: 'Quente agora',   dot: 'bg-emerald-500', bg: 'bg-emerald-500/15', text: 'text-emerald-600 dark:text-emerald-400', border: 'border-emerald-500/30', order: 0 },
+  amarelo:  { label: 'Com ressalvas',  dot: 'bg-amber-500',   bg: 'bg-amber-500/15',   text: 'text-amber-600 dark:text-amber-400',     border: 'border-amber-500/30',   order: 1 },
+  vermelho: { label: 'Difícil agora',  dot: 'bg-rose-500',    bg: 'bg-rose-500/15',    text: 'text-rose-600 dark:text-rose-400',       border: 'border-rose-500/30',    order: 2 },
+  a_testar: { label: 'A testar',       dot: 'bg-sky-500',     bg: 'bg-sky-500/15',     text: 'text-sky-600 dark:text-sky-400',         border: 'border-sky-500/30',     order: 3 },
 };
+const Bolinha = ({ status }: { status: StatusAcao }) => <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_CONFIG[status].dot}`} />;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -628,31 +640,18 @@ const StatusBadge = ({ status, size = 'sm' }: { status: StatusAcao; size?: 'sm' 
   const cfg = STATUS_CONFIG[status];
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-bold ${cfg.bg} ${cfg.text} ${cfg.border} ${size === 'md' ? 'text-sm px-3 py-1.5' : ''}`}>
-      {cfg.emoji} {cfg.label}
+      <Bolinha status={status} /> {cfg.label}
     </span>
   );
 };
 
 // ─── Modal Base ───────────────────────────────────────────────────────────────
 
-const Modal = ({ children, onClose, wide = false }: { children: React.ReactNode; onClose: () => void; wide?: boolean }) => (
-  <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
-    <motion.div
-      className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-      onClick={onClose}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.25, ease: 'easeOut' }}
-    />
-    <motion.div
-      className={`relative w-full ${wide ? 'max-w-4xl' : 'max-w-xl'} bg-white/95 dark:bg-[#11111b]/95 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl max-h-[90vh] overflow-y-auto`}
-      initial={{ opacity: 0, scale: 0.92, y: 20 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
-    >
-      {children}
-    </motion.div>
-  </div>
+// Popup do Playbook = popup padrão (ui/Modal: portal, Esc, animação de entrada e saída).
+const Modal = ({ children, onClose, wide = false, fecharAoClicarFora = true }: { children: React.ReactNode; onClose: () => void; wide?: boolean; fecharAoClicarFora?: boolean }) => (
+  <ModalBase isOpen onClose={onClose} semCabecalho semPadding maxWidth={wide ? 'max-w-4xl' : 'max-w-xl'} fecharAoClicarFora={fecharAoClicarFora}>
+    <div className="max-h-[90vh] overflow-y-auto">{children}</div>
+  </ModalBase>
 );
 
 // ─── Form Field ───────────────────────────────────────────────────────────────
@@ -719,13 +718,13 @@ const EditModal = ({ acao, nichoAtual, onSave, onDelete, onClose, saving = false
   );
 
   return (
-    <Modal onClose={onClose}>
-      <div className="p-6 border-b border-white/10 flex items-center justify-between">
+    <Modal onClose={onClose} fecharAoClicarFora={false}>
+      <div className="p-6 border-b border-black/10 dark:border-white/10 flex items-center justify-between">
         <div>
           <h2 className="text-lg font-black text-slate-900 dark:text-white">{isNew ? 'Nova Ação' : 'Editar Ação'}</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{nichoAtual}</p>
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-all text-slate-400 hover:text-white">
+        <button onClick={onClose} className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-xl transition-all text-slate-400 hover:text-dark-text">
           <X size={18} />
         </button>
       </div>
@@ -753,7 +752,7 @@ const EditModal = ({ acao, nichoAtual, onSave, onDelete, onClose, saving = false
                     : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10'
                 }`}
               >
-                {cfg.emoji} {cfg.label}
+                <Bolinha status={key} /> {cfg.label}
               </button>
             ))}
           </div>
@@ -798,17 +797,17 @@ const EditModal = ({ acao, nichoAtual, onSave, onDelete, onClose, saving = false
         </Field>
       </div>
 
-      <div className="p-6 border-t border-white/10 flex items-center justify-between gap-3">
+      <div className="p-6 border-t border-black/10 dark:border-white/10 flex items-center justify-between gap-3">
         <div>
           {!isNew && onDelete && (
             confirmDelete ? (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-red-500 dark:text-red-400">Confirmar exclusão?</span>
-                <button onClick={() => { onDelete(acao!.id!); onClose(); }} className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/40 text-red-600 dark:text-red-400 text-xs font-bold rounded-lg transition-all">Sim, excluir</button>
+                <span className="text-xs text-rose-500 dark:text-rose-400">Confirmar exclusão?</span>
+                <button onClick={() => { onDelete(acao!.id!); onClose(); }} className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/40 text-rose-600 dark:text-rose-400 text-xs font-bold rounded-lg transition-all">Sim, excluir</button>
                 <button onClick={() => setConfirmDelete(false)} className="px-3 py-1.5 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-600 dark:text-slate-400 text-xs rounded-lg transition-all">Cancelar</button>
               </div>
             ) : (
-              <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-red-400 hover:bg-red-500/10 text-xs font-semibold rounded-lg transition-all">
+              <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-rose-400 hover:bg-rose-500/10 text-xs font-semibold rounded-lg transition-all">
                 <Trash2 size={13} /> Excluir
               </button>
             )
@@ -821,7 +820,7 @@ const EditModal = ({ acao, nichoAtual, onSave, onDelete, onClose, saving = false
           <button
             onClick={handleSave}
             disabled={!form.nome?.trim() || saving}
-            className="px-5 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20"
+            className="px-5 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-all"
           >
             {saving ? 'Salvando...' : isNew ? 'Criar Ação' : 'Salvar'}
           </button>
@@ -848,7 +847,7 @@ const CompareModal = ({ acoes, onClose, onClearSelection }: { acoes: Acao[]; onC
 
   return (
     <Modal onClose={onClose} wide>
-      <div className="p-6 border-b border-white/10 flex items-center justify-between">
+      <div className="p-6 border-b border-black/10 dark:border-white/10 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-violet-600/20 rounded-xl">
             <GitCompare size={18} className="text-violet-400" />
@@ -858,7 +857,7 @@ const CompareModal = ({ acoes, onClose, onClearSelection }: { acoes: Acao[]; onC
             <p className="text-xs text-slate-500 dark:text-slate-400">Análise lado a lado</p>
           </div>
         </div>
-        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-xl transition-all text-slate-400 hover:text-white">
+        <button onClick={onClose} className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-xl transition-all text-slate-400 hover:text-dark-text">
           <X size={18} />
         </button>
       </div>
@@ -900,8 +899,8 @@ const CompareModal = ({ acoes, onClose, onClearSelection }: { acoes: Acao[]; onC
           <Row
             label="Contratos"
             icon={<Users size={12} />}
-            va={<span className={a.contratosMin != null || a.contratosMax != null ? 'text-blue-300' : 'text-slate-500'}>{fmtContratos(a.contratosMin, a.contratosMax)}</span>}
-            vb={<span className={b.contratosMin != null || b.contratosMax != null ? 'text-blue-300' : 'text-slate-500'}>{fmtContratos(b.contratosMin, b.contratosMax)}</span>}
+            va={<span className={a.contratosMin != null || a.contratosMax != null ? 'text-sky-600 dark:text-sky-300' : 'text-slate-500'}>{fmtContratos(a.contratosMin, a.contratosMax)}</span>}
+            vb={<span className={b.contratosMin != null || b.contratosMax != null ? 'text-sky-600 dark:text-sky-300' : 'text-slate-500'}>{fmtContratos(b.contratosMin, b.contratosMax)}</span>}
           />
           <Row
             label="Observações"
@@ -981,14 +980,14 @@ const CompareModal = ({ acoes, onClose, onClearSelection }: { acoes: Acao[]; onC
         </div>
       </div>
 
-      <div className="p-6 border-t border-white/10 flex items-center justify-end gap-3">
+      <div className="p-6 border-t border-black/10 dark:border-white/10 flex items-center justify-end gap-3">
         <button
           onClick={() => { onClearSelection(); onClose(); }}
           className="px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 rounded-xl transition-all"
         >
           Limpar seleção
         </button>
-        <button onClick={onClose} className="px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-xl transition-all">
+        <button onClick={onClose} className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold rounded-xl transition-all">
           Fechar
         </button>
       </div>
@@ -1013,7 +1012,7 @@ const DeltaIndicator = ({ current, previous, invert }: { current: number | null;
   const isGood = invert ? !up : up;
   return (
     <span className={`inline-flex items-center gap-0.5 text-[11px] font-bold ml-2 px-1.5 py-0.5 rounded-md ${
-      isGood ? 'text-emerald-400 bg-emerald-500/10' : 'text-red-400 bg-red-500/10'
+      isGood ? 'text-emerald-400 bg-emerald-500/10' : 'text-rose-400 bg-rose-500/10'
     }`}>
       {up ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
       {Math.abs(Math.round(((current - previous) / previous) * 100))}%
@@ -1130,7 +1129,7 @@ const DetailModal = ({ acao, onClose, onEdit, onDeleteHistory }: {
               icon={<Users size={12} />}
               value={
                 acao.contratosMin != null || acao.contratosMax != null ? (
-                  <span className="text-blue-300 font-bold text-base">{fmtContratos(acao.contratosMin, acao.contratosMax)}</span>
+                  <span className="text-sky-600 dark:text-sky-300 font-bold text-base">{fmtContratos(acao.contratosMin, acao.contratosMax)}</span>
                 ) : <span className="text-slate-500 italic">Não informado</span>
               }
               delta={lastHistory ? <DeltaIndicator current={getContratosValue(acao)} previous={getContratosValue(lastHistory)} /> : null}
@@ -1150,7 +1149,7 @@ const DetailModal = ({ acao, onClose, onEdit, onDeleteHistory }: {
           <div>
             {!acao.history?.length ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center mb-3">
+                <div className="w-12 h-12 bg-black/[0.03] dark:bg-white/5 rounded-2xl flex items-center justify-center mb-3">
                   <History size={20} className="text-slate-600" />
                 </div>
                 <p className="text-slate-500 font-semibold text-sm">Nenhuma edição anterior</p>
@@ -1184,7 +1183,7 @@ const DetailModal = ({ acao, onClose, onEdit, onDeleteHistory }: {
                           </div>
                           <button
                             onClick={() => onDeleteHistory(acao.id, entry.id)}
-                            className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                            className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
                             title="Apagar entrada"
                           >
                             <Trash2 size={12} />
@@ -1212,7 +1211,7 @@ const DetailModal = ({ acao, onClose, onEdit, onDeleteHistory }: {
                           </div>
                           <div>
                             <span className="text-slate-500 text-[10px] uppercase tracking-wider">Contratos</span>
-                            <p className="mt-0.5 font-semibold text-blue-300">
+                            <p className="mt-0.5 font-semibold text-sky-600 dark:text-sky-300">
                               {entry.contratosMin != null || entry.contratosMax != null ? fmtContratos(entry.contratosMin, entry.contratosMax) : <span className="text-slate-600">—</span>}
                             </p>
                           </div>
@@ -1240,7 +1239,7 @@ const DetailModal = ({ acao, onClose, onEdit, onDeleteHistory }: {
           <Edit2 size={14} />
           Editar
         </button>
-        <button onClick={onClose} className="px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20">
+        <button onClick={onClose} className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold rounded-xl transition-all">
           Fechar
         </button>
       </div>
@@ -1316,9 +1315,9 @@ const AcaoCard = ({ acao, selected, selectionDisabled, onSelect, onEdit, onView 
           )}
           {(acao.contratosMin != null || acao.contratosMax != null) && (
             <div className="flex items-center gap-1">
-              <Users size={10} className="text-blue-400" />
+              <Users size={10} className="text-sky-500" />
               <span className="text-slate-500">Contr:</span>
-              <span className="text-blue-300 font-semibold">{fmtContratos(acao.contratosMin, acao.contratosMax)}</span>
+              <span className="text-sky-600 dark:text-sky-300 font-semibold">{fmtContratos(acao.contratosMin, acao.contratosMax)}</span>
             </div>
           )}
         </div>
@@ -1361,41 +1360,41 @@ const NichoCard = ({ nicho, acoes, onClick, cardRef }: NichoCardProps) => {
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
-          <span className="text-2xl">{NICHO_ICONS[nicho] || '📁'}</span>
+          <span className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center shrink-0"><IconeNicho nicho={nicho} /></span>
           <div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-violet-600 dark:group-hover:text-violet-300 transition-colors">{nicho}</h3>
             <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5">{total} {total === 1 ? 'ação' : 'ações'}</p>
           </div>
         </div>
-        <ChevronRight size={16} className="text-slate-600 group-hover:text-violet-400 transition-all group-hover:translate-x-0.5" />
+        <ChevronRight size={16} className="text-slate-400 group-hover:text-violet-400 transition-all group-hover:translate-x-0.5" />
       </div>
 
       {/* Status pills */}
       {total > 0 ? (
         <div className="flex flex-wrap gap-1.5">
           {counts.verde > 0 && (
-            <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold rounded-full">
-              🟢 {counts.verde}
+            <span className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-full">
+              <Bolinha status="verde" /> {counts.verde}
             </span>
           )}
           {counts.amarelo > 0 && (
-            <span className="flex items-center gap-1 px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 text-xs font-bold rounded-full">
-              🟡 {counts.amarelo}
+            <span className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-bold rounded-full">
+              <Bolinha status="amarelo" /> {counts.amarelo}
             </span>
           )}
           {counts.vermelho > 0 && (
-            <span className="flex items-center gap-1 px-2 py-0.5 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold rounded-full">
-              🔴 {counts.vermelho}
+            <span className="flex items-center gap-1.5 px-2 py-0.5 bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-bold rounded-full">
+              <Bolinha status="vermelho" /> {counts.vermelho}
             </span>
           )}
           {counts.a_testar > 0 && (
-            <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-bold rounded-full">
-              🔵 {counts.a_testar}
+            <span className="flex items-center gap-1.5 px-2 py-0.5 bg-sky-500/10 border border-sky-500/20 text-sky-600 dark:text-sky-400 text-xs font-bold rounded-full">
+              <Bolinha status="a_testar" /> {counts.a_testar}
             </span>
           )}
         </div>
       ) : (
-        <div className="flex items-center gap-1.5 text-xs text-slate-600">
+        <div className="flex items-center gap-1.5 text-xs text-slate-500">
           <Plus size={12} />
           <span>Clique para adicionar ações</span>
         </div>
@@ -1404,7 +1403,7 @@ const NichoCard = ({ nicho, acoes, onClick, cardRef }: NichoCardProps) => {
       {/* Hottest action preview */}
       {hottest && (
         <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/5">
-          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">🔥 Mais quente</p>
+          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1"><Flame size={11} className="text-amber-500" /> Mais quente</p>
           <p className="text-xs text-slate-700 dark:text-slate-300 line-clamp-1">{hottest.nome}</p>
         </div>
       )}
@@ -1580,7 +1579,7 @@ export default function PlaybookAcoes() {
       <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-6">
         <div className="flex items-center gap-4">
           <div>
-            <SplitHeadline text="Playbook de " highlight="Ações" className="text-2xl font-black tracking-tight text-slate-900 dark:text-white" />
+            <SplitHeadline text="Playbook de " highlight="Ações" />
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
               Selecione um nicho jurídico para ver as ações
             </p>
@@ -1590,6 +1589,7 @@ export default function PlaybookAcoes() {
 
       {/* ── Content: Grid de Nichos ── */}
       <div className="px-6 md:px-8 pb-20">
+        {carregando ? <CarregandoBloco /> : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {NICHOS.map(nicho => (
             <NichoCard
@@ -1601,6 +1601,7 @@ export default function PlaybookAcoes() {
             />
           ))}
         </div>
+        )}
       </div>
 
       {/* ── iOS Folder Overlay ── */}
@@ -1633,7 +1634,7 @@ export default function PlaybookAcoes() {
                 scale: 1,
                 x: 0,
                 y: 0,
-                borderRadius: 32,
+                borderRadius: 22,
               }}
               exit={{
                 opacity: 0,
@@ -1643,11 +1644,11 @@ export default function PlaybookAcoes() {
                 borderRadius: 24,
               }}
               transition={{ 
-                duration: 0.4, 
+                duration: 0.25, 
                 ease: [0.32, 0.72, 0, 1],
               }}
-              className="fixed inset-4 md:inset-8 lg:inset-12 z-[61] bg-white/95 dark:bg-[#11111b]/95 border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden flex flex-col"
-              style={{ borderRadius: 32 }}
+              className="fixed inset-4 md:inset-8 lg:inset-12 z-[61] bg-white/95 dark:bg-dark-card/95 border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden flex flex-col"
+              style={{ borderRadius: 22 }}
             >
               {/* Folder Header */}
               <div className="flex items-center justify-between px-6 md:px-8 pt-6 pb-4 border-b border-slate-100 dark:border-white/10 shrink-0">
@@ -1667,7 +1668,7 @@ export default function PlaybookAcoes() {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: 0.15, duration: 0.3 }}
                     >
-                      <span className="text-2xl mr-2">{NICHO_ICONS[nichoAtual] || '📁'}</span>
+                      <span className="inline-flex align-middle mr-2 -mt-1"><IconeNicho nicho={nichoAtual} size={22} /></span>
                       {nichoAtual}
                     </motion.h2>
                     <motion.p 
@@ -1683,7 +1684,7 @@ export default function PlaybookAcoes() {
 
                 <motion.button
                   onClick={() => setEditando('new')}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20"
+                  className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold rounded-xl transition-colors"
                   initial={{ opacity: 0, scale: 0.8 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: 0.2, duration: 0.3, ease: 'easeOut' }}
@@ -1713,19 +1714,15 @@ export default function PlaybookAcoes() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Filter size={13} className="text-slate-500" />
-                  {(['all', 'verde', 'amarelo', 'vermelho', 'a_testar'] as const).map(s => (
-                    <button
-                      key={s}
-                      onClick={() => setFiltroStatus(s)}
-                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                        filtroStatus === s
-                          ? 'bg-violet-600 text-white'
-                          : 'bg-slate-200 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-white/10'
-                      }`}
-                    >
-                      {s === 'all' ? 'Todos' : STATUS_CONFIG[s].emoji + ' ' + STATUS_CONFIG[s].label}
-                    </button>
-                  ))}
+                  <Abas
+                    variante="segmentado"
+                    abas={(['all', 'verde', 'amarelo', 'vermelho', 'a_testar'] as const).map(st => ({
+                      id: st,
+                      rotulo: st === 'all' ? 'Todos' : <span className="flex items-center gap-1.5"><Bolinha status={st} />{STATUS_CONFIG[st].label}</span>,
+                    }))}
+                    ativa={filtroStatus}
+                    onChange={(id) => setFiltroStatus(id as typeof filtroStatus)}
+                  />
                 </div>
               </motion.div>
 
@@ -1742,7 +1739,7 @@ export default function PlaybookAcoes() {
                       <FileText size={24} className="text-slate-400 dark:text-slate-600" />
                     </div>
                     <p className="text-slate-400 font-semibold">Nenhuma ação encontrada</p>
-                    <p className="text-slate-600 text-sm mt-1">
+                    <p className="text-slate-500 text-sm mt-1">
                       {busca || filtroStatus !== 'all' ? 'Tente outros filtros' : 'Clique em "Nova Ação" para começar'}
                     </p>
                   </motion.div>
@@ -1754,7 +1751,7 @@ export default function PlaybookAcoes() {
                         initial={{ opacity: 0, y: 20, scale: 0.9 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         transition={{ 
-                          delay: 0.15 + index * 0.04,
+                          delay: 0.15 + Math.min(index, 8) * 0.04,
                           duration: 0.35, 
                           ease: [0.25, 0.46, 0.45, 0.94],
                         }}
@@ -1779,7 +1776,7 @@ export default function PlaybookAcoes() {
 
       {/* ── Floating Compare Button ── */}
       {selecionadas.length > 0 && !comparando && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 p-2 bg-white/95 dark:bg-[#11111b]/95 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl">
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 p-2 bg-white/95 dark:bg-dark-card/95 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl">
           <div className="pl-3 pr-1 py-1 flex flex-col justify-center">
             <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">Comparar</p>
             <p className="text-sm font-semibold text-slate-900 dark:text-white leading-none whitespace-nowrap">
@@ -1790,7 +1787,7 @@ export default function PlaybookAcoes() {
           {selecionadas.length === 2 ? (
             <button
               onClick={() => setComparando(true)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-xl shadow-lg shadow-violet-600/30 transition-all hover:scale-105 active:scale-95"
+              className="flex items-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl transition-colors"
             >
               <GitCompare size={16} />
               Comparar Ações

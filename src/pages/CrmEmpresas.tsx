@@ -5,7 +5,8 @@ import {
   Globe, Phone, Mail, Users, AlertCircle, Briefcase
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import LoadingSpinner from '../components/LoadingSpinner';
+import { CarregandoBloco } from '../components/LoadingSpinner';
+import { EstadoVazio } from '../components/ui/EstadoVazio';
 import { Modal } from '../components/ui/Modal';
 import { designSystem } from '../design-system';
 import OptionPicker from '../components/ui/OptionPicker';
@@ -170,20 +171,11 @@ export default function CrmEmpresas() {
 
       {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-slate-200 dark:border-white/10 pb-6 pt-2">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-violet-500/10 rounded-lg border border-violet-500/20">
-            <Building2 size={20} className="text-violet-400" />
-          </div>
-          <div className="flex items-center gap-3">
-            <SplitHeadline
-              text=""
-              highlight="Empresas"
-              className="text-2xl font-black tracking-tight text-slate-800 dark:text-white"
-            />
-            <span className="text-xs bg-violet-500/10 text-violet-400 border border-violet-500/20 px-2 py-0.5 rounded-full font-semibold">
-              {filteredEmpresas.length}
-            </span>
-          </div>
+        <div>
+          <SplitHeadline text="" highlight="Empresas" />
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+            <span className="numero">{filteredEmpresas.length}</span> {filteredEmpresas.length === 1 ? 'empresa' : 'empresas'}
+          </p>
         </div>
 
         <div className="flex items-center gap-3 w-full md:w-auto">
@@ -197,16 +189,13 @@ export default function CrmEmpresas() {
               className="w-full pl-9 pr-4 py-2 text-sm bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-lg outline-none focus:border-violet-500/50 transition-colors shadow-sm"
             />
           </div>
-          <button className="p-2 border border-slate-200 dark:border-white/10 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">
-            <Settings size={18} />
-          </button>
-          <button onClick={handleExportCSV} className="flex items-center gap-2 px-4 py-2 border border-slate-200 dark:border-white/10 rounded-lg text-sm font-medium hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">
+          <button onClick={handleExportCSV} className={designSystem.button.secundario}>
             <Download size={16} />
             <span className="hidden sm:inline">Exportar</span>
           </button>
           <button
             onClick={() => { setShowModal(true); setEditingId(null); setSaveError(null); setFormData({ nome: '', site: '', setor: '', telefone: '', email: '', cidade: '' }); }}
-            className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-sm font-medium transition-colors"
+            className={designSystem.button.principal}
           >
             <Plus size={16} />
             <span>Nova Empresa</span>
@@ -215,11 +204,9 @@ export default function CrmEmpresas() {
       </div>
 
       {/* TABLE */}
-      <div className="bg-white dark:bg-dark-card rounded-xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden min-h-[500px]">
+      <div className="bg-dark-card rounded-2xl border border-black/10 dark:border-white/10 shadow-sm overflow-hidden min-h-[500px]">
         {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <LoadingSpinner size="lg" />
-          </div>
+          <CarregandoBloco className="h-64" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">
@@ -240,17 +227,17 @@ export default function CrmEmpresas() {
               <tbody>
                 {filteredEmpresas.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-20 text-slate-400">
-                      <div className="flex flex-col items-center gap-3">
-                        <Building2 size={32} className="opacity-20" />
-                        <p>Nenhuma empresa encontrada.</p>
-                        <button
-                          onClick={() => setShowModal(true)}
-                          className="mt-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors"
-                        >
-                          Adicionar Primeira Empresa
-                        </button>
-                      </div>
+                    <td colSpan={8}>
+                      <EstadoVazio
+                        Icone={Building2}
+                        titulo="Nenhuma empresa encontrada."
+                        className="py-20"
+                        acao={
+                          <button onClick={() => setShowModal(true)} className={designSystem.button.principal}>
+                            Adicionar primeira empresa
+                          </button>
+                        }
+                      />
                     </td>
                   </tr>
                 ) : (
@@ -329,6 +316,7 @@ export default function CrmEmpresas() {
         onClose={() => setShowModal(false)}
         title={editingId ? "Editar Empresa" : "Nova Empresa"}
         maxWidth="max-w-md"
+        fecharAoClicarFora={false}
         footer={
           <button
             onClick={handleSave}
@@ -428,7 +416,7 @@ export default function CrmEmpresas() {
                   <div key={p.id} className="flex flex-col gap-1 p-3 bg-slate-50 dark:bg-white/5 rounded-lg border border-slate-100 dark:border-white/5">
                     <div className="flex justify-between items-start">
                       <div className="font-semibold text-sm text-slate-800 dark:text-slate-200">{p.nome}</div>
-                      <div className="text-xs text-slate-500 bg-white dark:bg-dark-bg px-2 py-0.5 rounded border border-slate-200 dark:border-white/5">
+                      <div className="text-xs text-slate-500 bg-dark-card px-2 py-0.5 rounded border border-black/10 dark:border-white/5">
                         {p.cargo || 'Sem cargo'}
                       </div>
                     </div>

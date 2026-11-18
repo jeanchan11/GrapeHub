@@ -10,6 +10,7 @@ import { GripVertical, ChevronRight, Plus, Pencil, Trash2, FileText, Search, X, 
 import { confirmDialog } from '../lib/confirm';
 import { toast } from '../lib/toast';
 import OptionPicker from './ui/OptionPicker';
+import { Modal } from './ui/Modal';
 import { filhosEmOrdem } from '../lib/menuOrdem';
 
 /**
@@ -280,21 +281,20 @@ const JanelaEditar: React.FC<{
   };
 
   const rotulo = 'block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5';
-  return createPortal(
-    <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onFechar}>
-      <div className="w-full max-w-[520px] bg-white dark:bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
+  return (
+    <Modal isOpen onClose={onFechar} semCabecalho semPadding maxWidth="max-w-[520px]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-black/5 dark:border-white/5">
           <div>
-            <h3 className="text-base font-bold text-light-text dark:text-white">Editar {NOME[no.tipo]}</h3>
+            <h3 className="text-base font-bold text-dark-text">Editar {NOME[no.tipo]}</h3>
             <p className="text-[11px] font-mono text-slate-500">id: {no.id}</p>
           </div>
-          <button onClick={onFechar} className="p-1.5 rounded-lg text-slate-400 hover:text-light-text dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5"><X size={16} /></button>
+          <button onClick={onFechar} className="p-1.5 rounded-lg text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5"><X size={16} /></button>
         </div>
         <div className="px-6 py-5 space-y-4">
           <div>
             <label className={rotulo}>Nome</label>
             <input autoFocus value={label} onChange={e => setLabel(e.target.value)} onKeyDown={e => e.key === 'Enter' && salvar()}
-              className="w-full px-3 py-2 rounded-lg text-sm modal-input focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
+              className="w-full px-3 py-2 rounded-lg text-sm modal-input focus:outline-none focus:ring-2 focus:ring-violet-500/50" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className={rotulo}>Ícone</label><IconSelector value={icon} onChange={setIcon} /></div>
@@ -315,14 +315,12 @@ const JanelaEditar: React.FC<{
           <p className="text-[11px] text-slate-500">Para mudar de lugar, arraste na lista.</p>
         </div>
         <div className="flex justify-end gap-2 px-6 py-4 border-t border-black/5 dark:border-white/5">
-          <button onClick={onFechar} className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5">Cancelar</button>
-          <button onClick={salvar} disabled={salvando} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-violet-600 hover:bg-violet-500 disabled:opacity-50 flex items-center gap-2">
+          <button onClick={onFechar} className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5">Cancelar</button>
+          <button onClick={salvar} disabled={salvando} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-50 flex items-center gap-2">
             {salvando && <Loader2 size={13} className="animate-spin" />} Salvar
           </button>
         </div>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 };
 
@@ -497,13 +495,13 @@ const EstruturaMenu: React.FC<{
         <div className="relative flex-1 min-w-[220px]">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar página, pasta ou id…"
-            className="w-full h-10 pl-9 pr-9 rounded-xl text-sm bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-light-text dark:text-white placeholder:text-slate-500 outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20" />
-          {busca && <button onClick={() => setBusca('')} className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-light-text dark:hover:text-white"><X size={13} /></button>}
+            className="w-full h-10 pl-9 pr-9 rounded-xl text-sm bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-dark-text placeholder:text-slate-500 outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20" />
+          {busca && <button onClick={() => setBusca('')} className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-dark-text"><X size={13} /></button>}
         </div>
-        <button onClick={() => setRecolhidos(new Set())} className="h-10 px-3 rounded-xl text-xs font-semibold text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 flex items-center gap-1.5">
+        <button onClick={() => setRecolhidos(new Set())} className="h-10 px-3 rounded-xl text-xs font-semibold text-slate-500 hover:text-dark-text hover:bg-slate-100 dark:hover:bg-white/5 flex items-center gap-1.5">
           <ChevronsUpDown size={14} /> Abrir tudo
         </button>
-        <button onClick={() => setRecolhidos(new Set(pastas))} className="h-10 px-3 rounded-xl text-xs font-semibold text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 flex items-center gap-1.5">
+        <button onClick={() => setRecolhidos(new Set(pastas))} className="h-10 px-3 rounded-xl text-xs font-semibold text-slate-500 hover:text-dark-text hover:bg-slate-100 dark:hover:bg-white/5 flex items-center gap-1.5">
           <ChevronsDownUp size={14} /> Recolher tudo
         </button>
         {salvando && <span className="flex items-center gap-1.5 text-xs text-slate-500"><Loader2 size={13} className="animate-spin" /> Salvando…</span>}
@@ -555,7 +553,7 @@ const EstruturaMenu: React.FC<{
               <div className="flex items-center gap-2 h-10 px-3 rounded-lg bg-white dark:bg-dark-card border border-violet-500/40 shadow-2xl cursor-grabbing w-fit max-w-[420px]">
                 <GripVertical size={14} className="text-slate-400" />
                 <IconeAtivo size={15} style={{ color: sobreposto.icon_color || '#94a3b8' }} />
-                <span className="text-sm font-semibold text-light-text dark:text-white truncate">{sobreposto.label}</span>
+                <span className="text-sm font-semibold text-dark-text truncate">{sobreposto.label}</span>
                 {(sobreposto.paginas + sobreposto.pastas) > 0 && (
                   <span className="text-[10px] font-bold text-violet-500 bg-violet-500/10 rounded-full px-2 py-0.5">+{sobreposto.paginas + sobreposto.pastas}</span>
                 )}

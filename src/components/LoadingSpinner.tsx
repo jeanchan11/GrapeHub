@@ -94,4 +94,18 @@ const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ size = 'md', className 
   );
 };
 
+/** Carregamento da página inteira (18/11/2026): a uva no centro da tela. */
+export const CarregandoPagina: React.FC = () => (
+  <div className="flex items-center justify-center min-h-screen w-full">
+    <LoadingSpinner size="lg" />
+  </div>
+);
+
+/** Carregamento dentro de um cartão, lista ou popup: a uva menor, com respiro. */
+export const CarregandoBloco: React.FC<{ className?: string }> = ({ className = '' }) => (
+  <div className={`flex items-center justify-center py-16 w-full ${className}`}>
+    <LoadingSpinner size="sm" />
+  </div>
+);
+
 export default LoadingSpinner;

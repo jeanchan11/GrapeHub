@@ -6,8 +6,13 @@ import {
   ChevronRight, ChevronLeft, BarChart3, RefreshCw, Pencil,
   Calendar, Video, Percent, Archive, ArchiveRestore
 } from 'lucide-react';
-import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'framer-motion';
+import { motion, useMotionValue, useTransform, animate } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
+import { Modal } from './ui/Modal';
+import { CarregandoBloco } from './LoadingSpinner';
+import { EstadoVazio } from './ui/EstadoVazio';
+import { Abas } from './ui/Abas';
+import { designSystem } from '../design-system';
 
 // ============================================================
 // TIPOS
@@ -137,7 +142,7 @@ const getProgressColor = (pct: number) => {
   if (pct >= 100) return '#10b981';
   if (pct >= 60)  return '#f59e0b';
   if (pct >= 30)  return '#8b5cf6';
-  return '#ef4444';
+  return '#f43f5e';
 };
 
 const getStatusLabel = (pct: number) => {
@@ -177,7 +182,7 @@ const CircularProgress: React.FC<{ percentage: number; color: string }> = ({ per
   useEffect(() => {
     const clamped = Math.min(percentage, 100);
     const controls = animate(progress, clamped, {
-      duration: 2.5,
+      duration: 0.8,
       ease: [0.16, 1, 0.3, 1],
     });
 
@@ -225,7 +230,7 @@ const CircularProgress: React.FC<{ percentage: number; color: string }> = ({ per
         className="absolute inset-0 flex items-center justify-center"
         style={{ filter: blurFilter, opacity: textOpacity }}
       >
-        <span className="text-lg font-black text-slate-900 dark:text-white tabular-nums">
+        <span className="numero text-lg text-dark-text tabular-nums">
           {displayValue}%
         </span>
       </motion.div>
@@ -251,7 +256,7 @@ const AnimatedRate: React.FC<{ value: number; color: string }> = ({ value, color
 
   useEffect(() => {
     const controls = animate(progress, value, {
-      duration: 2.5,
+      duration: 0.8,
       ease: [0.16, 1, 0.3, 1],
     });
     const unsubscribe = progress.on('change', (v) => setDisplayValue(v.toFixed(1)));
@@ -263,7 +268,7 @@ const AnimatedRate: React.FC<{ value: number; color: string }> = ({ value, color
       className="flex items-center justify-center"
       style={{ filter: blurFilter, opacity: textOpacity, height: CIRCLE_SIZE }}
     >
-      <span className="text-4xl font-black tabular-nums" style={{ color }}>
+      <span className="numero text-4xl tabular-nums" style={{ color }}>
         {displayValue}%
       </span>
     </motion.div>
@@ -423,60 +428,47 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
   const selectedTipo = TIPOS_META.find(t => t.id === form.tipo);
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
-          {/* Backdrop */}
-          <div className="absolute inset-0" onClick={onClose} />
-
-          {/* Popup panel */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="relative w-full max-w-4xl max-h-[85vh] bg-white dark:bg-[#13111d] rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl flex flex-col overflow-hidden"
-          >
+    <>
+      {/* Clique fora fechava: mantido. Esc fica com o wizard enquanto ele estiver aberto. */}
+      <Modal isOpen={isOpen} onClose={onClose} semCabecalho semPadding fecharComEsc={!showModal} maxWidth="max-w-4xl" className="max-h-[85vh]">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 dark:border-white/[0.06] shrink-0">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-black/5 dark:border-white/[0.06] shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-xl bg-violet-500/10">
                   <Target size={20} className="text-violet-500" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-slate-900 dark:text-white">Metas</h2>
+                  <h2 className="text-lg font-bold text-dark-text">Metas</h2>
                   <p className="text-xs text-slate-400 mt-0.5">Acompanhe o progresso das suas metas de vendas</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <div className="flex items-center bg-slate-100 dark:bg-white/5 rounded-lg p-0.5 mr-1">
-                  <button onClick={() => setShowArchived(false)}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${!showArchived ? 'bg-white dark:bg-white/10 text-violet-600 dark:text-violet-300 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-white'}`}>
-                    Ativas
-                  </button>
-                  <button onClick={() => setShowArchived(true)}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${showArchived ? 'bg-white dark:bg-white/10 text-violet-600 dark:text-violet-300 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-white'}`}>
-                    Arquivadas
-                  </button>
-                </div>
+                <Abas
+                  variante="segmentado"
+                  className="mr-1"
+                  abas={[{ id: 'ativas', rotulo: 'Ativas' }, { id: 'arquivadas', rotulo: 'Arquivadas' }]}
+                  ativa={showArchived ? 'arquivadas' : 'ativas'}
+                  onChange={(id) => setShowArchived(id === 'arquivadas')}
+                />
                 <button
                   onClick={() => fetchMetas(true)}
                   disabled={refreshing}
-                  className="p-2 border border-slate-200 dark:border-white/10 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                  className="p-2 border border-black/10 dark:border-white/10 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                   title="Atualizar progresso"
                 >
                   <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
                 </button>
                 <button
                   onClick={openModal}
-                  className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-bold transition-colors"
+                  className={designSystem.button.principal}
                 >
                   <Plus size={15} />
                   Nova Meta
                 </button>
                 <button
                   onClick={onClose}
-                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition-colors ml-1"
+                  aria-label="Fechar"
+                  className="p-2 text-slate-500 dark:text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors ml-1"
                 >
                   <X size={18} />
                 </button>
@@ -486,26 +478,20 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6">
               {loading ? (
-                <div className="flex flex-col items-center justify-center py-16 gap-4">
-                  <div className="w-10 h-10 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-                  <p className="text-sm text-slate-400">Carregando metas...</p>
-                </div>
+                <CarregandoBloco />
               ) : metas.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 gap-4 text-slate-400">
-                  {showArchived ? <Archive size={48} className="opacity-20" /> : <Target size={48} className="opacity-20" />}
-                  <p className="font-medium">{showArchived ? 'Nenhuma meta arquivada.' : 'Nenhuma meta cadastrada ainda.'}</p>
-                  {!showArchived && (
-                    <button
-                      onClick={openModal}
-                      className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors"
-                    >
+                <EstadoVazio
+                  Icone={showArchived ? Archive : Target}
+                  titulo={showArchived ? 'Nenhuma meta arquivada.' : 'Nenhuma meta cadastrada ainda.'}
+                  acao={!showArchived ? (
+                    <button onClick={openModal} className={designSystem.button.principal}>
                       Criar primeira meta
                     </button>
-                  )}
-                </div>
+                  ) : undefined}
+                />
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-                  {metas.map(meta => {
+                  {metas.map((meta, i) => {
                     const tipoConfig = TIPOS_META.find(t => t.id === meta.tipo);
                     const Icon = tipoConfig?.icon || BarChart3;
                     const status = getStatusLabel(meta.percentual);
@@ -518,8 +504,8 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
                         key={meta.id}
                         initial={{ opacity: 0, y: 12 }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3 }}
-                        className="bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/5 rounded-2xl p-5 flex flex-col hover:shadow-lg hover:border-violet-500/20 transition-all group"
+                        transition={{ duration: 0.3, delay: Math.min(i, 8) * 0.04 }}
+                        className="bg-black/[0.02] dark:bg-white/[0.03] border border-black/10 dark:border-white/5 rounded-2xl p-5 flex flex-col hover:shadow-md hover:border-violet-500/20 transition-colors group"
                       >
                         {/* Header do card — altura fixa */}
                         <div className="flex items-start justify-between min-h-[52px]">
@@ -528,7 +514,7 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
                               <Icon size={18} className={tipoConfig?.color || 'text-slate-500'} />
                             </div>
                             <div className="min-w-0">
-                              <p title={meta.nome} className="font-semibold text-sm text-slate-900 dark:text-white leading-snug break-words line-clamp-2">{meta.nome}</p>
+                              <p title={meta.nome} className="font-semibold text-sm text-dark-text leading-snug break-words line-clamp-2">{meta.nome}</p>
                               <p className="text-xs text-slate-400 truncate">{tipoConfig?.label} | {periodoLabel}</p>
                             </div>
                           </div>
@@ -584,7 +570,7 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
 
                             {/* Valores — empurrados para baixo */}
                             <div className="mt-auto pt-4 flex items-baseline justify-between gap-2">
-                              <span className="text-2xl font-black text-slate-900 dark:text-white leading-none truncate">
+                              <span className="numero text-2xl text-dark-text leading-none truncate">
                                 {formatValue(meta.tipo, meta.metrica, meta.valor_atual)}
                               </span>
                               <span className="text-xs text-slate-400 whitespace-nowrap shrink-0">
@@ -607,20 +593,13 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
                 </div>
               )}
             </div>
-          </motion.div>
+      </Modal>
 
           {/* ================================================================ */}
           {/* WIZARD MODAL — 2 passos (renderizado sobre o popup)              */}
+          {/* Formulário: clique fora não fecha (mesmo comportamento do wizard de CrmMetas) */}
           {/* ================================================================ */}
-          {showModal && (
-            <div className="fixed inset-0 z-[1300] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
-              <div className="absolute inset-0" onClick={() => setShowModal(false)} />
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="relative w-full max-w-lg bg-white dark:bg-[#1C1F26] rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden"
-              >
+              <Modal isOpen={isOpen && showModal} onClose={() => setShowModal(false)} semCabecalho semPadding fecharAoClicarFora={false} maxWidth="max-w-lg">
                 {/* Barra de progresso do wizard */}
                 <div className="h-1 bg-slate-100 dark:bg-white/5">
                   <div
@@ -632,7 +611,7 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
                 {/* Header do modal */}
                 <div className="flex items-center justify-between px-6 pt-5 pb-4">
                   <div>
-                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">{editingMeta ? 'Editar Meta' : 'Nova Meta'}</h2>
+                    <h2 className="text-lg font-bold text-dark-text">{editingMeta ? 'Editar Meta' : 'Nova Meta'}</h2>
                     <p className="text-xs text-slate-400 mt-0.5">{editingMeta ? 'Atualize os dados da meta' : `Passo ${step} de 2`}</p>
                   </div>
                   <button onClick={() => setShowModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg transition-colors">
@@ -856,12 +835,8 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
                     </div>
                   </div>
                 )}
-              </motion.div>
-            </div>
-          )}
-        </div>
-      )}
-    </AnimatePresence>
+              </Modal>
+    </>
   );
 };
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock } from 'lucide-react';
+import { Clock, Loader2 } from 'lucide-react';
 
 interface HistoryEntry {
   id: number;
@@ -33,7 +33,7 @@ export const TaskHistory: React.FC<{ taskId: string }> = ({ taskId }) => {
   }, [taskId]);
 
   if (loading) {
-    return <div className="p-4 text-center text-xs text-slate-500">Carregando histórico...</div>;
+    return <div className="p-4 flex items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400"><Loader2 size={12} className="animate-spin" /> Carregando histórico…</div>;
   }
 
   if (history.length === 0) {
